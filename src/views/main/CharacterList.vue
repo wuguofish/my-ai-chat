@@ -91,7 +91,7 @@ const getDefaultAvatar = (name: string) => {
 
     <!-- 新增按鈕（當已有好友時） -->
     <button v-if="characterCount > 0 && canAddMore" class="fab-add" @click="handleAddCharacter">
-      +
+      ＋
     </button>
 
     <!-- 已達上限提示 -->
@@ -178,9 +178,9 @@ const getDefaultAvatar = (name: string) => {
   cursor: pointer;
   transition: all 0.3s;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
+  flex-direction: row;
+  align-items:center;
+  text-align: left;
 }
 
 .character-card:hover {
@@ -195,6 +195,7 @@ const getDefaultAvatar = (name: string) => {
   overflow: hidden;
   margin-bottom: 16px;
   border: 3px solid #e0e0e0;
+  
 }
 
 .character-avatar img {
@@ -206,6 +207,8 @@ const getDefaultAvatar = (name: string) => {
 .character-info {
   flex: 1;
   width: 100%;
+  padding-left: 2rem;
+  padding-bottom: 1rem;
 }
 
 .character-name {
@@ -254,7 +257,7 @@ const getDefaultAvatar = (name: string) => {
 /* 浮動新增按鈕 */
 .fab-add {
   position: fixed;
-  bottom: 32px;
+  bottom: 92px;
   right: 32px;
   width: 64px;
   height: 64px;
@@ -262,11 +265,13 @@ const getDefaultAvatar = (name: string) => {
   background: #667eea;
   color: white;
   border: none;
-  font-size: 32px;
+  font-size: 30px;
+  font-weight: bold;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
   transition: all 0.3s;
   z-index: 100;
+  padding: 0rem;
 }
 
 .fab-add:hover {
@@ -312,11 +317,10 @@ const getDefaultAvatar = (name: string) => {
   }
 
   .fab-add {
-    bottom: 20px;
     right: 20px;
     width: 56px;
     height: 56px;
-    font-size: 28px;
+    font-size: 30px;
   }
 }
 </style>

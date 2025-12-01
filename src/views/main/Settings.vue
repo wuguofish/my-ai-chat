@@ -285,7 +285,6 @@ const handleClearData = () => {
 
 .btn-toggle {
   padding: 10px 20px;
-  background: #f0f0f0;
   border: none;
   border-radius: 8px;
   font-size: 14px;
@@ -295,7 +294,7 @@ const handleClearData = () => {
 }
 
 .btn-toggle:hover {
-  background: #e0e0e0;
+  background: #808080;
 }
 
 .btn-primary {
