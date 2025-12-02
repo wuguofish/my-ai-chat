@@ -1,12 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useUserStore } from '@/stores/user'
 
 const emit = defineEmits<{
   next: []
 }>()
 
-const userStore = useUserStore()
 const apiKey = ref('')
 const error = ref('')
 

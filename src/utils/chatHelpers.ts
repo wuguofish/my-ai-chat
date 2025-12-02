@@ -25,7 +25,7 @@ export interface SystemPromptContext {
  * 包含時間、使用者資料、關係、記憶等完整資訊
  */
 export function generateSystemPrompt(context: SystemPromptContext): string {
-  const { character, user, room, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary, otherCharactersInRoom } = context
+  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary, otherCharactersInRoom } = context
 
   // 如果有自訂 system prompt，使用它作為基礎
   const basePrompt = character.systemPrompt && character.systemPrompt.trim()

@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useUserStore } from '@/stores/user'
 import Step1ApiKey from './Step1ApiKey.vue'
 import Step2Profile from './Step2Profile.vue'
 import Step3Character from './Step3Character.vue'
 
 const router = useRouter()
-const userStore = useUserStore()
 
 const currentStep = ref(1)
 

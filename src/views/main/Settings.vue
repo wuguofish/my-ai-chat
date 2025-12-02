@@ -244,17 +244,55 @@ const handleClearData = () => {
 
     <!-- 關於 -->
     <div class="settings-section">
-      <h3>關於</h3>
+      <h3>關於本應用</h3>
       <div class="about-info">
-        <p><strong>愛聊天 AI Chat</strong></p>
-        <p>版本 0.1.0</p>
-        <p>使用 Gemini API 提供服務</p>
+        <div class="about-header">
+          <h4>AI 聊天應用</h4>
+          <span class="version-badge">v1.0.0</span>
+        </div>
+        <p class="about-desc">
+          一個基於 Gemini AI 的角色扮演聊天應用，支援記憶系統和關係好感度追蹤。
+        </p>
+
+        <div class="about-links">
+          <a href="https://github.com/wugofish/my-ai-chat" target="_blank" class="link-btn">
+            <span>📦</span> GitHub Repository
+          </a>
+          <a href="https://github.com/wugofish/my-ai-chat/blob/main/CHANGELOG.md" target="_blank" class="link-btn">
+            <span>📝</span> 完整更新履歷
+          </a>
+        </div>
+
+        <div class="changelog">
+          <h5>最新更新 (v1.0.0)</h5>
+          <ul>
+            <li><strong>角色管理系統</strong> - 建立和管理 AI 角色</li>
+            <li><strong>記憶系統</strong> - 長期/短期記憶自動管理</li>
+            <li><strong>關係系統</strong> - 好感度追蹤與等級變化</li>
+            <li><strong>群聊功能</strong> - 支援多角色對話</li>
+          </ul>
+        </div>
+
+        <div class="about-tech">
+          <p><strong>技術架構</strong></p>
+          <div class="tech-tags">
+            <span class="tech-tag">Vue 3</span>
+            <span class="tech-tag">TypeScript</span>
+            <span class="tech-tag">Pinia</span>
+            <span class="tech-tag">Gemini 2.5</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+
+.changelog{
+  padding: 1rem;
+}
+
 .settings {
   min-height: 100vh;
 }
@@ -399,6 +437,101 @@ const handleClearData = () => {
   line-height: 1.6;
 }
 
+.about-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.about-header h4 {
+  font-size: var(--text-2xl);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.version-badge {
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: var(--color-primary);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.about-desc {
+  margin-bottom: var(--spacing-xl);
+  line-height: 1.6;
+}
+
+.about-links {
+  display: flex;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xl);
+  flex-wrap: wrap;
+}
+
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--color-text-primary);
+  transition: all var(--transition);
+  font-size: var(--text-sm);
+}
+
+.link-btn:hover {
+  background: var(--color-bg-hover);
+  transform: translateY(-2px);
+}
+
+.changelog h5 {
+  font-size: var(--text-lg);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-md);
+}
+
+.changelog ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.changelog li {
+  padding: var(--spacing-sm) 0;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.about-tech {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-xl);
+  border-top: 1px solid var(--color-border);
+}
+
+.about-tech p {
+  margin-bottom: var(--spacing-md);
+}
+
+.tech-tags {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.tech-tag {
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: rgba(102, 126, 234, 0.1);
+  color: var(--color-primary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
 .about-info p {
   margin: 0 0 var(--spacing-sm) 0;
 }
@@ -413,6 +546,10 @@ const handleClearData = () => {
   }
 
   .api-key-input {
+    flex-direction: column;
+  }
+
+  .about-links {
     flex-direction: column;
   }
 }

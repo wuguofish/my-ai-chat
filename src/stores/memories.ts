@@ -5,7 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
-import type { Memory, CharacterGlobalMemory, RoomContextMemory, MemoryType, MemorySource } from '@/types'
+import type { Memory, CharacterGlobalMemory, RoomContextMemory, MemorySource } from '@/types'
 
 export const useMemoriesStore = defineStore('memories', () => {
   // State
