@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
+import { useMemoriesStore } from '@/stores/memories'
+import { useRelationshipsStore } from '@/stores/relationships'
 import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService } from '@/services/googleDrive'
 
@@ -11,6 +13,8 @@ const router = useRouter()
 const userStore = useUserStore()
 const characterStore = useCharacterStore()
 const chatRoomStore = useChatRoomsStore()
+const memoriesStore = useMemoriesStore()
+const relationshipsStore = useRelationshipsStore()
 
 // Google Drive 同步狀態
 const isGoogleConnected = ref(false)
@@ -79,7 +83,15 @@ const handleExportData = () => {
   const data = {
     user: userStore.profile,
     characters: characterStore.characters,
-    chatRooms: chatRoomStore.chatRooms
+    chatRooms: chatRoomStore.chatRooms,
+    memories: {
+      characterMemories: memoriesStore.characterMemories,
+      roomMemories: memoriesStore.roomMemories
+    },
+    relationships: {
+      userToCharacter: relationshipsStore.userToCharacter,
+      characterToCharacter: relationshipsStore.characterToCharacter
+    }
   }
 
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -102,24 +114,43 @@ const handleImportData = (event: Event) => {
         const data = JSON.parse(e.target?.result as string)
 
         if (confirm('確定要匯入資料嗎？這會覆蓋現有資料！')) {
+          // 還原使用者資料
           if (data.user) userStore.setProfile(data.user)
+
+          // 還原角色資料
           if (data.characters) {
-            // 先清空現有角色
             characterStore.clearCharacters()
             data.characters.forEach((char: any) => {
               characterStore.addCharacter(char)
             })
           }
+
+          // 還原聊天室資料
           if (data.chatRooms) {
-            // 先清空現有聊天室
             chatRoomStore.clearAllData()
             data.chatRooms.forEach((room: any) => {
-              // 使用正確的參數格式呼叫 createChatRoom
               chatRoomStore.createChatRoom(room.name, room.characterIds, room.type)
             })
           }
+
+          // 還原記憶資料
+          if (data.memories) {
+            memoriesStore.$patch({
+              characterMemories: data.memories.characterMemories || {},
+              roomMemories: data.memories.roomMemories || {}
+            })
+          }
+
+          // 還原關係資料
+          if (data.relationships) {
+            relationshipsStore.$patch({
+              userToCharacter: data.relationships.userToCharacter || [],
+              characterToCharacter: data.relationships.characterToCharacter || []
+            })
+          }
+
           alert('匯入成功！')
-          window.location.reload() // 重新載入頁面
+          window.location.reload()
         }
       } catch (error) {
         alert('匯入失敗：檔案格式錯誤')
@@ -169,11 +200,19 @@ const handleGoogleBackup = async () => {
       await handleGoogleConnect()
     }
 
-    // 準備備份資料
+    // 準備備份資料（包含完整資料）
     const data = {
       user: userStore.profile,
       characters: characterStore.characters,
       chatRooms: chatRoomStore.chatRooms,
+      memories: {
+        characterMemories: memoriesStore.characterMemories,
+        roomMemories: memoriesStore.roomMemories
+      },
+      relationships: {
+        userToCharacter: relationshipsStore.userToCharacter,
+        characterToCharacter: relationshipsStore.characterToCharacter
+      },
       timestamp: new Date().toISOString()
     }
 
@@ -204,18 +243,36 @@ const handleGoogleRestore = async () => {
     // 從 Google Drive 下載
     const data = await googleDriveService.downloadBackup()
 
-    // 還原資料
+    // 還原資料（包含完整資料）
     if (data.user) userStore.setProfile(data.user)
+
     if (data.characters) {
       characterStore.clearCharacters()
       data.characters.forEach((char: any) => {
         characterStore.addCharacter(char)
       })
     }
+
     if (data.chatRooms) {
       chatRoomStore.clearAllData()
       data.chatRooms.forEach((room: any) => {
         chatRoomStore.createChatRoom(room.name, room.characterIds, room.type)
+      })
+    }
+
+    // 還原記憶資料
+    if (data.memories) {
+      memoriesStore.$patch({
+        characterMemories: data.memories.characterMemories || {},
+        roomMemories: data.memories.roomMemories || {}
+      })
+    }
+
+    // 還原關係資料
+    if (data.relationships) {
+      relationshipsStore.$patch({
+        userToCharacter: data.relationships.userToCharacter || [],
+        characterToCharacter: data.relationships.characterToCharacter || []
       })
     }
 

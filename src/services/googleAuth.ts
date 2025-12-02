@@ -14,6 +14,7 @@ export interface GoogleAuthResponse {
   expires_in: number
   scope: string
   token_type: string
+  error?: string  // 錯誤訊息（當授權失敗時）
 }
 
 class GoogleAuthService {
