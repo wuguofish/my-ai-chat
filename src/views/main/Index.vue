@@ -59,23 +59,23 @@ const navigateTo = (tab: string) => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #f5f5f5;
+  background: var(--color-bg-secondary);
   overflow: hidden;
 }
 
 .content-area {
   flex: 1;
   overflow-y: auto;
-  padding-bottom: 60px; /* 為底部導航留出空間 */
+  height: calc(100vh - 60px);/* 為底部導航留出空間 */
 }
 
 .bottom-nav {
   display: flex;
   justify-content: space-around;
   align-items: center;
-  background: white;
-  border-top: 1px solid #e0e0e0;
-  padding: 8px 0;
+  background: var(--color-bg-primary);
+  border-top: 1px solid var(--color-border);
+  padding: var(--spacing-sm) 0;
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
 }
 
@@ -85,27 +85,27 @@ const navigateTo = (tab: string) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 12px;
+  padding: var(--spacing-sm) var(--spacing-md);
   background: none;
   border: none;
   cursor: pointer;
-  transition: all 0.3s;
-  color: #999;
+  transition: all var(--transition);
+  color: var(--color-text-tertiary);
 }
 
 .nav-item.active {
-  color: #667eea;
+  color: var(--color-primary);
 }
 
 .nav-item:hover {
-  background: #f5f5f5;
+  background: var(--color-bg-secondary);
 }
 
 .nav-icon {
   font-size: 24px;
-  margin-bottom: 4px;
+  margin-bottom: var(--spacing-xs);
   filter: grayscale(100%);
-  transition: filter 0.3s;
+  transition: filter var(--transition);
 }
 
 .nav-item.active .nav-icon {
@@ -113,7 +113,7 @@ const navigateTo = (tab: string) => {
 }
 
 .nav-label {
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 

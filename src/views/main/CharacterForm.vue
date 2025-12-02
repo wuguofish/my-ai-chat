@@ -31,6 +31,7 @@ const avatar = ref('')
 
 // 進階資料
 const systemPrompt = ref('')
+const maxOutputTokens = ref<number>(2048)
 
 // 事件記憶
 const events = ref<string[]>([])
@@ -58,6 +59,7 @@ onMounted(() => {
       dislikes.value = character.dislikes || ''
       avatar.value = character.avatar
       systemPrompt.value = character.systemPrompt || ''
+      maxOutputTokens.value = character.maxOutputTokens || 2048
       events.value = [...character.events]
     } else {
       router.push('/main/characters')
@@ -90,6 +92,7 @@ const handleSubmit = () => {
     dislikes: dislikes.value.trim() || undefined,
     avatar: avatar.value || getDefaultAvatar(name.value),
     systemPrompt: systemPrompt.value.trim() || undefined,
+    maxOutputTokens: maxOutputTokens.value || undefined,
     events: events.value.filter(e => e.trim() !== ''),
     createdAt: isEditMode.value
       ? characterStore.getCharacterById(editingCharacterId.value)?.createdAt || new Date().toISOString()
@@ -227,6 +230,11 @@ const getDefaultAvatar = (name: string) => {
         </div>
 
         <div class="form-group">
+          <label for="profession">職業（選填）</label>
+          <input id="profession" v-model="profession" type="text" placeholder="例如：軟體工程師" class="input-field" maxlength="30">
+        </div>
+
+        <div class="form-group">
           <label for="personality">性格 *</label>
           <textarea id="personality" v-model="personality" placeholder="描述這個好友的性格特質（例如：開朗活潑、善解人意）"
             class="textarea-field" :maxlength="LIMITS.MAX_CHARACTER_PERSONALITY_LENGTH" rows="3" />
@@ -269,6 +277,23 @@ const getDefaultAvatar = (name: string) => {
           <div class="char-count">{{ systemPrompt.length }}/{{ LIMITS.MAX_SYSTEM_PROMPT_LENGTH }}</div>
           <div class="help-text">
             提示：系統提示詞會覆蓋上述基本資料自動生成的設定
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="maxOutputTokens">最大輸出 Token 數</label>
+          <input
+            id="maxOutputTokens"
+            v-model.number="maxOutputTokens"
+            type="number"
+            min="256"
+            max="8192"
+            step="256"
+            placeholder="2048"
+            class="input-field"
+          >
+          <div class="help-text">
+            控制 AI 回應的最大長度。建議值：1024（簡短）、2048（標準）、4096（詳細）
           </div>
         </div>
       </div>
@@ -315,60 +340,61 @@ const getDefaultAvatar = (name: string) => {
 .character-form {
   max-width: 800px;
   margin: 0 auto;
-  padding: 20px;
+  padding: var(--spacing-xl);
 }
 
 .form-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 2px solid #e0e0e0;
+  margin-bottom: var(--spacing-2xl);
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 2px solid var(--color-border);
 }
 
 .form-header h2 {
-  font-size: 28px;
-  color: #333;
+  font-size: var(--text-4xl);
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .mode-toggle {
-  padding: 8px 16px;
-  background: #f0f0f0;
+  padding: var(--spacing-sm) var(--spacing-lg);
   border: none;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all var(--transition);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
 }
 
 .mode-toggle:hover {
-  background: #e0e0e0;
+  background: var(--color-bg-hover);
 }
 
 .form-content {
-  margin-bottom: 24px;
+  margin-bottom: var(--spacing-2xl);
 }
 
 .form-section {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-2xl);
+  margin-bottom: var(--spacing-xl);
+  box-shadow: var(--shadow);
 }
 
 .form-section h3 {
-  font-size: 20px;
-  color: #333;
-  margin: 0 0 16px 0;
+  font-size: var(--text-2xl);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-lg) 0;
 }
 
 .section-desc {
-  font-size: 14px;
-  color: #666;
-  margin: -8px 0 16px 0;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  margin: calc(var(--spacing-sm) * -1) 0 var(--spacing-lg) 0;
 }
 
 .avatar-upload {
@@ -380,10 +406,10 @@ const getDefaultAvatar = (name: string) => {
 .avatar-preview {
   width: 100px;
   height: 100px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   overflow: hidden;
-  margin-bottom: 12px;
-  border: 3px solid #e0e0e0;
+  margin-bottom: var(--spacing-md);
+  border: 3px solid var(--color-border);
 }
 
 .avatar-preview img {
@@ -398,51 +424,55 @@ const getDefaultAvatar = (name: string) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f5f5;
+  background: var(--color-bg-secondary);
   font-size: 48px;
 }
 
 .upload-btn {
-  padding: 8px 16px;
-  background: #f0f0f0;
-  border-radius: 6px;
-  font-size: 14px;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all var(--transition);
+  border: none;
+  color: var(--color-text-primary);
 }
 
 .upload-btn:hover {
-  background: #e0e0e0;
+  background: var(--color-bg-hover);
 }
 
 .form-group {
   text-align: left;
-  margin-bottom: 20px;
+  margin-bottom: var(--spacing-xl);
 }
 
 .form-group label {
   display: block;
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 600;
-  color: #333;
-  margin-bottom: 8px;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-sm);
 }
 
 .input-field,
 .textarea-field {
   width: 100%;
   padding: 10px 14px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 14px;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: var(--text-base);
   font-family: inherit;
-  transition: all 0.3s;
+  transition: all var(--transition-fast);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
 }
 
 .input-field:focus,
 .textarea-field:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--color-primary);
 }
 
 .textarea-field {
@@ -451,7 +481,7 @@ const getDefaultAvatar = (name: string) => {
 
 .radio-group {
   display: flex;
-  gap: 16px;
+  gap: var(--spacing-lg);
 }
 
 .radio-item {
@@ -461,34 +491,34 @@ const getDefaultAvatar = (name: string) => {
 }
 
 .radio-item input[type="radio"] {
-  margin-right: 6px;
+  margin-right: var(--spacing-sm);
   cursor: pointer;
 }
 
 .radio-item span {
-  font-size: 14px;
-  color: #666;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
 }
 
 .char-count {
   text-align: right;
-  font-size: 12px;
-  color: #999;
-  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  margin-top: var(--spacing-xs);
 }
 
 .help-text {
-  font-size: 13px;
-  color: #999;
-  margin-top: 8px;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  margin-top: var(--spacing-sm);
   font-style: italic;
 }
 
 /* 事件列表 */
 .event-input-group {
   display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
 }
 
 .event-input-group .input-field {
@@ -496,19 +526,19 @@ const getDefaultAvatar = (name: string) => {
 }
 
 .btn-add {
-  padding: 10px 20px;
-  background: #667eea;
-  color: white;
+  padding: 10px var(--spacing-xl);
+  background: var(--color-primary);
+  color: var(--color-text-white);
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius);
+  font-size: var(--text-base);
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all var(--transition);
   white-space: nowrap;
 }
 
 .btn-add:hover:not(:disabled) {
-  background: #5568d3;
+  background: var(--color-primary-dark);
 }
 
 .btn-add:disabled {
@@ -519,38 +549,38 @@ const getDefaultAvatar = (name: string) => {
 .event-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 
 .event-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px;
-  background: #f5f5f5;
-  border-radius: 8px;
+  padding: var(--spacing-md);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
 }
 
 .event-text {
   flex: 1;
-  font-size: 14px;
-  color: #333;
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
 }
 
 .event-delete {
   width: 24px;
   height: 24px;
-  border-radius: 50%;
-  background: #ff4d4f;
-  color: white;
+  border-radius: var(--radius-full);
+  background: var(--color-error);
+  color: var(--color-text-white);
   border: none;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--text-xs);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s;
-  margin-left: 12px;
+  transition: all var(--transition);
+  margin-left: var(--spacing-md);
 }
 
 .event-delete:hover {
@@ -558,60 +588,60 @@ const getDefaultAvatar = (name: string) => {
 }
 
 .error-message {
-  color: #ff4d4f;
-  font-size: 14px;
+  color: var(--color-error);
+  font-size: var(--text-base);
   text-align: center;
-  margin-bottom: 16px;
-  padding: 12px;
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
   background: #fff1f0;
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .button-group {
   display: flex;
   justify-content: center;
-  gap: 12px;
+  gap: var(--spacing-md);
 }
 
 .btn-primary,
 .btn-secondary {
-  padding: 12px 32px;
-  border-radius: 8px;
-  font-size: 16px;
+  padding: var(--spacing-md) var(--spacing-3xl);
+  border-radius: var(--radius);
+  font-size: var(--text-lg);
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all var(--transition);
   border: none;
 }
 
 .btn-primary {
-  background: #667eea;
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-text-white);
 }
 
 .btn-primary:hover {
-  background: #5568d3;
+  background: var(--color-primary-dark);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .btn-secondary {
-  background: #f0f0f0;
-  color: #666;
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
 }
 
 .btn-secondary:hover {
-  background: #e0e0e0;
+  background: var(--color-bg-hover);
 }
 
 @media (max-width: 768px) {
   .character-form {
-    padding: 12px;
+    padding: var(--spacing-md);
   }
 
   .form-header {
     flex-direction: column;
     align-items: flex-start;
-    gap: 12px;
+    gap: var(--spacing-md);
   }
 
   .event-input-group {

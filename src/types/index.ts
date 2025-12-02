@@ -69,6 +69,7 @@ export interface Character {
   likes?: string
   dislikes?: string
   systemPrompt?: string
+  maxOutputTokens?: number
   events: string[]
   createdAt: string
   updatedAt: string
@@ -101,7 +102,6 @@ export interface Message {
   roomId: string
   senderId: string  // 'user' or characterId
   senderName: string
-  senderAvatar: string
   content: string
   timestamp: string
 

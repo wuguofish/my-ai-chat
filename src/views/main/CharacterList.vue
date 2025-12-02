@@ -19,12 +19,6 @@ const handleViewCharacter = (character: Character) => {
   router.push(`/main/characters/${character.id}`)
 }
 
-const handleDeleteCharacter = (character: Character) => {
-  if (confirm(`確定要刪除好友「${character.name}」嗎？`)) {
-    characterStore.deleteCharacter(character.id)
-  }
-}
-
 const getGenderText = (gender?: string) => {
   switch (gender) {
     case 'male': return '男'
@@ -85,6 +79,7 @@ const getDefaultAvatar = (name: string) => {
           <h3 class="character-name">{{ character.name }}</h3>
           <span class="meta-item">{{ getGenderText(character.gender) }}</span>
           <span class="meta-item">{{ character.age }}歲</span>
+          <div style="margin-top: 0.3rem;"><span class="meta-item">{{ character.profession }}</span></div>
         </div>
       </div>
     </div>
@@ -103,32 +98,31 @@ const getDefaultAvatar = (name: string) => {
 
 <style scoped>
 .character-list {
-/*  min-height: 100vh;*/
   position: relative;
 }
 
 .header {
   position: sticky;
   top: 0;
-  z-index: 10;
-  background: white;
+  z-index: var(--z-sticky);
+  background: var(--color-bg-primary);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  border-bottom: 2px solid #e0e0e0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  padding: var(--spacing-xl);
+  border-bottom: 2px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
 }
 
 .header h2 {
-  font-size: 28px;
-  color: #333;
+  font-size: var(--text-4xl);
+  color: var(--color-text-primary);
   margin: 0;
 }
 
 .count-info {
-  font-size: 14px;
-  color: #999;
+  font-size: var(--text-base);
+  color: var(--color-text-tertiary);
 }
 
 /* 空狀態 */
@@ -137,65 +131,64 @@ const getDefaultAvatar = (name: string) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 20px;
+  padding: 60px var(--spacing-xl);
   text-align: center;
 }
 
 .empty-icon {
   font-size: 80px;
-  margin-bottom: 20px;
+  margin-bottom: var(--spacing-xl);
   opacity: 0.5;
 }
 
 .empty-state h3 {
-  font-size: 24px;
-  color: #333;
-  margin-bottom: 12px;
+  font-size: var(--text-3xl);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-md);
 }
 
 .empty-state p {
-  font-size: 16px;
-  color: #666;
-  margin-bottom: 24px;
+  font-size: var(--text-lg);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-2xl);
 }
 
 /* 好友網格 */
 .character-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
-  padding: 20px;
+  gap: var(--spacing-xl);
+  padding: var(--spacing-xl);
   max-width: 1200px;
   margin: 0 auto;
 }
 
 .character-card {
   position: relative;
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  box-shadow: var(--shadow);
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all var(--transition);
   display: flex;
   flex-direction: row;
-  align-items:center;
+  align-items: center;
   text-align: left;
 }
 
 .character-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-md);
 }
 
 .character-avatar {
   width: 80px;
   height: 80px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   overflow: hidden;
-  margin-bottom: 16px;
-  border: 3px solid #e0e0e0;
-  
+  margin-bottom: var(--spacing-lg);
+  border: 3px solid var(--color-border);
 }
 
 .character-avatar img {
@@ -212,37 +205,37 @@ const getDefaultAvatar = (name: string) => {
 }
 
 .character-name {
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: 600;
-  color: #333;
-  margin: 0 0 8px 0;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-sm) 0;
 }
 
 .meta-item {
   margin: 0.2rem;
-  padding: 4px 12px;
+  padding: var(--spacing-xs) var(--spacing-md);
   background: rgba(0, 0, 0, 0.1);
-  border-radius: 12px;
-  font-size: 14px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-base);
 }
 
 .delete-btn {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
   width: 28px;
   height: 28px;
-  border-radius: 50%;
-  background: #ff4d4f;
-  color: white;
+  border-radius: var(--radius-full);
+  background: var(--color-error);
+  color: var(--color-text-white);
   border: none;
   cursor: pointer;
-  font-size: 16px;
+  font-size: var(--text-lg);
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: all 0.3s;
+  transition: all var(--transition);
 }
 
 .character-card:hover .delete-btn {
@@ -257,43 +250,43 @@ const getDefaultAvatar = (name: string) => {
 /* 浮動新增按鈕 */
 .fab-add {
   position: fixed;
-  bottom: 92px;
-  right: 32px;
+  bottom: 102px;
+  right: var(--spacing-3xl);
   width: 64px;
   height: 64px;
-  border-radius: 50%;
-  background: #667eea;
-  color: white;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-text-white);
   border: none;
   font-size: 30px;
   font-weight: bold;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-  transition: all 0.3s;
-  z-index: 100;
-  padding: 0rem;
+  transition: all var(--transition);
+  z-index: var(--z-dropdown);
+  padding: 0;
 }
 
 .fab-add:hover {
-  background: #5568d3;
+  background: var(--color-primary-dark);
   transform: scale(1.1);
   box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
 }
 
 /* 主要按鈕 */
 .btn-primary {
-  padding: 12px 32px;
-  border-radius: 8px;
-  font-size: 16px;
+  padding: var(--spacing-md) var(--spacing-3xl);
+  border-radius: var(--radius);
+  font-size: var(--text-lg);
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all var(--transition);
   border: none;
-  background: #667eea;
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-text-white);
 }
 
 .btn-primary:hover {
-  background: #5568d3;
+  background: var(--color-primary-dark);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
@@ -301,14 +294,14 @@ const getDefaultAvatar = (name: string) => {
 /* 上限提示 */
 .limit-notice {
   position: fixed;
-  bottom: 32px;
-  right: 32px;
-  background: #ff9800;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-size: 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  bottom: var(--spacing-3xl);
+  right: var(--spacing-3xl);
+  background: var(--color-warning);
+  color: var(--color-text-white);
+  padding: var(--spacing-md) var(--spacing-2xl);
+  border-radius: var(--radius);
+  font-size: var(--text-base);
+  box-shadow: var(--shadow);
 }
 
 @media (max-width: 768px) {

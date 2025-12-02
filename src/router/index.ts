@@ -26,8 +26,13 @@ const routes: RouteRecordRaw[] = [
     children: [
       {
         path: 'chats',
-        name: 'Chats',
+        name: 'ChatList',
         component: () => import('@/views/main/ChatList.vue')
+      },
+      {
+        path: 'chats/:id',
+        name: 'ChatRoom',
+        component: () => import('@/views/main/ChatRoom.vue')
       },
       {
         path: 'characters',

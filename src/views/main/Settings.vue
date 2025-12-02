@@ -13,6 +13,47 @@ const chatRoomStore = useChatRoomsStore()
 const showApiKey = ref(false)
 const apiKeyInput = ref(userStore.apiKey)
 
+// 使用者個人資訊編輯
+const showEditProfile = ref(false)
+const editingProfile = ref({
+  nickname: userStore.userName,
+  realName: userStore.profile?.realName || '',
+  age: userStore.profile?.age || '',
+  gender: userStore.profile?.gender || 'unset',
+  profession: userStore.profile?.profession || '',
+  bio: userStore.profile?.bio || ''
+})
+
+const handleEditProfile = () => {
+  showEditProfile.value = true
+  editingProfile.value = {
+    nickname: userStore.userName,
+    realName: userStore.profile?.realName || '',
+    age: userStore.profile?.age || '',
+    gender: userStore.profile?.gender || 'unset',
+    profession: userStore.profile?.profession || '',
+    bio: userStore.profile?.bio || ''
+  }
+}
+
+const handleSaveProfile = () => {
+  userStore.updateProfile({
+    ...userStore.profile!,
+    nickname: editingProfile.value.nickname,
+    realName: editingProfile.value.realName,
+    age: editingProfile.value.age,
+    gender: editingProfile.value.gender as any,
+    profession: editingProfile.value.profession,
+    bio: editingProfile.value.bio
+  })
+  showEditProfile.value = false
+  alert('個人資訊已更新')
+}
+
+const handleCancelEdit = () => {
+  showEditProfile.value = false
+}
+
 const handleUpdateApiKey = () => {
   if (apiKeyInput.value.trim()) {
     userStore.updateApiKey(apiKeyInput.value.trim())
@@ -49,13 +90,18 @@ const handleImportData = (event: Event) => {
         if (confirm('確定要匯入資料嗎？這會覆蓋現有資料！')) {
           if (data.user) userStore.setProfile(data.user)
           if (data.characters) {
+            // 先清空現有角色
+            characterStore.clearCharacters()
             data.characters.forEach((char: any) => {
               characterStore.addCharacter(char)
             })
           }
           if (data.chatRooms) {
+            // 先清空現有聊天室
+            chatRoomStore.clearAllData()
             data.chatRooms.forEach((room: any) => {
-              chatRoomStore.createChatRoom(room)
+              // 使用正確的參數格式呼叫 createChatRoom
+              chatRoomStore.createChatRoom(room.name, room.characterIds, room.type)
             })
           }
           alert('匯入成功！')
@@ -83,14 +129,18 @@ const handleClearData = () => {
 
 <template>
   <div class="settings">
-    <div class="header">
+    <div class="page-header">
       <h2>設定</h2>
     </div>
 
     <!-- 使用者資訊 -->
     <div class="settings-section">
-      <h3>使用者資訊</h3>
-      <div class="user-info">
+      <div class="section-header">
+        <h3>使用者資訊</h3>
+        <button class="btn btn-warning" @click="handleEditProfile">編輯</button>
+      </div>
+
+      <div v-if="!showEditProfile" class="user-info">
         <div class="user-avatar">
           <img :src="userStore.userAvatar" alt="頭像">
         </div>
@@ -99,6 +149,46 @@ const handleClearData = () => {
           <div class="user-meta">
             {{ characterStore.characters.length }} 位好友
           </div>
+          <div v-if="userStore.profile?.profession" class="user-meta">
+            {{ userStore.profile.profession }}
+          </div>
+        </div>
+      </div>
+
+      <!-- 編輯模式 -->
+      <div v-else class="edit-profile-form">
+        <div class="form-group">
+          <label>暱稱</label>
+          <input v-model="editingProfile.nickname" class="input-field" placeholder="暱稱" />
+        </div>
+        <div class="form-group">
+          <label>本名（選填）</label>
+          <input v-model="editingProfile.realName" class="input-field" placeholder="本名" />
+        </div>
+        <div class="form-group">
+          <label>年齡（選填）</label>
+          <input v-model="editingProfile.age" class="input-field" placeholder="年齡" />
+        </div>
+        <div class="form-group">
+          <label>性別（選填）</label>
+          <select v-model="editingProfile.gender" class="input-field">
+            <option value="unset">未設定</option>
+            <option value="male">男</option>
+            <option value="female">女</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>職業（選填）</label>
+          <input v-model="editingProfile.profession" class="input-field" placeholder="職業" />
+        </div>
+        <div class="form-group">
+          <label>簡介（選填，最多250字）</label>
+          <textarea v-model="editingProfile.bio" class="input-field" placeholder="簡介" maxlength="250" rows="3" />
+          <div class="char-count">{{ editingProfile.bio.length }}/250</div>
+        </div>
+        <div class="button-group">
+          <button class="btn-primary" @click="handleSaveProfile">儲存</button>
+          <button class="btn-secondary" @click="handleCancelEdit">取消</button>
         </div>
       </div>
     </div>
@@ -109,14 +199,9 @@ const handleClearData = () => {
       <div class="form-group">
         <label for="apiKey">Gemini API Key</label>
         <div class="api-key-input">
-          <input
-            id="apiKey"
-            v-model="apiKeyInput"
-            :type="showApiKey ? 'text' : 'password'"
-            class="input-field"
-            placeholder="輸入你的 Gemini API Key"
-          >
-          <button class="btn-toggle" @click="showApiKey = !showApiKey">
+          <input id="apiKey" v-model="apiKeyInput" :type="showApiKey ? 'text' : 'password'" class="input-field"
+            placeholder="輸入你的 Gemini API Key">
+          <button class="btn btn-info" @click="showApiKey = !showApiKey">
             {{ showApiKey ? '隱藏' : '顯示' }}
           </button>
         </div>
@@ -144,12 +229,7 @@ const handleClearData = () => {
             <div class="action-title">匯入資料</div>
             <div class="action-desc">從檔案還原資料</div>
           </div>
-          <input
-            type="file"
-            accept=".json"
-            style="display: none"
-            @change="handleImportData"
-          >
+          <input type="file" accept=".json" style="display: none" @change="handleImportData">
         </label>
 
         <button class="action-btn danger" @click="handleClearData">
@@ -179,52 +259,49 @@ const handleClearData = () => {
   min-height: 100vh;
 }
 
-.header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: white;
-  padding: 20px;
-  border-bottom: 2px solid #e0e0e0;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-
-.header h2 {
-  font-size: 28px;
-  color: #333;
-  margin: 0;
-}
-
 .settings-section {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  margin: 20px;
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-2xl);
+  margin: var(--spacing-xl);
   max-width: 800px;
   margin-left: auto;
   margin-right: auto;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow);
 }
 
 .settings-section h3 {
-  font-size: 18px;
-  color: #333;
-  margin: 0 0 20px 0;
+  font-size: var(--text-xl);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-xl) 0;
 }
 
 /* 使用者資訊 */
 .user-info {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--spacing-lg);
+}
+
+.edit-profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.char-count {
+  text-align: right;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  margin-top: var(--spacing-xs);
 }
 
 .user-avatar {
   width: 64px;
   height: 64px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   overflow: hidden;
-  border: 2px solid #e0e0e0;
+  border: 2px solid var(--color-border);
 }
 
 .user-avatar img {
@@ -238,108 +315,54 @@ const handleClearData = () => {
 }
 
 .user-name {
-  font-size: 20px;
+  font-size: var(--text-2xl);
   font-weight: 600;
-  color: #333;
-  margin-bottom: 4px;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-xs);
 }
 
 .user-meta {
-  font-size: 14px;
-  color: #666;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
 }
 
 /* API 設定 */
-.form-group {
-  margin-bottom: 16px;
-}
-
-.form-group label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 8px;
-}
-
 .api-key-input {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
 }
 
-.input-field {
-  flex: 1;
-  padding: 10px 14px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: inherit;
-  transition: all 0.3s;
-}
-
-.input-field:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.btn-toggle {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.3s;
-  white-space: nowrap;
-}
-
-.btn-toggle:hover {
-  background: #808080;
-}
-
-.btn-primary {
-  padding: 10px 24px;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.btn-primary:hover {
-  background: #5568d3;
-}
 
 .btn-small {
-  padding: 8px 20px;
-  font-size: 13px;
+  padding: var(--spacing-sm) var(--spacing-xl);
+  font-size: var(--text-sm);
 }
 
 /* 動作列表 */
 .action-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--spacing-md);
 }
 
 .action-btn {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px;
-  background: #f5f5f5;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background: var(--color-bg-secondary);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all var(--transition);
   text-align: left;
   width: 100%;
+  color: var(--color-text-primary);
 }
 
 .action-btn:hover {
-  background: #e8e8e8;
+  background: var(--color-bg-hover);
   transform: translateX(4px);
 }
 
@@ -358,35 +381,35 @@ const handleClearData = () => {
 }
 
 .action-title {
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 600;
-  color: #333;
-  margin-bottom: 4px;
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-xs);
 }
 
 .action-desc {
-  font-size: 13px;
-  color: #666;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
 }
 
 /* 關於 */
 .about-info {
-  font-size: 14px;
-  color: #666;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
   line-height: 1.6;
 }
 
 .about-info p {
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--spacing-sm) 0;
 }
 
 .about-info strong {
-  color: #333;
+  color: var(--color-text-primary);
 }
 
 @media (max-width: 768px) {
   .settings {
-    padding: 12px;
+    padding: var(--spacing-md);
   }
 
   .api-key-input {

@@ -54,7 +54,15 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
 
     chatRooms.value.push(newRoom)
     messages.value[newRoom.id] = []
-    return newRoom
+    return newRoom.id
+  }
+
+  function createSingleChatRoom(characterId: string, characterName: string) {
+    return createChatRoom(characterName, [characterId], 'single')
+  }
+
+  function getMessages(roomId: string) {
+    return messages.value[roomId] || []
   }
 
   function deleteChatRoom(roomId: string) {
@@ -94,6 +102,23 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     return newMessage
   }
 
+  function deleteMessage(roomId: string, messageId: string) {
+    if (messages.value[roomId]) {
+      const index = messages.value[roomId].findIndex(m => m.id === messageId)
+      if (index !== -1) {
+        messages.value[roomId].splice(index, 1)
+      }
+    }
+  }
+
+  function deleteMessages(roomId: string, messageIds: string[]) {
+    if (messages.value[roomId]) {
+      messages.value[roomId] = messages.value[roomId].filter(
+        m => !messageIds.includes(m.id)
+      )
+    }
+  }
+
   function clearMessages(roomId: string) {
     if (messages.value[roomId]) {
       messages.value[roomId] = []
@@ -116,11 +141,15 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     currentMessages,
     getRoomById,
     getMessagesByRoomId,
+    getMessages,
     // Actions
     createChatRoom,
+    createSingleChatRoom,
     deleteChatRoom,
     setCurrentRoom,
     addMessage,
+    deleteMessage,
+    deleteMessages,
     clearMessages,
     clearAllData
   }
