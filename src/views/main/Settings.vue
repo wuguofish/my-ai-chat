@@ -84,6 +84,7 @@ const handleExportData = () => {
     user: userStore.profile,
     characters: characterStore.characters,
     chatRooms: chatRoomStore.chatRooms,
+    messages: chatRoomStore.messages,  // 匯出聊天訊息
     memories: {
       characterMemories: memoriesStore.characterMemories,
       roomMemories: memoriesStore.roomMemories
@@ -126,10 +127,10 @@ const handleImportData = (event: Event) => {
           }
 
           // 還原聊天室資料
-          if (data.chatRooms) {
-            chatRoomStore.clearAllData()
-            data.chatRooms.forEach((room: any) => {
-              chatRoomStore.createChatRoom(room.name, room.characterIds, room.type)
+          if (data.chatRooms || data.messages) {
+            chatRoomStore.$patch({
+              chatRooms: data.chatRooms || [],
+              messages: data.messages || {}
             })
           }
 
@@ -205,6 +206,7 @@ const handleGoogleBackup = async () => {
       user: userStore.profile,
       characters: characterStore.characters,
       chatRooms: chatRoomStore.chatRooms,
+      messages: chatRoomStore.messages,  // 包含聊天訊息
       memories: {
         characterMemories: memoriesStore.characterMemories,
         roomMemories: memoriesStore.roomMemories
@@ -253,10 +255,10 @@ const handleGoogleRestore = async () => {
       })
     }
 
-    if (data.chatRooms) {
-      chatRoomStore.clearAllData()
-      data.chatRooms.forEach((room: any) => {
-        chatRoomStore.createChatRoom(room.name, room.characterIds, room.type)
+    if (data.chatRooms || data.messages) {
+      chatRoomStore.$patch({
+        chatRooms: data.chatRooms || [],
+        messages: data.messages || {}
       })
     }
 
