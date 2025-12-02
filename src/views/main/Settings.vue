@@ -105,7 +105,7 @@ const handleImportData = (event: Event) => {
             })
           }
           alert('匯入成功！')
-          router.go(0) // 重新載入頁面
+          window.location.reload() // 重新載入頁面
         }
       } catch (error) {
         alert('匯入失敗：檔案格式錯誤')
