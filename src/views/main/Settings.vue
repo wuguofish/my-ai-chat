@@ -7,7 +7,7 @@ import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useMemoriesStore } from '@/stores/memories'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { googleAuthService } from '@/services/googleAuth'
-import { googleDriveService } from '@/services/googleDrive'
+import { googleDriveService, TokenInvalidError } from '@/services/googleDrive'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -27,6 +27,11 @@ const checkGoogleConnection = () => {
 
 // 初始化時檢查
 checkGoogleConnection()
+
+// 設定 token 失效回調
+googleAuthService.setTokenInvalidCallback(async () => {
+  return confirm('Google Drive 授權已失效，是否要重新授權？')
+})
 
 const showApiKey = ref(false)
 const apiKeyInput = ref(userStore.apiKey)
@@ -223,7 +228,30 @@ const handleGoogleBackup = async () => {
     alert('備份到 Google Drive 成功！')
   } catch (error) {
     console.error('備份失敗:', error)
-    alert('備份失敗：' + (error as Error).message)
+
+    // 處理 token 無效錯誤
+    if (error instanceof TokenInvalidError) {
+      // 標記為連線中斷
+      checkGoogleConnection()
+
+      // 詢問使用者是否要重新授權
+      const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續備份？')
+      if (shouldReauth) {
+        try {
+          await googleAuthService.handleTokenInvalid()
+          checkGoogleConnection()
+
+          // 重新授權成功，重試備份
+          if (isGoogleConnected.value) {
+            alert('重新授權成功！請再次點擊備份按鈕。')
+          }
+        } catch (reauthError) {
+          alert('重新授權失敗：' + (reauthError as Error).message)
+        }
+      }
+    } else {
+      alert('備份失敗：' + (error as Error).message)
+    }
   } finally {
     isSyncing.value = false
   }
@@ -282,7 +310,30 @@ const handleGoogleRestore = async () => {
     window.location.reload()
   } catch (error) {
     console.error('還原失敗:', error)
-    alert('還原失敗：' + (error as Error).message)
+
+    // 處理 token 無效錯誤
+    if (error instanceof TokenInvalidError) {
+      // 標記為連線中斷
+      checkGoogleConnection()
+
+      // 詢問使用者是否要重新授權
+      const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續還原？')
+      if (shouldReauth) {
+        try {
+          await googleAuthService.handleTokenInvalid()
+          checkGoogleConnection()
+
+          // 重新授權成功，重試還原
+          if (isGoogleConnected.value) {
+            alert('重新授權成功！請再次點擊還原按鈕。')
+          }
+        } catch (reauthError) {
+          alert('重新授權失敗：' + (reauthError as Error).message)
+        }
+      }
+    } else {
+      alert('還原失敗：' + (error as Error).message)
+    }
   } finally {
     isSyncing.value = false
   }

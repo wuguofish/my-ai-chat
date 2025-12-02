@@ -9,6 +9,16 @@ export interface DriveFile {
   modifiedTime: string
 }
 
+/**
+ * Token 無效錯誤類型
+ */
+export class TokenInvalidError extends Error {
+  constructor(message: string = 'Access token is invalid or expired') {
+    super(message)
+    this.name = 'TokenInvalidError'
+  }
+}
+
 class GoogleDriveService {
   private accessToken: string | null = null
   private isInitialized = false
@@ -72,6 +82,15 @@ class GoogleDriveService {
   }
 
   /**
+   * 檢查並處理 API 回應狀態
+   */
+  private checkResponseStatus(response: Response): void {
+    if (response.status === 401) {
+      throw new TokenInvalidError('Access token 已過期或無效，請重新授權')
+    }
+  }
+
+  /**
    * 取得或建立應用資料夾
    */
   private async getOrCreateAppFolder(): Promise<string | null> {
@@ -85,6 +104,9 @@ class GoogleDriveService {
           }
         }
       )
+
+      // 檢查 token 是否有效
+      this.checkResponseStatus(searchResponse)
 
       const searchResult = await searchResponse.json()
 
@@ -109,11 +131,18 @@ class GoogleDriveService {
         body: JSON.stringify(folderMetadata)
       })
 
+      // 檢查 token 是否有效
+      this.checkResponseStatus(createResponse)
+
       const folderResult = await createResponse.json()
       console.log('應用資料夾建立成功:', folderResult.id)
       return folderResult.id
     } catch (error) {
       console.error('取得資料夾失敗:', error)
+      // 如果是 token 無效錯誤，直接往上拋
+      if (error instanceof TokenInvalidError) {
+        throw error
+      }
       return null
     }
   }
@@ -139,6 +168,9 @@ class GoogleDriveService {
         }
       )
 
+      // 檢查 token 是否有效
+      this.checkResponseStatus(response)
+
       if (!response.ok) {
         throw new Error(`檔案搜尋失敗: ${response.statusText}`)
       }
@@ -147,6 +179,10 @@ class GoogleDriveService {
       return result.files && result.files.length > 0 ? result.files[0] : null
     } catch (error) {
       console.error('搜尋備份檔案時發生錯誤:', error)
+      // 如果是 token 無效錯誤，直接往上拋
+      if (error instanceof TokenInvalidError) {
+        throw error
+      }
       return null
     }
   }
@@ -216,6 +252,9 @@ class GoogleDriveService {
         }
       )
 
+      // 檢查 token 是否有效
+      this.checkResponseStatus(response)
+
       if (!response.ok) {
         throw new Error(`檔案下載失敗: ${response.statusText}`)
       }
@@ -255,6 +294,9 @@ class GoogleDriveService {
       }
     )
 
+    // 檢查 token 是否有效
+    this.checkResponseStatus(response)
+
     if (!response.ok) {
       const errorText = await response.text()
       console.error('API 錯誤詳細:', errorText)
@@ -279,6 +321,9 @@ class GoogleDriveService {
         body: JSON.stringify(content, null, 2)
       }
     )
+
+    // 檢查 token 是否有效
+    this.checkResponseStatus(response)
 
     if (!response.ok) {
       throw new Error(`檔案更新失敗: ${response.statusText}`)

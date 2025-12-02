@@ -5,6 +5,11 @@
 
 import { googleDriveService } from './googleDrive'
 
+/**
+ * Token 失效回調函數類型
+ */
+export type TokenInvalidCallback = () => Promise<boolean>
+
 // Google OAuth 設定
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 const SCOPES = 'https://www.googleapis.com/auth/drive.file'
@@ -21,6 +26,7 @@ class GoogleAuthService {
   private tokenClient: any = null
   private accessToken: string | null = null
   private tokenExpiry: number | null = null
+  private tokenInvalidCallback: TokenInvalidCallback | null = null
 
   /**
    * 初始化 Google Identity Services
@@ -149,6 +155,67 @@ class GoogleAuthService {
       return this.accessToken
     }
     return null
+  }
+
+  /**
+   * 設定 token 失效時的回調函數
+   * @param callback 當 token 失效時調用的回調函數，返回 true 表示使用者同意重新授權
+   */
+  setTokenInvalidCallback(callback: TokenInvalidCallback): void {
+    this.tokenInvalidCallback = callback
+  }
+
+  /**
+   * 處理 token 失效的情況
+   * 標記為連線中斷，並詢問使用者是否要重新授權
+   */
+  async handleTokenInvalid(): Promise<void> {
+    // 清除無效的 token
+    this.accessToken = null
+    this.tokenExpiry = null
+    googleDriveService.clearToken()
+    localStorage.removeItem('google_access_token')
+    localStorage.removeItem('google_token_expiry')
+
+    console.log('Token 已失效，標記為連線中斷')
+
+    // 如果有設定回調函數，調用它
+    if (this.tokenInvalidCallback) {
+      const shouldReauth = await this.tokenInvalidCallback()
+      if (shouldReauth) {
+        // 使用者同意重新授權
+        await this.requestAuth()
+      }
+    }
+  }
+
+  /**
+   * 強制重新授權（不檢查現有 token）
+   */
+  async forceReauth(): Promise<void> {
+    if (!this.tokenClient) {
+      await this.initialize()
+    }
+
+    return new Promise((resolve, reject) => {
+      try {
+        // 設定 callback
+        const originalCallback = this.tokenClient.callback
+        this.tokenClient.callback = (response: GoogleAuthResponse) => {
+          originalCallback(response)
+          if (response.error) {
+            reject(new Error(response.error))
+          } else {
+            resolve()
+          }
+        }
+
+        // 強制顯示授權選擇畫面
+        this.tokenClient.requestAccessToken({ prompt: 'consent' })
+      } catch (error) {
+        reject(error)
+      }
+    })
   }
 }
 
