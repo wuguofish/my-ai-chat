@@ -11,7 +11,6 @@ export default defineConfig({
     }
   },
   // GitHub Pages 部署設定
-  // 如果部署到 https://username.github.io/repo-name/，則設定為 '/repo-name/'
-  // 如果部署到自訂網域或 https://username.github.io/，則設定為 '/'
-  base: process.env.NODE_ENV === 'production' ? '/my-ai-chat/' : '/'
+  // 統一使用 '/my-ai-chat/' 作為 base path
+  base: '/my-ai-chat/'
 })
