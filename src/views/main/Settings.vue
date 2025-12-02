@@ -1,14 +1,28 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
+import { googleAuthService } from '@/services/googleAuth'
+import { googleDriveService } from '@/services/googleDrive'
 
 const router = useRouter()
 const userStore = useUserStore()
 const characterStore = useCharacterStore()
 const chatRoomStore = useChatRoomsStore()
+
+// Google Drive 同步狀態
+const isGoogleConnected = ref(false)
+const isSyncing = ref(false)
+
+// 檢查 Google 連線狀態
+const checkGoogleConnection = () => {
+  isGoogleConnected.value = googleAuthService.isTokenValid()
+}
+
+// 初始化時檢查
+checkGoogleConnection()
 
 const showApiKey = ref(false)
 const apiKeyInput = ref(userStore.apiKey)
@@ -125,6 +139,95 @@ const handleClearData = () => {
     }
   }
 }
+
+// Google Drive 相關功能
+const handleGoogleConnect = async () => {
+  try {
+    await googleAuthService.requestAuth()
+    checkGoogleConnection()
+    alert('Google Drive 連線成功！')
+  } catch (error) {
+    console.error('Google Drive 連線失敗:', error)
+    alert('Google Drive 連線失敗，請稍後再試')
+  }
+}
+
+const handleGoogleDisconnect = () => {
+  if (confirm('確定要中斷 Google Drive 連線嗎？')) {
+    googleAuthService.signOut()
+    checkGoogleConnection()
+    alert('已中斷 Google Drive 連線')
+  }
+}
+
+const handleGoogleBackup = async () => {
+  try {
+    isSyncing.value = true
+
+    // 確保已連線
+    if (!isGoogleConnected.value) {
+      await handleGoogleConnect()
+    }
+
+    // 準備備份資料
+    const data = {
+      user: userStore.profile,
+      characters: characterStore.characters,
+      chatRooms: chatRoomStore.chatRooms,
+      timestamp: new Date().toISOString()
+    }
+
+    // 上傳到 Google Drive
+    await googleDriveService.uploadBackup(data)
+    alert('備份到 Google Drive 成功！')
+  } catch (error) {
+    console.error('備份失敗:', error)
+    alert('備份失敗：' + (error as Error).message)
+  } finally {
+    isSyncing.value = false
+  }
+}
+
+const handleGoogleRestore = async () => {
+  try {
+    isSyncing.value = true
+
+    // 確保已連線
+    if (!isGoogleConnected.value) {
+      await handleGoogleConnect()
+    }
+
+    if (!confirm('確定要從 Google Drive 還原資料嗎？這會覆蓋現有資料！')) {
+      return
+    }
+
+    // 從 Google Drive 下載
+    const data = await googleDriveService.downloadBackup()
+
+    // 還原資料
+    if (data.user) userStore.setProfile(data.user)
+    if (data.characters) {
+      characterStore.clearCharacters()
+      data.characters.forEach((char: any) => {
+        characterStore.addCharacter(char)
+      })
+    }
+    if (data.chatRooms) {
+      chatRoomStore.clearAllData()
+      data.chatRooms.forEach((room: any) => {
+        chatRoomStore.createChatRoom(room.name, room.characterIds, room.type)
+      })
+    }
+
+    alert('從 Google Drive 還原成功！')
+    window.location.reload()
+  } catch (error) {
+    console.error('還原失敗:', error)
+    alert('還原失敗：' + (error as Error).message)
+  } finally {
+    isSyncing.value = false
+  }
+}
 </script>
 
 <template>
@@ -211,15 +314,80 @@ const handleClearData = () => {
       </div>
     </div>
 
+    <!-- Google Drive 同步 -->
+    <div class="settings-section">
+      <h3>Google Drive 同步</h3>
+      <div class="google-drive-section">
+        <div class="connection-status">
+          <span class="status-icon">{{ isGoogleConnected ? '🟢' : '⚪' }}</span>
+          <span class="status-text">
+            {{ isGoogleConnected ? 'Google Drive 已連線' : 'Google Drive 未連線' }}
+          </span>
+        </div>
+
+        <div class="action-list">
+          <button
+            v-if="!isGoogleConnected"
+            class="action-btn"
+            @click="handleGoogleConnect"
+            :disabled="isSyncing"
+          >
+            <span class="action-icon">🔗</span>
+            <div class="action-text">
+              <div class="action-title">連線 Google Drive</div>
+              <div class="action-desc">授權連線到你的 Google Drive</div>
+            </div>
+          </button>
+
+          <button
+            v-else
+            class="action-btn"
+            @click="handleGoogleDisconnect"
+            :disabled="isSyncing"
+          >
+            <span class="action-icon">🔌</span>
+            <div class="action-text">
+              <div class="action-title">中斷連線</div>
+              <div class="action-desc">取消 Google Drive 授權</div>
+            </div>
+          </button>
+
+          <button
+            class="action-btn"
+            @click="handleGoogleBackup"
+            :disabled="isSyncing || !isGoogleConnected"
+          >
+            <span class="action-icon">☁️</span>
+            <div class="action-text">
+              <div class="action-title">{{ isSyncing ? '備份中...' : '備份到 Google Drive' }}</div>
+              <div class="action-desc">將資料備份到雲端</div>
+            </div>
+          </button>
+
+          <button
+            class="action-btn"
+            @click="handleGoogleRestore"
+            :disabled="isSyncing || !isGoogleConnected"
+          >
+            <span class="action-icon">📥</span>
+            <div class="action-text">
+              <div class="action-title">{{ isSyncing ? '還原中...' : '從 Google Drive 還原' }}</div>
+              <div class="action-desc">從雲端還原資料</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- 資料管理 -->
     <div class="settings-section">
-      <h3>資料管理</h3>
+      <h3>本地資料管理</h3>
       <div class="action-list">
         <button class="action-btn" @click="handleExportData">
-          <span class="action-icon">📥</span>
+          <span class="action-icon">💾</span>
           <div class="action-text">
             <div class="action-title">匯出資料</div>
-            <div class="action-desc">備份所有資料到檔案</div>
+            <div class="action-desc">備份所有資料到本地檔案</div>
           </div>
         </button>
 
@@ -227,7 +395,7 @@ const handleClearData = () => {
           <span class="action-icon">📤</span>
           <div class="action-text">
             <div class="action-title">匯入資料</div>
-            <div class="action-desc">從檔案還原資料</div>
+            <div class="action-desc">從本地檔案還原資料</div>
           </div>
           <input type="file" accept=".json" style="display: none" @change="handleImportData">
         </label>
@@ -371,10 +539,35 @@ const handleClearData = () => {
   margin-bottom: var(--spacing-md);
 }
 
-
 .btn-small {
   padding: var(--spacing-sm) var(--spacing-xl);
   font-size: var(--text-sm);
+}
+
+/* Google Drive 同步 */
+.google-drive-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+}
+
+.status-icon {
+  font-size: 20px;
+}
+
+.status-text {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  font-weight: 500;
 }
 
 /* 動作列表 */
