@@ -16,10 +16,15 @@ export interface GetCharacterResponseParams {
   context?: Partial<SystemPromptContext>
 }
 
+export interface CharacterResponse {
+  text: string
+  newAffection?: number
+}
+
 /**
  * 呼叫 Gemini API 取得角色回應
  */
-export async function getCharacterResponse(params: GetCharacterResponseParams): Promise<string> {
+export async function getCharacterResponse(params: GetCharacterResponseParams): Promise<CharacterResponse> {
   const { apiKey, character, user, room, messages, userMessage, context } = params
 
   try {
@@ -68,7 +73,7 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
     })
 
     // 建立對話歷史
-    const history = messages.slice(-10).map(msg => {
+    const history = messages.slice(-20).map(msg => {
       const isUser = msg.senderId === 'user'
       const isCurrentCharacter = msg.senderId === character.id
 
@@ -97,7 +102,26 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
     const response = result.response
     const text = response.text()
 
-    return text
+    // 解析好感度（從最後一行提取）
+    const lines = text.trim().split('\n')
+    const lastLine = (lines.length > 0 ? lines[lines.length - 1] : '') ?? ''
+    const parsedAffection = parseInt(lastLine.trim(), 10)
+
+    // 如果最後一行是有效的數字（>= 0），就提取它作為新好感度
+    if (!isNaN(parsedAffection) && parsedAffection >= 0) {
+      // 移除最後一行的數字，保留對話內容
+      const cleanText = lines.slice(0, -1).join('\n').trim()
+      return {
+        text: cleanText,
+        newAffection: parsedAffection
+      }
+    }
+
+    // 如果解析失敗，就回傳原文，不更新好感度
+    return {
+      text: text.trim(),
+      newAffection: undefined
+    }
   } catch (error) {
     console.error('Gemini API 錯誤:', error)
     throw new Error('無法取得 AI 回應，請稍後再試')

@@ -48,13 +48,13 @@ export const RELATIONSHIP_LEVELS: Record<RelationshipLevel, RelationshipLevelInf
   close_friend: {
     name: '好友/曖昧',
     affectionRange: [80, 200],
-    color: '#FFA940',
+    color: '#ee5f00ff',
     description: '無話不談的好朋友'
   },
   soulmate: {
     name: '摯友/戀人',
     affectionRange: [200, Number.POSITIVE_INFINITY],
-    color: '#FF4D4F',
+    color: '#bb0003',
     description: '最深厚的關係'
   }
 } as const

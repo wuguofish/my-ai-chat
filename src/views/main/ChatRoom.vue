@@ -5,8 +5,10 @@ import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useUserStore } from '@/stores/user'
 import { useRelationshipsStore } from '@/stores/relationships'
+import { useMemoriesStore } from '@/stores/memories'
 import { formatMessageTime } from '@/utils/chatHelpers'
 import { getCharacterResponse } from '@/services/gemini'
+import { generateMemorySummary, extractLongTermMemories } from '@/services/memoryService'
 
 const route = useRoute()
 const router = useRouter()
@@ -14,6 +16,7 @@ const characterStore = useCharacterStore()
 const chatRoomStore = useChatRoomsStore()
 const userStore = useUserStore()
 const relationshipsStore = useRelationshipsStore()
+const memoriesStore = useMemoriesStore()
 
 const roomId = computed(() => route.params.id as string)
 const room = computed(() => chatRoomStore.getRoomById(roomId.value))
@@ -63,6 +66,78 @@ const scrollToBottom = async () => {
   }
 }
 
+// 記憶處理：每 15 則訊息生成短期記憶
+const handleMemoryGeneration = async () => {
+  if (!character.value) return
+
+  const currentMessages = messages.value
+
+  // 每 15 則訊息觸發一次記憶生成
+  if (currentMessages.length % 15 !== 0) return
+
+  try {
+    const apiKey = userStore.apiKey
+    if (!apiKey) return
+
+    // 取得最近 15 則訊息
+    const recentMessages = currentMessages.slice(-15)
+
+    // 生成短期記憶摘要
+    const summary = await generateMemorySummary(apiKey, recentMessages)
+
+    // 嘗試新增短期記憶
+    const result = memoriesStore.addRoomMemory(roomId.value, summary, 'auto')
+
+    // 如果返回 null，表示需要處理記憶（6 筆全未處理）
+    if (result === null) {
+      console.log('短期記憶已滿，開始提取長期記憶...')
+      await processShortTermMemories()
+
+      // 處理完後，再次嘗試新增
+      memoriesStore.addRoomMemory(roomId.value, summary, 'auto')
+    }
+  } catch (error) {
+    console.error('記憶生成失敗:', error)
+    // 靜默失敗，不影響正常對話
+  }
+}
+
+// 處理短期記憶，提取長期記憶
+const processShortTermMemories = async () => {
+  if (!character.value) return
+
+  try {
+    const apiKey = userStore.apiKey
+    if (!apiKey) return
+
+    // 取得所有短期記憶
+    const shortTermMemories = memoriesStore.getRoomMemories(roomId.value)
+
+    if (shortTermMemories.length === 0) return
+
+    // 呼叫 AI 提取長期記憶
+    const longTermMemoryContents = await extractLongTermMemories(apiKey, shortTermMemories)
+
+    // 將提取的長期記憶存入角色記憶
+    for (const content of longTermMemoryContents) {
+      memoriesStore.addCharacterMemory(
+        character.value.id,
+        content,
+        'auto',
+        roomId.value
+      )
+    }
+
+    // 標記所有短期記憶為已處理
+    memoriesStore.markRoomMemoriesAsProcessed(roomId.value)
+
+    console.log(`成功提取 ${longTermMemoryContents.length} 條長期記憶`)
+  } catch (error) {
+    console.error('處理短期記憶失敗:', error)
+    // 靜默失敗，不影響正常對話
+  }
+}
+
 // 發送訊息
 const handleSendMessage = async () => {
   if (!messageInput.value.trim() || !character.value || isLoading.value) return
@@ -107,6 +182,15 @@ const handleSendMessage = async () => {
           .filter((c): c is NonNullable<typeof c> => c !== null)
       : undefined
 
+    // 取得角色的長期記憶（全域重要記憶）
+    const longTermMemories = memoriesStore.getCharacterMemories(character.value.id)
+
+    // 取得聊天室的短期記憶（情境記憶）
+    const shortTermMemories = memoriesStore.getRoomMemories(roomId.value)
+
+    // 取得聊天室摘要
+    const roomSummary = memoriesStore.getRoomSummary(roomId.value)
+
     const aiResponse = await getCharacterResponse({
       apiKey,
       character: character.value,
@@ -126,22 +210,30 @@ const handleSendMessage = async () => {
       context: {
         userRelationship,
         characterRelationships,
-        otherCharactersInRoom
-        // TODO: 之後加入記憶資訊
-        // longTermMemories: ...,
-        // shortTermMemories: ...
+        otherCharactersInRoom,
+        longTermMemories,
+        shortTermMemories,
+        roomSummary
       }
     })
+
+    // 更新好感度（如果 AI 有回傳新的好感度）
+    if (aiResponse.newAffection !== undefined) {
+      relationshipsStore.updateAffection(character.value.id, aiResponse.newAffection)
+    }
 
     // 新增角色訊息
     chatRoomStore.addMessage(roomId.value, {
       roomId: roomId.value,
       senderId: character.value.id,
       senderName: character.value.name,
-      content: aiResponse
+      content: aiResponse.text
     })
 
     scrollToBottom()
+
+    // 記憶處理：每 15 則訊息生成短期記憶
+    await handleMemoryGeneration()
   } catch (error) {
     console.error('Failed to get character response:', error)
     alert('取得回應時發生錯誤')

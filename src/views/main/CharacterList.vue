@@ -2,10 +2,13 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
+import { useRelationshipsStore } from '@/stores/relationships'
+import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import type { Character } from '@/types'
 
 const router = useRouter()
 const characterStore = useCharacterStore()
+const relationshipsStore = useRelationshipsStore()
 
 const characters = computed(() => characterStore.characters)
 const characterCount = computed(() => characters.value.length)
@@ -24,6 +27,27 @@ const getGenderText = (gender?: string) => {
     case 'male': return '男'
     case 'female': return '女'
     default: return '未設定'
+  }
+}
+
+const getCharacterRelationship = (characterId: string) => {
+  return relationshipsStore.getUserCharacterRelationship(characterId)
+}
+
+const getRelationshipDisplay = (characterId: string) => {
+  const relationship = getCharacterRelationship(characterId)
+  if (!relationship) {
+    return {
+      name: '陌生人',
+      affection: 0,
+      color: '#999999'
+    }
+  }
+  const levelInfo = getRelationshipLevelInfo(relationship.level, relationship.isRomantic)
+  return {
+    name: levelInfo.name,
+    affection: relationship.affection,
+    color: levelInfo.color
   }
 }
 
@@ -80,6 +104,12 @@ const getDefaultAvatar = (name: string) => {
           <span class="meta-item">{{ getGenderText(character.gender) }}</span>
           <span class="meta-item">{{ character.age }}歲</span>
           <div style="margin-top: 0.3rem;"><span class="meta-item">{{ character.profession }}</span></div>
+          <div class="relationship-info">
+            <span class="relationship-level" :style="{ backgroundColor: getRelationshipDisplay(character.id).color }">
+              {{ getRelationshipDisplay(character.id).name }}
+            </span>
+            <span class="affection-value">♥ {{ getRelationshipDisplay(character.id).affection }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -217,6 +247,30 @@ const getDefaultAvatar = (name: string) => {
   background: rgba(0, 0, 0, 0.1);
   border-radius: var(--radius-lg);
   font-size: var(--text-base);
+}
+
+.relationship-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.relationship-level {
+  padding: var(--spacing-xs) var(--spacing-md);
+  color: white;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.affection-value {
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: rgba(255, 77, 79, 0.1);
+  color: #ff4d4f;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .delete-btn {

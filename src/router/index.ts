@@ -55,6 +55,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/main/CharacterForm.vue')
       },
       {
+        path: 'characters/:id/memories',
+        name: 'MemoryManager',
+        component: () => import('@/views/main/MemoryManager.vue')
+      },
+      {
         path: 'settings',
         name: 'Settings',
         component: () => import('@/views/main/Settings.vue')

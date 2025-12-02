@@ -73,8 +73,7 @@ const handleEdit = () => {
 }
 
 const handleManageMemories = () => {
-  // TODO: 導航到記憶管理頁面
-  console.log('管理記憶')
+  router.push(`/main/characters/${characterId.value}/memories`)
 }
 
 // 調整關係（包含親密關係設定）
@@ -123,7 +122,7 @@ const newRelation = ref({
   bidirectional: true // 預設雙向關係
 })
 
-// 分別取得「當前角色對其他角色」和「其他角色對當前角色」的關係
+// 分別取得「目前角色對其他角色」和「其他角色對目前角色」的關係
 const relationshipsFrom = computed(() =>
   characterRelationships.value.filter(rel => rel.fromCharacterId === characterId.value)
 )
@@ -132,7 +131,7 @@ const relationshipsTo = computed(() =>
   characterRelationships.value.filter(rel => rel.toCharacterId === characterId.value)
 )
 
-// 取得可以建立關係的角色（排除自己和已有「當前角色→其他角色」關係的）
+// 取得可以建立關係的角色（排除自己和已有「目前角色→其他角色」關係的）
 const availableCharacters = computed(() => {
   const existingRelationIds = relationshipsFrom.value.map(rel => rel.toCharacterId)
   return characterStore.characters.filter(
@@ -173,7 +172,7 @@ const handleSaveNewRelation = () => {
 }
 
 const handleEditRelation = (targetId: string) => {
-  // 只能編輯「當前角色→目標角色」的關係
+  // 只能編輯「目前角色→目標角色」的關係
   const relation = relationshipsFrom.value.find(rel => rel.toCharacterId === targetId)
 
   if (relation) {
@@ -212,7 +211,7 @@ const handleSaveEditRelation = () => {
 
 const handleDeleteRelation = (targetId: string) => {
   if (confirm('確定要刪除這個關係嗎？')) {
-    // 只刪除「當前角色→目標角色」的關係（單向刪除）
+    // 只刪除「目前角色→目標角色」的關係（單向刪除）
     const index = relationshipsStore.characterToCharacter.findIndex(
       r => r.fromCharacterId === characterId.value && r.toCharacterId === targetId
     )

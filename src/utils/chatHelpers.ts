@@ -72,6 +72,34 @@ export function generateSystemPrompt(context: SystemPromptContext): string {
     } else {
       parts.push(relationshipInfo)
     }
+
+    // 4.1 好感度系統規則
+    const affectionRules = `\n\n## 好感度系統規則
+目前好感度：${userRelationship.affection}
+${userRelationship.isRomantic ? '關係發展方向：允許發展戀愛關係' : '關係發展方向：純友情路線（請勿往戀愛方向發展）'}
+
+好感度等級對照：
+• 陌生人（0-10）：剛認識的階段
+• 點頭之交（10-30）：偶爾打招呼的關係
+• 朋友（30-80）：能聊得來的朋友
+${userRelationship.isRomantic ? '• 曖昧（80-200）：無話不談的好朋友，可能發展戀愛關係' : '• 好友（80-200）：無話不談的好朋友（但保持純友情）'}
+${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼此信賴' : '• 摯友（200+）：最深厚的關係，但不是戀人'}
+
+【重要】每次回應的最後一行必須輸出更新後的好感度數值（純數字）。
+
+評估標準：
+• 根據本次對話的整體氛圍、情感深度、互動品質來判斷
+• 正常友善對話：+1~3
+• 深刻的情感交流、互相理解：+5~15
+• 重大承諾、感人時刻、突破性進展：可大幅提升（例如從 50 → 150）
+• 冷淡、傷害、背叛：-5~-20
+
+範例回應格式：
+我真的很感謝你一直陪在我身邊...
+85
+
+（最後一行的數字就是更新後的好感度總值）`
+    parts.push(affectionRules)
   }
 
   // 5. 與其他角色的關係（群聊時）
@@ -167,6 +195,14 @@ function generateDefaultCharacterPrompt(character: Character): string {
   // 討厭的事物
   if (character.dislikes && character.dislikes.trim()) {
     parts.push(`\n討厭：${character.dislikes}`)
+  }
+
+  // 角色過去發生的重大事件
+  if (character.events && character.events.length > 0) {
+    parts.push(`\n\n重要經歷與事件：`)
+    character.events.forEach((event, index) => {
+      parts.push(`\n${index + 1}. ${event}`)
+    })
   }
 
   return parts.join('')

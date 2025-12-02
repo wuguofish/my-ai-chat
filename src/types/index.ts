@@ -123,6 +123,7 @@ export interface Memory {
   source: MemorySource
   createdAt: string
   sourceRoomId?: string
+  processed?: boolean  // 標記短期記憶是否已處理（升級為長期記憶）
 }
 
 export interface CharacterGlobalMemory {
