@@ -3,10 +3,21 @@
  */
 
 // 當前版本號（每次更新時記得更新這個值）
-export const CURRENT_VERSION = '1.0.0'
+export const CURRENT_VERSION = '1.1.0'
 
 // 版本歷史
 export const VERSION_HISTORY = [
+  {
+    version: '1.1.0',
+    date: '2024-01-16',
+    features: [
+      '新增記憶管理面板，可查看與管理角色記憶',
+      '新增手動生成記憶功能，可即時將對話轉換為記憶',
+      '優化匯出/匯入功能，現在包含聊天訊息',
+      '改善底部導航列的圖示顯示效果',
+      '程式碼重構，提升可維護性'
+    ]
+  },
   {
     version: '1.0.0',
     date: '2024-01-15',

@@ -14,6 +14,12 @@ const currentTab = computed(() => {
   return 'chats'
 })
 
+// 輔助函數：檢查是否為當前活動的 tab
+const isActive = (tab: string) => currentTab.value === tab
+
+// 輔助函數：取得圖示的 fill 顏色
+const getIconFill = (tab: string) => isActive(tab) ? '#764ba2' : '#ffffff00'
+
 const navigateTo = (tab: string) => {
   router.push(`/main/${tab}`)
 }
@@ -28,23 +34,18 @@ const navigateTo = (tab: string) => {
 
     <!-- 底部導航 -->
     <nav class="bottom-nav">
-      <button :class="['nav-item', { active: currentTab === 'chats' }]" @click="navigateTo('chats')">
-        <template v-if="currentTab==='chats'">
-          <MessageCircleMore fill="white" />
-        </template>
-        <template v-else>
-          <MessageCircleMore />
-        </template>
+      <button :class="['nav-item', { active: isActive('chats') }]" @click="navigateTo('chats')">
+        <MessageCircleMore :fill="getIconFill('chats')" />
         <span class="nav-label">聊天</span>
       </button>
 
-      <button :class="['nav-item', { active: currentTab === 'characters' }]" @click="navigateTo('characters')">
-        <UsersRound />
+      <button :class="['nav-item', { active: isActive('characters') }]" @click="navigateTo('characters')">
+        <UsersRound :fill="getIconFill('characters')" />
         <span class="nav-label">好友</span>
       </button>
 
-      <button :class="['nav-item', { active: currentTab === 'settings' }]" @click="navigateTo('settings')">
-        <Settings />
+      <button :class="['nav-item', { active: isActive('settings') }]" @click="navigateTo('settings')">
+        <Settings :fill="getIconFill('settings')" />
         <span class="nav-label">設定</span>
       </button>
     </nav>

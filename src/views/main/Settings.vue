@@ -7,7 +7,7 @@ import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useMemoriesStore } from '@/stores/memories'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { googleAuthService } from '@/services/googleAuth'
-import { googleDriveService, TokenInvalidError } from '@/services/googleDrive'
+import { googleDriveService } from '@/services/googleDrive'
 import { CURRENT_VERSION, clearCacheAndReload } from '@/utils/version'
 
 const router = useRouter()
@@ -230,29 +230,29 @@ const handleGoogleBackup = async () => {
   } catch (error) {
     console.error('備份失敗:', error)
 
-    // 處理 token 無效錯誤
-    if (error instanceof TokenInvalidError) {
-      // 標記為連線中斷
-      checkGoogleConnection()
+    alert('備份失敗：' + (error as Error).message)
 
-      // 詢問使用者是否要重新授權
-      const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續備份？')
-      if (shouldReauth) {
-        try {
-          await googleAuthService.handleTokenInvalid()
-          checkGoogleConnection()
+    // 標記為連線中斷
+    isSyncing.value = false
+    isGoogleConnected.value = false;
 
-          // 重新授權成功，重試備份
-          if (isGoogleConnected.value) {
-            alert('重新授權成功！請再次點擊備份按鈕。')
-          }
-        } catch (reauthError) {
-          alert('重新授權失敗：' + (reauthError as Error).message)
+    // 詢問使用者是否要重新授權
+    const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續備份？')
+    if (shouldReauth) {
+      try {
+        googleAuthService.signOut()
+        await googleAuthService.requestAuth()
+        checkGoogleConnection()
+        // 重新授權成功，重試備份
+        if (isGoogleConnected.value) {
+          alert('重新授權成功！即將重新執行備份。')
+          handleGoogleBackup()
         }
+      } catch (reauthError) {
+        alert('重新授權失敗：' + (reauthError as Error).message)
       }
-    } else {
-      alert('備份失敗：' + (error as Error).message)
     }
+    
   } finally {
     isSyncing.value = false
   }
@@ -311,30 +311,29 @@ const handleGoogleRestore = async () => {
     window.location.reload()
   } catch (error) {
     console.error('還原失敗:', error)
+    
+    // 標記為連線中斷
+    isSyncing.value = false
+    isGoogleConnected.value = false;
 
-    // 處理 token 無效錯誤
-    if (error instanceof TokenInvalidError) {
-      // 標記為連線中斷
-      checkGoogleConnection()
+    // 詢問使用者是否要重新授權
+    const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續備份？')
+    if (shouldReauth) {
+      try {
+        googleAuthService.signOut()
+        await googleAuthService.requestAuth()
+        checkGoogleConnection()
 
-      // 詢問使用者是否要重新授權
-      const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續還原？')
-      if (shouldReauth) {
-        try {
-          await googleAuthService.handleTokenInvalid()
-          checkGoogleConnection()
-
-          // 重新授權成功，重試還原
-          if (isGoogleConnected.value) {
-            alert('重新授權成功！請再次點擊還原按鈕。')
-          }
-        } catch (reauthError) {
-          alert('重新授權失敗：' + (reauthError as Error).message)
+        // 重新授權成功，重試還原
+        if (isGoogleConnected.value) {
+          alert('重新授權成功！即將重新執行還原。')
+          handleGoogleRestore();
         }
+      } catch (reauthError) {
+        alert('重新授權失敗：' + (reauthError as Error).message)
       }
-    } else {
-      alert('還原失敗：' + (error as Error).message)
     }
+    
   } finally {
     isSyncing.value = false
   }
@@ -551,7 +550,6 @@ const handleGoogleRestore = async () => {
             <li><strong>角色管理系統</strong> - 建立和管理 AI 角色</li>
             <li><strong>記憶系統</strong> - 長期/短期記憶自動管理</li>
             <li><strong>關係系統</strong> - 好感度追蹤與等級變化</li>
-            <li><strong>群聊功能</strong> - 支援多角色對話</li>
             <li><strong>Google Drive 同步</strong> - 雲端備份與還原</li>
           </ul>
         </div>

@@ -28,11 +28,10 @@ export function generateSystemPrompt(context: SystemPromptContext): string {
   const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary, otherCharactersInRoom } = context
 
   // 如果有自訂 system prompt，使用它作為基礎
-  const basePrompt = character.systemPrompt && character.systemPrompt.trim()
-    ? character.systemPrompt
-    : generateDefaultCharacterPrompt(character)
+  
+  const parts: string[] = [generateDefaultCharacterPrompt(character)]
 
-  const parts: string[] = [basePrompt]
+  
 
   // 1. 目前時間資訊
   const now = new Date()
@@ -146,7 +145,7 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     `- 你不知道其他人的內部設定或秘密，除非他們在對話中說出來或在記憶中曾經揭示。`,
     `- 回覆必須口語化、生活化。避免使用書信體或過於正式的用語。`,
     `- 避免重複已經講過的話、問候或話題。`,
-    `- 對話中若需要描述動作，用(動作)表達。`,
+    `- 對話中若需要描述動作，用(動作)表達，並用第三人稱描述所有人的動作。`,
     `- 請務必回應使用者的每一句話，避免只回傳空洞的動作描述（如「看著你」、「微笑」），必須要有實際的對話內容。`,
     `- 嚴禁輸出思考過程：只輸出你真正要傳送給對方的文字。`,
     `- 禁止連續輸出無意義的內容（如「...」、「......」）。`,
@@ -160,7 +159,13 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
 
   parts.push(instructions.join('\n'))
 
-  return parts.join('')
+  const basePrompt = character.systemPrompt && character.systemPrompt.trim()
+    ? character.systemPrompt
+    : ''
+
+  parts.push(basePrompt)
+
+  return parts.join('\n')
 }
 
 /**

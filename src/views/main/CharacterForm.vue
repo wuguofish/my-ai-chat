@@ -285,7 +285,20 @@ const getDefaultAvatar = (name: string) => {
             :maxlength="LIMITS.MAX_SYSTEM_PROMPT_LENGTH" rows="6" />
           <div class="char-count">{{ systemPrompt.length }}/{{ LIMITS.MAX_SYSTEM_PROMPT_LENGTH }}</div>
           <div class="help-text">
-            提示：系統提示詞會覆蓋上述基本資料自動生成的設定
+            <p style="margin-top: 8px;">
+              <strong>💡
+                提示：</strong>系統提示詞可用於<span class="text-info">補充特殊設定、禁忌話題或角色獨有的表達模式</span>，會附加在自動生成內容之後。
+              <br />因此<span class="text-info">無須重複自動生成的內容</span>。
+            </p>
+            <p><strong>📝 自動生成的內容包含：</strong></p>
+            <ul style="margin: 8px 0; padding-left: 20px; line-height: 1.6;">
+              <li>角色基本資料（姓名、背景、性格、說話風格、喜好等）</li>
+              <li>目前時間與情境</li>
+              <li>使用者資料與關係</li>
+              <li>好感度系統規則（含回應格式要求）</li>
+              <li>角色記憶（長期與短期）</li>
+              <li>結尾指示（避免書信體、強制口語化、動作描述規則等）</li>
+            </ul>
           </div>
         </div>
 
