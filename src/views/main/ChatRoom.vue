@@ -9,6 +9,7 @@ import { useMemoriesStore } from '@/stores/memories'
 import { formatMessageTime } from '@/utils/chatHelpers'
 import { getCharacterResponse } from '@/services/gemini'
 import { generateMemorySummary, extractLongTermMemories } from '@/services/memoryService'
+import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -242,9 +243,16 @@ const handleSendMessage = async () => {
   }
 }
 
+// 偵測是否為觸控裝置（手機/平板）
+const isTouchDevice = () => {
+  return 'ontouchstart' in window || navigator.maxTouchPoints > 0
+}
+
 // 處理 Enter 送出
 const handleKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Enter' && !event.shiftKey) {
+  // 在手機上，Enter 就是換行，不送出訊息（需要點按鈕）
+  // 在桌面上，Enter 送出，Shift+Enter 換行
+  if (!isTouchDevice() && event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     handleSendMessage()
   }
@@ -343,11 +351,15 @@ onMounted(() => {
 </script>
 
 <template>
-  <div v-if="room && character" class="chat-room">
+  <div v-if="room && character" class="chat-room page">
     <!-- Header -->
     <div class="chat-header">
-      <button v-if="!isMultiSelectMode" class="back-btn" @click="handleBack">←</button>
-      <button v-else class="back-btn" @click="handleCancelMultiSelect">✕</button>
+      <button v-if="!isMultiSelectMode" class="back-btn" @click="handleBack">
+        <ArrowLeft :size="24" />
+      </button>
+      <button v-else class="back-btn" @click="handleCancelMultiSelect">
+        <X :size="24" />
+      </button>
 
       <div v-if="!isMultiSelectMode" class="chat-header-info">
         <div class="avatar">
@@ -373,7 +385,9 @@ onMounted(() => {
     <!-- Messages -->
     <div ref="messagesContainer" class="messages-container">
       <div v-if="messages.length === 0" class="empty-messages">
-        <div class="empty-icon">💬</div>
+        <div class="empty-icon">
+          <MessageCircle :size="64" :stroke-width="1.5" />
+        </div>
         <p>開始和 {{ character.name }} 聊天吧！</p>
       </div>
 
@@ -432,10 +446,12 @@ onMounted(() => {
         @click.stop
       >
         <button class="menu-item" @click="handleCopyMessage">
-          📋 複製
+          <Copy :size="18" />
+          <span>複製</span>
         </button>
         <button class="menu-item delete" @click="handleEnterDeleteMode">
-          🗑️ 刪除
+          <Trash2 :size="18" />
+          <span>刪除</span>
         </button>
       </div>
     </div>
@@ -445,7 +461,7 @@ onMounted(() => {
       <textarea
         v-model="messageInput"
         class="message-input"
-        placeholder="輸入訊息... (Enter 送出，Shift+Enter 換行)"
+        :placeholder="isTouchDevice() ? '輸入訊息...' : '輸入訊息... (Enter 送出，Shift+Enter 換行)'"
         rows="1"
         :disabled="isLoading"
         @keydown="handleKeydown"
@@ -455,7 +471,7 @@ onMounted(() => {
         :disabled="!messageInput.trim() || isLoading"
         @click="handleSendMessage"
       >
-        發送
+        <Send :size="20" />
       </button>
     </div>
   </div>
@@ -465,7 +481,7 @@ onMounted(() => {
 .chat-room {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 92px); /* 扣掉底部導航列的高度 */
+  height: 100%;
   background: var(--color-bg-secondary);
 }
 
@@ -559,9 +575,9 @@ onMounted(() => {
 }
 
 .empty-icon {
-  font-size: 64px;
   margin-bottom: var(--spacing-lg);
-  opacity: 0.5;
+  opacity: 0.3;
+  color: var(--color-text-tertiary);
 }
 
 .message {
@@ -723,7 +739,10 @@ onMounted(() => {
 }
 
 .send-btn {
-  padding: var(--spacing-md) var(--spacing-2xl);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-md) var(--spacing-xl);
   background: var(--color-primary);
   color: var(--color-text-white);
   border: none;
@@ -733,6 +752,7 @@ onMounted(() => {
   cursor: pointer;
   transition: all var(--transition);
   white-space: nowrap;
+  min-width: 56px;
 }
 
 .send-btn:hover:not(:disabled) {
@@ -801,7 +821,9 @@ onMounted(() => {
 }
 
 .menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
   width: 100%;
   padding: var(--spacing-md) var(--spacing-lg);
   text-align: left;

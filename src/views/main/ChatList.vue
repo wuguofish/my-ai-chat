@@ -83,7 +83,7 @@ const getLastMessageTime = (room: ChatRoom) => {
 </script>
 
 <template>
-  <div class="chat-list">
+  <div class="page">
     <div class="page-header">
       <h2>聊天</h2>
       <button class="btn btn-primary btn-sm" @click="showNewChatModal = true">
@@ -93,12 +93,7 @@ const getLastMessageTime = (room: ChatRoom) => {
 
     <!-- 聊天室列表 -->
     <div v-if="chatRooms.length > 0" class="chat-rooms-container">
-      <div
-        v-for="room in chatRooms"
-        :key="room.id"
-        class="chat-room-item"
-        @click="handleOpenChatRoom(room.id)"
-      >
+      <div v-for="room in chatRooms" :key="room.id" class="chat-room-item" @click="handleOpenChatRoom(room.id)">
         <div class="avatar">
           <img :src="getChatRoomAvatar(room)" :alt="room.name">
         </div>
@@ -145,12 +140,8 @@ const getLastMessageTime = (room: ChatRoom) => {
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="showNewChatModal = false">取消</button>
-          <button
-            v-if="availableCharacters.length > 0"
-            class="btn btn-primary"
-            :disabled="!selectedCharacterId"
-            @click="handleCreateSingleChat"
-          >
+          <button v-if="availableCharacters.length > 0" class="btn btn-primary" :disabled="!selectedCharacterId"
+            @click="handleCreateSingleChat">
             開始聊天
           </button>
         </div>
@@ -160,15 +151,6 @@ const getLastMessageTime = (room: ChatRoom) => {
 </template>
 
 <style scoped>
-.chat-list {
-  min-height: 100vh;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
 
 .chat-rooms-container {
   padding: var(--spacing-md);

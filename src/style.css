@@ -17,7 +17,7 @@
   --color-secondary: #764ba2;
 
   --color-success: #52c41a;
-  --color-warning: #ffa940;
+  --color-warning: #fa9111;
   --color-error: #ff4d4f;
   --color-info: #66b3ff;
 
@@ -117,7 +117,7 @@ body {
 }
 
 #app {
-  min-height: 100vh;
+  min-height: 100%;
 }
 
 /* ==========================================
@@ -227,7 +227,7 @@ button:disabled {
 
 .btn-warning {
   background: var(--color-warning);
-  color: var(--color-text-primary);  
+  color: var(--color-text-white);  
 }
 
 .btn-warning:hover:not(:disabled) {
@@ -329,6 +329,12 @@ textarea {
    ========================================== */
 
 /* 頁面 Header (sticky) */
+
+.page {
+  min-height: 100%;
+}
+
+
 .page-header {
   position: sticky;
   top: 0;
@@ -337,6 +343,10 @@ textarea {
   padding: var(--spacing-xl);
   border-bottom: 2px solid var(--color-border);
   box-shadow: var(--shadow-sm);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
 }
 
 .page-header h1,
@@ -345,6 +355,8 @@ textarea {
   color: var(--color-text-primary);
   margin: 0;
 }
+
+
 
 /* 內容區塊 */
 .content-section {
@@ -378,7 +390,14 @@ textarea {
   font-size: var(--text-xl);
   font-weight: 600;
   color: var(--color-text-primary);
-  margin: 0 0 var(--spacing-lg) 0;
+}
+
+.section {
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: var(--spacing-xl);
+  margin-bottom: var(--spacing-xl);
 }
 
 /* 空狀態顯示 */
@@ -389,6 +408,12 @@ textarea {
   justify-content: center;
   padding: var(--spacing-4xl) var(--spacing-xl);
   text-align: center;
+}
+
+.empty-icon {
+  font-size: 80px;
+  margin-bottom: var(--spacing-xl);
+  opacity: 0.5;
 }
 
 .empty-state-icon {
@@ -457,6 +482,9 @@ textarea {
   transition: all var(--transition);
   background: var(--color-bg-secondary);
   color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
 }
 
 .back-btn:hover {

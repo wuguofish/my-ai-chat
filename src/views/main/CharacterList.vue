@@ -76,8 +76,8 @@ const getDefaultAvatar = (name: string) => {
 </script>
 
 <template>
-  <div class="character-list">
-    <div class="header">
+  <div class="page">
+    <div class="page-header">
       <h2>好友</h2>
       <div class="count-info">{{ characterCount }}/15 位好友</div>
     </div>
@@ -127,61 +127,12 @@ const getDefaultAvatar = (name: string) => {
 </template>
 
 <style scoped>
-.character-list {
-  position: relative;
-}
-
-.header {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-sticky);
-  background: var(--color-bg-primary);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-xl);
-  border-bottom: 2px solid var(--color-border);
-  box-shadow: var(--shadow-sm);
-}
-
-.header h2 {
-  font-size: var(--text-4xl);
-  color: var(--color-text-primary);
-  margin: 0;
-}
 
 .count-info {
   font-size: var(--text-base);
   color: var(--color-text-tertiary);
 }
 
-/* 空狀態 */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px var(--spacing-xl);
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 80px;
-  margin-bottom: var(--spacing-xl);
-  opacity: 0.5;
-}
-
-.empty-state h3 {
-  font-size: var(--text-3xl);
-  color: var(--color-text-primary);
-  margin-bottom: var(--spacing-md);
-}
-
-.empty-state p {
-  font-size: var(--text-lg);
-  color: var(--color-text-secondary);
-  margin-bottom: var(--spacing-2xl);
-}
 
 /* 好友網格 */
 .character-grid {

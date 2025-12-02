@@ -179,6 +179,14 @@ const handleStartSetup = () => {
         <h1>歡迎使用愛聊天</h1>
         <p>與你的 AI 角色們開始對話</p>
 
+        <button class="btn-primary btn-large" @click="handleStartSetup" :disabled="isImporting">
+          開始新的設定
+        </button>
+
+        <div class="divider">
+          <span>或</span>
+        </div>
+
         <div class="import-options">
           <div class="import-section">
             <h3>已有備份資料？</h3>
@@ -191,20 +199,11 @@ const handleStartSetup = () => {
                   <div class="import-title">{{ isImporting ? '匯入中...' : '本地檔案匯入' }}</div>
                   <div class="import-subtitle">從電腦選擇備份檔案</div>
                 </div>
-                <input
-                  type="file"
-                  accept=".json"
-                  style="display: none"
-                  @change="handleImportLocalFile"
-                  :disabled="isImporting"
-                >
+                <input type="file" accept=".json" style="display: none" @change="handleImportLocalFile"
+                  :disabled="isImporting">
               </label>
 
-              <button
-                class="import-btn"
-                @click="handleImportFromGoogleDrive"
-                :disabled="isImporting"
-              >
+              <button class="import-btn" @click="handleImportFromGoogleDrive" :disabled="isImporting">
                 <span class="import-icon">☁️</span>
                 <div class="import-text">
                   <div class="import-title">{{ isImporting ? '匯入中...' : 'Google Drive 匯入' }}</div>
@@ -213,49 +212,22 @@ const handleStartSetup = () => {
               </button>
             </div>
           </div>
-
-          <div class="divider">
-            <span>或</span>
-          </div>
-
-          <button
-            class="btn-primary btn-large"
-            @click="handleStartSetup"
-            :disabled="isImporting"
-          >
-            開始新的設定
-          </button>
         </div>
       </div>
 
       <!-- 步驟 1: API Key -->
-      <Step1ApiKey
-        v-if="currentStep === 1"
-        @next="handleStep1Complete"
-      />
+      <Step1ApiKey v-if="currentStep === 1" @next="handleStep1Complete" />
 
       <!-- 步驟 2: 個人資料 -->
-      <Step2Profile
-        v-if="currentStep === 2"
-        @next="handleStep2Complete"
-        @back="currentStep = 1"
-      />
+      <Step2Profile v-if="currentStep === 2" @next="handleStep2Complete" @back="currentStep = 1" />
 
       <!-- 步驟 3: 建立角色 -->
-      <Step3Character
-        v-if="currentStep === 3"
-        @complete="handleStep3Complete"
-        @back="currentStep = 2"
-      />
+      <Step3Character v-if="currentStep === 3" @complete="handleStep3Complete" @back="currentStep = 2" />
 
       <!-- 步驟指示器 -->
       <div v-if="currentStep > 0" class="step-indicator">
-        <div
-          v-for="step in 3"
-          :key="step"
-          class="step-dot"
-          :class="{ active: currentStep === step, completed: currentStep > step }"
-        />
+        <div v-for="step in 3" :key="step" class="step-dot"
+          :class="{ active: currentStep === step, completed: currentStep > step }" />
       </div>
     </div>
   </div>

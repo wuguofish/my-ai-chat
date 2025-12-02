@@ -6,6 +6,7 @@ import type { Character, Gender } from '@/types'
 import { LIMITS } from '@/utils/constants'
 import AvatarCropper from '@/components/common/AvatarCropper.vue'
 import { v4 as uuidv4 } from 'uuid'
+import {ArrowLeft} from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -171,14 +172,21 @@ const getDefaultAvatar = (name: string) => {
 </script>
 
 <template>
+  <div class="header">
+    <button class="back-btn" @click="handleCancel">
+      <ArrowLeft :size="20" />
+      返回
+    </button>
+    <h3>
+      {{ isEditMode ? '編輯好友' : '新增好友' }}
+    </h3>
+    <label class="toggle-switch">
+      <input type="checkbox" v-model="isAdvancedMode">
+      <span class="toggle-slider"></span>
+      <span class="toggle-label">進階模式</span>
+    </label>
+  </div>
   <div class="character-form">
-    <div class="form-header">
-      <h2>{{ isEditMode ? '編輯好友' : '新增好友' }}</h2>
-      <button class="mode-toggle" @click="isAdvancedMode = !isAdvancedMode">
-        {{ isAdvancedMode ? '切換為基本模式' : '切換為進階模式' }}
-      </button>
-    </div>
-
     <div class="form-content">
       <!-- 頭像上傳 -->
       <div class="form-section">
@@ -231,7 +239,8 @@ const getDefaultAvatar = (name: string) => {
 
         <div class="form-group">
           <label for="profession">職業（選填）</label>
-          <input id="profession" v-model="profession" type="text" placeholder="例如：軟體工程師" class="input-field" maxlength="30">
+          <input id="profession" v-model="profession" type="text" placeholder="例如：軟體工程師" class="input-field"
+            maxlength="30">
         </div>
 
         <div class="form-group">
@@ -282,16 +291,8 @@ const getDefaultAvatar = (name: string) => {
 
         <div class="form-group">
           <label for="maxOutputTokens">最大輸出 Token 數</label>
-          <input
-            id="maxOutputTokens"
-            v-model.number="maxOutputTokens"
-            type="number"
-            min="256"
-            max="8192"
-            step="256"
-            placeholder="2048"
-            class="input-field"
-          >
+          <input id="maxOutputTokens" v-model.number="maxOutputTokens" type="number" min="256" max="8192" step="256"
+            placeholder="2048" class="input-field">
           <div class="help-text">
             控制 AI 回應的最大長度。建議值：1024（簡短）、2048（標準）、4096（詳細）
           </div>
@@ -343,34 +344,68 @@ const getDefaultAvatar = (name: string) => {
   padding: var(--spacing-xl);
 }
 
-.form-header {
+.header {
+  position: sticky;
   display: flex;
+  flex-direction: row;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-2xl);
-  padding-bottom: var(--spacing-lg);
+  top: 0;
+  width: 100vw;
+  padding: var(--spacing-lg);
   border-bottom: 2px solid var(--color-border);
-}
-
-.form-header h2 {
-  font-size: var(--text-4xl);
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.mode-toggle {
-  padding: var(--spacing-sm) var(--spacing-lg);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-base);
-  cursor: pointer;
-  transition: all var(--transition);
+  z-index: var(--z-sticky);
   background: var(--color-bg-secondary);
-  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-xl);
 }
 
-.mode-toggle:hover {
-  background: var(--color-bg-hover);
+/* Toggle Switch */
+.toggle-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch input[type="checkbox"] {
+  display: none;
+}
+
+.toggle-slider {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+  transition: all var(--transition);
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  background: var(--color-text-white);
+  border-radius: var(--radius-full);
+  transition: all var(--transition);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch input[type="checkbox"]:checked + .toggle-slider {
+  background: var(--color-primary);
+}
+
+.toggle-switch input[type="checkbox"]:checked + .toggle-slider::before {
+  transform: translateX(20px);
+}
+
+.toggle-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  font-weight: 500;
 }
 
 .form-content {

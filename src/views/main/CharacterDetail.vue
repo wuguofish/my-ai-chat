@@ -6,6 +6,7 @@ import { useRelationshipsStore } from '@/stores/relationships'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import type { Character } from '@/types'
+import { Plus, ArrowLeft, MessageCircle, Edit, Brain, Trash2, X, Heart } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -21,7 +22,7 @@ const userRelationship = computed(() =>
   relationshipsStore.getUserCharacterRelationship(characterId.value)
 )
 
-// 取得角色與其他角色的關係
+// 取得角色與其他人的關係
 const characterRelationships = computed(() =>
   relationshipsStore.getCharacterRelationships(characterId.value)
 )
@@ -122,7 +123,7 @@ const newRelation = ref({
   bidirectional: true // 預設雙向關係
 })
 
-// 分別取得「目前角色對其他角色」和「其他角色對目前角色」的關係
+// 分別取得「目前角色對其他人」和「其他人對目前角色」的關係
 const relationshipsFrom = computed(() =>
   characterRelationships.value.filter(rel => rel.fromCharacterId === characterId.value)
 )
@@ -131,7 +132,7 @@ const relationshipsTo = computed(() =>
   characterRelationships.value.filter(rel => rel.toCharacterId === characterId.value)
 )
 
-// 取得可以建立關係的角色（排除自己和已有「目前角色→其他角色」關係的）
+// 取得可以建立關係的角色（排除自己和已有「目前角色→其他人」關係的）
 const availableCharacters = computed(() => {
   const existingRelationIds = relationshipsFrom.value.map(rel => rel.toCharacterId)
   return characterStore.characters.filter(
@@ -266,7 +267,7 @@ const getDefaultAvatar = (name: string) => {
   return canvas.toDataURL()
 }
 
-// 取得其他角色名稱
+// 取得其他人名稱
 const getCharacterName = (id: string) => {
   const char = characterStore.getCharacterById(id)
   return char ? char.name : '未知角色'
@@ -287,107 +288,159 @@ const getRelationshipTypeText = (type: string) => {
 </script>
 
 <template>
-  <div v-if="character" class="character-detail">
+  <div v-if="character">
     <div class="header">
-      <button class="back-btn" @click="handleBack">← 返回</button>
+      <button class="back-btn" @click="handleBack">
+        <ArrowLeft :size="20" />
+        返回
+      </button>
+      <h3>
+        好友資料
+      </h3>
+      <span class="btn-ghost btn"></span>
     </div>
-
-    <!-- 角色基本資訊卡片 -->
-    <div class="profile-card">
-      <div class="profile-section">
-        <div class="avatar">
-          <img :src="character.avatar || getDefaultAvatar(character.name)" :alt="character.name">
-        </div>
-        <div class="basic-info">
-          <h1 class="name">{{ character.name }}</h1>
-          <div class="meta">
-            <span v-if="character.gender" class="meta-item">
-              {{ getGenderText(character.gender) }}
-            </span>
-            <span v-if="character.age" class="meta-item">
-              {{ character.age }}
-            </span>
-            <span v-if="character.profession" class="meta-item">
-              {{ character.profession }}
-            </span>
+    <div class="character-detail">
+      <!-- 角色基本資訊卡片 -->
+      <div class="profile-card">
+        <div class="profile-section">
+          <div class="avatar">
+            <img :src="character.avatar || getDefaultAvatar(character.name)" :alt="character.name">
+          </div>
+          <div class="basic-info">
+            <h1 class="name">{{ character.name }}</h1>
+            <div class="meta">
+              <span v-if="character.gender" class="meta-item">
+                {{ getGenderText(character.gender) }}
+              </span>
+              <span v-if="character.age" class="meta-item">
+                {{ character.age }}
+              </span>
+              <span v-if="character.profession" class="meta-item">
+                {{ character.profession }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 功能按鈕區塊 -->
-    <div class="section">
-      <h2 class="section-title">功能</h2>
-      <div class="function-grid">
-        <button class="function-btn primary" @click="handleStartChat">
-          <span class="icon">💬</span>
-          <span class="text">開始聊天</span>
-        </button>
-        <button class="function-btn" @click="handleEdit">
-          <span class="icon">✏️</span>
-          <span class="text">編輯資料</span>
-        </button>
-        <button class="function-btn" @click="handleManageMemories">
-          <span class="icon">🧠</span>
-          <span class="text">管理記憶</span>
-        </button>
-        <button class="function-btn danger" @click="handleDelete">
-          <span class="icon">🗑️</span>
-          <span class="text">刪除好友</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- 使用者與角色的關係 -->
-    <div v-if="userRelationship" class="section">
-      <div class="section-header">
-        <h2 class="section-title">與你的關係</h2>
-        <button class="btn btn-primary  btn-sm" @click="handleAdjustRelationship">
-          ✏️ 編輯關係
-        </button>
-      </div>
-      <div class="relationship-card">
-        <div class="relationship-header">
-          <div class="relationship-level">
-            <span class="level-badge" :style="{ backgroundColor: relationshipLevelInfo?.color }">
-              {{ relationshipLevelInfo?.name }}
-            </span>
-            <span v-if="userRelationship.isRomantic" class="romance-badge">
-              💕 親密關係
-            </span>
-          </div>
-          <div class="affection-value">好感度：{{ userRelationship.affection }}</div>
+      <!-- 功能按鈕區塊 -->
+      <div class="section">
+        <div class="section-header">
+          <h2 class="section-title">功能</h2>
         </div>
+        <div class="function-grid">
+          <button class="function-btn primary" @click="handleStartChat">
+            <span class="icon">
+              <MessageCircle :size="32" />
+            </span>
+            <span class="text">開始聊天</span>
+          </button>
+          <button class="function-btn" @click="handleEdit">
+            <span class="icon">
+              <Edit :size="32" />
+            </span>
+            <span class="text">編輯資料</span>
+          </button>
+          <button class="function-btn" @click="handleManageMemories">
+            <span class="icon">
+              <Brain :size="32" />
+            </span>
+            <span class="text">管理記憶</span>
+          </button>
+          <button class="function-btn danger" @click="handleDelete">
+            <span class="icon">
+              <Trash2 :size="32" />
+            </span>
+            <span class="text">刪除好友</span>
+          </button>
+        </div>
+      </div>
 
-        <div class="affection-bar-container">
-          <div class="affection-bar" :style="{
+      <!-- 使用者與角色的關係 -->
+      <div v-if="userRelationship" class="section">
+        <div class="section-header">
+          <h2 class="section-title">與你的關係</h2>
+          <button class="btn btn-warning btn-sm" @click="handleAdjustRelationship">
+            <Edit :size="14" /> 編輯
+          </button>
+        </div>
+        <div class="relationship-card">
+          <div class="relationship-header">
+            <div class="relationship-level">
+              <span class="level-badge" :style="{ backgroundColor: relationshipLevelInfo?.color }">
+                {{ relationshipLevelInfo?.name }}
+              </span>
+              <span v-if="userRelationship.isRomantic" class="romance-badge">
+                <Heart :size="16" fill="#d32f2f" />
+                <span>親密關係</span>
+              </span>
+            </div>
+            <div class="affection-value">好感度：{{ userRelationship.affection }}</div>
+          </div>
+
+          <div class="affection-bar-container">
+            <div class="affection-bar" :style="{
               width: `${Math.min((userRelationship.affection / 200) * 100, 100)}%`,
               backgroundColor: relationshipLevelInfo?.color
             }" />
-        </div>
+          </div>
 
-        <div v-if="userRelationship.note" class="relationship-note">
-          <div class="note-label">備註</div>
-          <div class="note-content">{{ userRelationship.note }}</div>
+          <div v-if="userRelationship.note" class="relationship-note">
+            <div class="note-label">備註</div>
+            <div class="note-content">{{ userRelationship.note }}</div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 角色對其他角色的關係 -->
-    <div class="section">
-      <div class="section-header">
-        <h2 class="section-title">{{ character?.name }} 對其他角色的關係</h2>
-        <button v-if="availableCharacters.length > 0" class="btn btn-primary btn-sm" @click="handleAddRelation">
-          + 新增關係
-        </button>
+      <!-- 角色對其他人的關係 -->
+      <div class="section">
+        <div class="section-header">
+          <h2 class="section-title">{{ character?.name }} 對其他人的關係</h2>
+          <button v-if="availableCharacters.length > 0" class="btn btn-primary btn-sm" @click="handleAddRelation">
+            <Plus :size="14" /> 新增
+          </button>
+        </div>
+        <div v-if="relationshipsFrom.length > 0" class="character-relationships">
+          <div v-for="rel in relationshipsFrom" :key="`${rel.fromCharacterId}-${rel.toCharacterId}`"
+            class="relationship-item editable">
+            <div class="relationship-content">
+              <div class="relationship-item-header">
+                <span class="character-name">
+                  {{ getCharacterName(rel.toCharacterId) }}
+                </span>
+                <span class="relationship-type">
+                  {{ getRelationshipTypeText(rel.relationshipType) }}
+                </span>
+              </div>
+              <div class="relationship-description">{{ rel.description }}</div>
+              <div v-if="rel.note" class="relationship-note-small">{{ rel.note }}</div>
+            </div>
+            <div class="relationship-actions">
+              <button class="btn btn-sm btn-warning" @click="handleEditRelation(rel.toCharacterId)">
+                <Edit :size="16" color="white" />
+              </button>
+              <button class="btn btn-sm btn-danger" @click="handleDeleteRelation(rel.toCharacterId)">
+                <Trash2 :size="16" color="white" />
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty-state-small">
+          尚未設定對其他人的關係
+        </div>
       </div>
-      <div v-if="relationshipsFrom.length > 0" class="character-relationships">
-        <div v-for="rel in relationshipsFrom" :key="`${rel.fromCharacterId}-${rel.toCharacterId}`"
-          class="relationship-item editable">
-          <div class="relationship-content">
+
+      <!-- 其他人對此角色的關係 -->
+      <div class="section">
+        <div class="section-header">
+          <h2 class="section-title">其他人對 {{ character?.name }} 的關係</h2>
+        </div>
+        <div v-if="relationshipsTo.length > 0" class="character-relationships">
+          <div v-for="rel in relationshipsTo" :key="`${rel.fromCharacterId}-${rel.toCharacterId}`"
+            class="relationship-item readonly">
             <div class="relationship-item-header">
               <span class="character-name">
-                {{ getCharacterName(rel.toCharacterId) }}
+                {{ getCharacterName(rel.fromCharacterId) }}
               </span>
               <span class="relationship-type">
                 {{ getRelationshipTypeText(rel.relationshipType) }}
@@ -396,176 +449,151 @@ const getRelationshipTypeText = (type: string) => {
             <div class="relationship-description">{{ rel.description }}</div>
             <div v-if="rel.note" class="relationship-note-small">{{ rel.note }}</div>
           </div>
-          <div class="relationship-actions">
-            <button class="btn btn-sm btn-warning" @click="handleEditRelation(rel.toCharacterId)">
-              編輯
-            </button>
-            <button class="btn btn-sm btn-danger" @click="handleDeleteRelation(rel.toCharacterId)">
-              刪除
+        </div>
+        <div v-else class="empty-state-small">
+          尚無其他人設定對 {{ character?.name }} 的關係
+        </div>
+      </div>
+
+      <!-- 調整關係 Modal -->
+      <div v-if="showAdjustModal" class="modal-overlay" @click="showAdjustModal = false">
+        <div class="modal-content" @click.stop>
+          <div class="modal-header">
+            <h3>調整關係</h3>
+            <button class="modal-close" @click="showAdjustModal = false">
+              <X :size="24" />
             </button>
           </div>
-        </div>
-      </div>
-      <div v-else class="empty-state-small">
-        尚未設定對其他角色的關係
-      </div>
-    </div>
-
-    <!-- 其他角色對此角色的關係 -->
-    <div class="section">
-      <h2 class="section-title">其他角色對 {{ character?.name }} 的關係</h2>
-      <div v-if="relationshipsTo.length > 0" class="character-relationships">
-        <div v-for="rel in relationshipsTo" :key="`${rel.fromCharacterId}-${rel.toCharacterId}`"
-          class="relationship-item readonly">
-          <div class="relationship-item-header">
-            <span class="character-name">
-              {{ getCharacterName(rel.fromCharacterId) }}
-            </span>
-            <span class="relationship-type">
-              {{ getRelationshipTypeText(rel.relationshipType) }}
-            </span>
-          </div>
-          <div class="relationship-description">{{ rel.description }}</div>
-          <div v-if="rel.note" class="relationship-note-small">{{ rel.note }}</div>
-        </div>
-      </div>
-      <div v-else class="empty-state-small">
-        尚無其他角色設定對 {{ character?.name }} 的關係
-      </div>
-    </div>
-
-    <!-- 調整關係 Modal -->
-    <div v-if="showAdjustModal" class="modal-overlay" @click="showAdjustModal = false">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>調整關係</h3>
-          <button class="modal-close" @click="showAdjustModal = false">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>好感度：{{ adjustAffection }}</label>
-            <input v-model.number="adjustAffection" type="range" min="0" max="300" step="1" class="affection-slider">
-            <div class="affection-hint">
-              {{ relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'stranger' ? '陌生人 (0-10)' :
-              relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'acquaintance' ? '認識 (10-30)' :
-              relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'friend' ? '朋友 (30-80)' :
-              relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'close_friend' ? '好友/曖昧 (80-200)' :
-              '摯友/戀人 (200+)' }}
+          <div class="modal-body">
+            <div class="form-group">
+              <label>好感度：{{ adjustAffection }}</label>
+              <input v-model.number="adjustAffection" type="range" min="0" max="300" step="1" class="affection-slider">
+              <div class="affection-hint">
+                {{ relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'stranger' ? '陌生人 (0-10)' :
+                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'acquaintance' ? '認識 (10-30)' :
+                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'friend' ? '朋友 (30-80)' :
+                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'close_friend' ? '好友/曖昧 (80-200)' :
+                '摯友/戀人 (200+)' }}
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input v-model="adjustIsRomantic" type="checkbox">
+                <span>允許發展親密關係（戀愛）</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label>關係備註</label>
+              <textarea v-model="adjustNote" class="input-field" placeholder="記錄你們之間的特殊關係或重要事件..." rows="4" />
             </div>
           </div>
-          <div class="form-group">
-            <label class="checkbox-label">
-              <input v-model="adjustIsRomantic" type="checkbox">
-              <span>允許發展親密關係（戀愛）</span>
-            </label>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="showAdjustModal = false">取消</button>
+            <button class="btn btn-primary" @click="handleSaveAdjustment">儲存</button>
           </div>
-          <div class="form-group">
-            <label>關係備註</label>
-            <textarea v-model="adjustNote" class="input-field" placeholder="記錄你們之間的特殊關係或重要事件..." rows="4" />
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="showAdjustModal = false">取消</button>
-          <button class="btn btn-primary" @click="handleSaveAdjustment">儲存</button>
         </div>
       </div>
-    </div>
 
-    <!-- 新增角色關係 Modal -->
-    <div v-if="showAddRelationModal" class="modal-overlay" @click="showAddRelationModal = false">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>新增角色關係</h3>
-          <button class="modal-close" @click="showAddRelationModal = false">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>選擇角色</label>
-            <select v-model="newRelation.targetCharacterId" class="input-field">
-              <option value="">請選擇角色</option>
-              <option v-for="char in availableCharacters" :key="char.id" :value="char.id">
-                {{ char.name }}
-              </option>
-            </select>
+      <!-- 新增角色關係 Modal -->
+      <div v-if="showAddRelationModal" class="modal-overlay" @click="showAddRelationModal = false">
+        <div class="modal-content" @click.stop>
+          <div class="modal-header">
+            <h3>新增角色關係</h3>
+            <button class="modal-close" @click="showAddRelationModal = false">
+              <X :size="24" />
+            </button>
           </div>
-          <div class="form-group">
-            <label>關係類型</label>
-            <select v-model="newRelation.relationshipType" class="input-field">
-              <option value="neutral">普通</option>
-              <option value="friend">朋友</option>
-              <option value="rival">競爭</option>
-              <option value="family">家人</option>
-              <option value="romantic">戀愛</option>
-              <option value="custom">自訂</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>關係描述</label>
-            <textarea v-model="newRelation.description" class="input-field" placeholder="描述兩人之間的關係..." rows="3" />
-          </div>
-          <div class="form-group">
-            <label>備註（選填）</label>
-            <textarea v-model="newRelation.note" class="input-field" placeholder="額外的補充說明..." rows="2" />
-          </div>
-          <div class="form-group">
-            <label class="checkbox-label">
-              <input v-model="newRelation.bidirectional" type="checkbox">
-              <span>同時設定對方的關係（雙向關係）</span>
-            </label>
-            <p class="form-hint">勾選後，對方也會自動建立相同的關係</p>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="showAddRelationModal = false">取消</button>
-          <button class="btn btn-primary" @click="handleSaveNewRelation">新增</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 編輯角色關係 Modal -->
-    <div v-if="showEditRelationModal" class="modal-overlay" @click="showEditRelationModal = false">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>編輯角色關係</h3>
-          <button class="modal-close" @click="showEditRelationModal = false">✕</button>
-        </div>
-        <div class="modal-body">
-          <div v-if="editingRelation" class="form-group">
-            <label>對象角色</label>
-            <div class="input-field" style="background: var(--color-bg-secondary); cursor: not-allowed">
-              {{ getCharacterName(editingRelation.targetCharacterId) }}
+          <div class="modal-body">
+            <div class="form-group">
+              <label>選擇角色</label>
+              <select v-model="newRelation.targetCharacterId" class="input-field">
+                <option value="">請選擇角色</option>
+                <option v-for="char in availableCharacters" :key="char.id" :value="char.id">
+                  {{ char.name }}
+                </option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>關係類型</label>
+              <select v-model="newRelation.relationshipType" class="input-field">
+                <option value="neutral">普通</option>
+                <option value="friend">朋友</option>
+                <option value="rival">競爭</option>
+                <option value="family">家人</option>
+                <option value="romantic">戀愛</option>
+                <option value="custom">自訂</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>關係描述</label>
+              <textarea v-model="newRelation.description" class="input-field" placeholder="描述兩人之間的關係..." rows="3" />
+            </div>
+            <div class="form-group">
+              <label>備註（選填）</label>
+              <textarea v-model="newRelation.note" class="input-field" placeholder="額外的補充說明..." rows="2" />
+            </div>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input v-model="newRelation.bidirectional" type="checkbox">
+                <span>同時設定對方的關係（雙向關係）</span>
+              </label>
+              <p class="form-hint">勾選後，對方也會自動建立相同的關係</p>
             </div>
           </div>
-          <div v-if="editingRelation" class="form-group">
-            <label>關係類型</label>
-            <select v-model="editingRelation.relationshipType" class="input-field">
-              <option value="neutral">普通</option>
-              <option value="friend">朋友</option>
-              <option value="rival">競爭</option>
-              <option value="family">家人</option>
-              <option value="romantic">戀愛</option>
-              <option value="custom">自訂</option>
-            </select>
-          </div>
-          <div v-if="editingRelation" class="form-group">
-            <label>關係描述</label>
-            <textarea v-model="editingRelation.description" class="input-field" placeholder="描述兩人之間的關係..." rows="3" />
-          </div>
-          <div v-if="editingRelation" class="form-group">
-            <label>備註（選填）</label>
-            <textarea v-model="editingRelation.note" class="input-field" placeholder="額外的補充說明..." rows="2" />
-          </div>
-          <div v-if="editingRelation" class="form-group">
-            <label class="checkbox-label">
-              <input v-model="editingRelation.bidirectional" type="checkbox">
-              <span>同步更新對方的關係（雙向同步）</span>
-            </label>
-            <p class="form-hint">勾選後，對方的關係也會一起更新</p>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="showAddRelationModal = false">取消</button>
+            <button class="btn btn-primary" @click="handleSaveNewRelation">新增</button>
           </div>
         </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" @click="showEditRelationModal = false">取消</button>
-          <button class="btn btn-primary" @click="handleSaveEditRelation">儲存</button>
+      </div>
+
+      <!-- 編輯角色關係 Modal -->
+      <div v-if="showEditRelationModal" class="modal-overlay" @click="showEditRelationModal = false">
+        <div class="modal-content" @click.stop>
+          <div class="modal-header">
+            <h3>編輯角色關係</h3>
+            <button class="modal-close" @click="showEditRelationModal = false">
+              <X :size="24" />
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="editingRelation" class="form-group">
+              <label>對象角色</label>
+              <div class="input-field" style="background: var(--color-bg-secondary); cursor: not-allowed">
+                {{ getCharacterName(editingRelation.targetCharacterId) }}
+              </div>
+            </div>
+            <div v-if="editingRelation" class="form-group">
+              <label>關係類型</label>
+              <select v-model="editingRelation.relationshipType" class="input-field">
+                <option value="neutral">普通</option>
+                <option value="friend">朋友</option>
+                <option value="rival">競爭</option>
+                <option value="family">家人</option>
+                <option value="romantic">戀愛</option>
+                <option value="custom">自訂</option>
+              </select>
+            </div>
+            <div v-if="editingRelation" class="form-group">
+              <label>關係描述</label>
+              <textarea v-model="editingRelation.description" class="input-field" placeholder="描述兩人之間的關係..." rows="3" />
+            </div>
+            <div v-if="editingRelation" class="form-group">
+              <label>備註（選填）</label>
+              <textarea v-model="editingRelation.note" class="input-field" placeholder="額外的補充說明..." rows="2" />
+            </div>
+            <div v-if="editingRelation" class="form-group">
+              <label class="checkbox-label">
+                <input v-model="editingRelation.bidirectional" type="checkbox">
+                <span>同步更新對方的關係（雙向同步）</span>
+              </label>
+              <p class="form-hint">勾選後，對方的關係也會一起更新</p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="showEditRelationModal = false">取消</button>
+            <button class="btn btn-primary" @click="handleSaveEditRelation">儲存</button>
+          </div>
         </div>
       </div>
     </div>
@@ -580,8 +608,35 @@ const getRelationshipTypeText = (type: string) => {
 }
 
 .header {
+  position: sticky;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  top: 0;
+  width: 100vw;
+  padding: var(--spacing-lg);
+  border-bottom: 2px solid var(--color-border);
+  z-index: var(--z-sticky);
+  background: var(--color-bg-secondary);
   margin-bottom: var(--spacing-xl);
 }
+
+.header h3 {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.header .btn-ghost {
+  visibility: hidden;
+}
+
+
 
 /* 角色資訊卡片 */
 .profile-card {
@@ -642,15 +697,6 @@ const getRelationshipTypeText = (type: string) => {
   font-size: var(--text-base);
 }
 
-/* 區塊樣式 */
-.section {
-  background: var(--color-bg-primary);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
-  padding: var(--spacing-xl);
-  margin-bottom: var(--spacing-xl);
-}
-
 /* 功能按鈕網格 */
 .function-grid {
   display: grid;
@@ -698,7 +744,9 @@ const getRelationshipTypeText = (type: string) => {
 }
 
 .function-btn .icon {
-  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: var(--spacing-sm);
 }
 
@@ -736,6 +784,9 @@ const getRelationshipTypeText = (type: string) => {
 }
 
 .romance-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
   padding: var(--spacing-xs) var(--spacing-md);
   background: #ffe0e6;
   color: #d32f2f;

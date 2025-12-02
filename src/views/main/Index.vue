@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { MessageCircleMore, UsersRound, Settings } from 'lucide-vue-next'
+
 
 const route = useRoute()
 const router = useRouter()
@@ -26,27 +28,23 @@ const navigateTo = (tab: string) => {
 
     <!-- 底部導航 -->
     <nav class="bottom-nav">
-      <button
-        :class="['nav-item', { active: currentTab === 'chats' }]"
-        @click="navigateTo('chats')"
-      >
-        <span class="nav-icon">💬</span>
+      <button :class="['nav-item', { active: currentTab === 'chats' }]" @click="navigateTo('chats')">
+        <template v-if="currentTab==='chats'">
+          <MessageCircleMore fill="white" />
+        </template>
+        <template v-else>
+          <MessageCircleMore />
+        </template>
         <span class="nav-label">聊天</span>
       </button>
 
-      <button
-        :class="['nav-item', { active: currentTab === 'characters' }]"
-        @click="navigateTo('characters')"
-      >
-        <span class="nav-icon">👥</span>
+      <button :class="['nav-item', { active: currentTab === 'characters' }]" @click="navigateTo('characters')">
+        <UsersRound />
         <span class="nav-label">好友</span>
       </button>
 
-      <button
-        :class="['nav-item', { active: currentTab === 'settings' }]"
-        @click="navigateTo('settings')"
-      >
-        <span class="nav-icon">⚙️</span>
+      <button :class="['nav-item', { active: currentTab === 'settings' }]" @click="navigateTo('settings')">
+        <Settings />
         <span class="nav-label">設定</span>
       </button>
     </nav>
@@ -56,7 +54,7 @@ const navigateTo = (tab: string) => {
 <style scoped>
 .main-layout {
   width: 100%;
-  height: 100vh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-secondary);
@@ -94,11 +92,13 @@ const navigateTo = (tab: string) => {
 }
 
 .nav-item.active {
-  color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-text-white);
 }
 
 .nav-item:hover {
-  background: var(--color-bg-secondary);
+  background: var(--color-primary);
+  color: var(--color-text-white);
 }
 
 .nav-icon {
