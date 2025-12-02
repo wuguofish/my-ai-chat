@@ -8,6 +8,7 @@ import { useMemoriesStore } from '@/stores/memories'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService, TokenInvalidError } from '@/services/googleDrive'
+import { CURRENT_VERSION, clearCacheAndReload } from '@/utils/version'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -526,7 +527,7 @@ const handleGoogleRestore = async () => {
       <div class="about-info">
         <div class="about-header">
           <h4>AI 聊天應用</h4>
-          <span class="version-badge">v1.0.0</span>
+          <span class="version-badge">v{{ CURRENT_VERSION }}</span>
         </div>
         <p class="about-desc">
           一個基於 Gemini AI 的角色扮演聊天應用，支援記憶系統和關係好感度追蹤。
@@ -539,15 +540,19 @@ const handleGoogleRestore = async () => {
           <a href="https://github.com/wugofish/my-ai-chat/blob/main/CHANGELOG.md" target="_blank" class="link-btn">
             <span>📝</span> 完整更新履歷
           </a>
+          <button @click="clearCacheAndReload" class="link-btn">
+            <span>🔄</span> 清除快取並重新載入
+          </button>
         </div>
 
         <div class="changelog">
-          <h5>最新更新 (v1.0.0)</h5>
+          <h5>最新更新 (v{{ CURRENT_VERSION }})</h5>
           <ul>
             <li><strong>角色管理系統</strong> - 建立和管理 AI 角色</li>
             <li><strong>記憶系統</strong> - 長期/短期記憶自動管理</li>
             <li><strong>關係系統</strong> - 好感度追蹤與等級變化</li>
             <li><strong>群聊功能</strong> - 支援多角色對話</li>
+            <li><strong>Google Drive 同步</strong> - 雲端備份與還原</li>
           </ul>
         </div>
 

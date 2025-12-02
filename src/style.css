@@ -107,7 +107,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  min-height: 100vh;
+  height: 100%;
   background-color: var(--color-bg-secondary);
   color: var(--color-text-primary);
 }
@@ -512,7 +512,7 @@ textarea {
   box-shadow: var(--shadow-lg);
   max-width: 500px;
   width: 100%;
-  max-height: 90vh;
+  max-height: 80vh;
   overflow-y: auto;
 }
 

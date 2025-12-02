@@ -72,8 +72,7 @@ const navigateTo = (tab: string) => {
   justify-content: space-around;
   align-items: center;
   background: var(--color-bg-primary);
-  border-top: 1px solid var(--color-border);
-  padding: var(--spacing-sm) 0;
+  border-top: 1px solid var(--color-border);  
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
 }
 
@@ -86,6 +85,7 @@ const navigateTo = (tab: string) => {
   padding: var(--spacing-sm) var(--spacing-md);
   background: none;
   border: none;
+  border-radius: 0;
   cursor: pointer;
   transition: all var(--transition);
   color: var(--color-text-tertiary);
@@ -93,11 +93,11 @@ const navigateTo = (tab: string) => {
 
 .nav-item.active {
   background: var(--color-primary);
-  color: var(--color-text-white);
+  color: var(--color-text-white);  
 }
 
 .nav-item:hover {
-  background: var(--color-primary);
+  background: var(--color-primary-dark);
   color: var(--color-text-white);
 }
 
