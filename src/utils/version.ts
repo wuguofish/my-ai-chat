@@ -3,10 +3,23 @@
  */
 
 // 當前版本號（每次更新時記得更新這個值）
-export const CURRENT_VERSION = '1.1.0'
+export const CURRENT_VERSION = '1.2.0'
 
 // 版本歷史
 export const VERSION_HISTORY = [
+  {
+    version: '1.2.0',
+    date: '2025-01-17',
+    features: [
+      '新增 API Key 檢測功能，可驗證 Key 是否有效且不消耗額度',
+      '優化 API Key 輸入欄位，加入顯示/隱藏密碼功能',
+      '改善 API Key 設定區塊 UI，採用 input group 設計',
+      '新增 Google AI Studio 連結，方便查看額度與管理 API Key',
+      '修復 iOS 長按複製/刪除訊息功能',
+      '改善系統提示詞說明文字，避免使用者重複設定',
+      '優化聊天室長期記憶顯示，改為唯讀模式並引導至記憶管理頁'
+    ]
+  },
   {
     version: '1.1.0',
     date: '2024-01-16',

@@ -9,6 +9,8 @@ import { useRelationshipsStore } from '@/stores/relationships'
 import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService } from '@/services/googleDrive'
 import { CURRENT_VERSION, clearCacheAndReload } from '@/utils/version'
+import { validateApiKey } from '@/services/gemini'
+import { Eye, EyeOff } from 'lucide-vue-next'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -36,6 +38,8 @@ googleAuthService.setTokenInvalidCallback(async () => {
 
 const showApiKey = ref(false)
 const apiKeyInput = ref(userStore.apiKey)
+const isValidatingApiKey = ref(false)
+const apiKeyValidationResult = ref<{ valid: boolean; error?: string } | null>(null)
 
 // 使用者個人資訊編輯
 const showEditProfile = ref(false)
@@ -82,6 +86,32 @@ const handleUpdateApiKey = () => {
   if (apiKeyInput.value.trim()) {
     userStore.updateApiKey(apiKeyInput.value.trim())
     alert('API Key 已更新')
+  }
+}
+
+const handleValidateApiKey = async () => {
+  if (!apiKeyInput.value.trim()) {
+    alert('請先輸入 API Key')
+    return
+  }
+
+  try {
+    isValidatingApiKey.value = true
+    apiKeyValidationResult.value = null
+
+    const result = await validateApiKey(apiKeyInput.value.trim())
+    apiKeyValidationResult.value = result
+
+    if (result.valid) {
+      alert('✅ API Key 有效且可正常使用')
+    } else {
+      alert(`❌ ${result.error || 'API Key 無效'}`)
+    }
+  } catch (error) {
+    alert('檢測失敗，請稍後再試')
+    console.error('API Key 檢測錯誤:', error)
+  } finally {
+    isValidatingApiKey.value = false
   }
 }
 
@@ -415,12 +445,25 @@ const handleGoogleRestore = async () => {
           <input id="apiKey" v-model="apiKeyInput" :type="showApiKey ? 'text' : 'password'" class="input-field"
             placeholder="輸入你的 Gemini API Key">
           <button class="btn btn-info" @click="showApiKey = !showApiKey">
-            {{ showApiKey ? '隱藏' : '顯示' }}
+            <EyeOff v-if="showApiKey" :size="18" />
+            <Eye v-else :size="18" />
           </button>
         </div>
-        <button class="btn-primary btn-small" @click="handleUpdateApiKey">
-          更新 API Key
-        </button>
+        <div class="button-group">
+          <button class="btn-primary btn" @click="handleUpdateApiKey">
+            更新 API Key
+          </button>
+          <button
+            class="btn-info btn"
+            @click="handleValidateApiKey"
+            :disabled="isValidatingApiKey"
+          >
+            {{ isValidatingApiKey ? '檢測中...' : '檢測 API Key' }}
+          </button>
+        </div>
+        <p class="api-key-hint">
+          💡 完整資訊請前往 <a href="https://aistudio.google.com/app/api-keys" target="_blank" rel="noopener noreferrer">Google AI Studio</a> 查看額度與管理 API Key
+        </p>
       </div>
     </div>
 
@@ -648,13 +691,51 @@ const handleGoogleRestore = async () => {
 /* API 設定 */
 .api-key-input {
   display: flex;
-  gap: var(--spacing-sm);
+  position: relative;
   margin-bottom: var(--spacing-md);
+}
+
+.api-key-input input {
+  flex: 1;
+  padding-right: 50px; /* 為按鈕留出空間 */
+}
+
+.api-key-input .btn {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  min-width: 48px;
+  padding: 0 var(--spacing-sm);
+}
+
+.api-key-hint {
+  margin-top: var(--spacing-md);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.api-key-hint a {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.api-key-hint a:hover {
+  text-decoration: underline;
 }
 
 .btn-small {
   padding: var(--spacing-sm) var(--spacing-xl);
   font-size: var(--text-sm);
+}
+
+.btn-icon {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
 }
 
 /* Google Drive 同步 */
