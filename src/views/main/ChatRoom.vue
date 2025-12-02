@@ -59,6 +59,10 @@ const menuPosition = ref({ x: 0, y: 0 })
 const isMultiSelectMode = ref(false)
 const selectedMessagesForDelete = ref<Set<string>>(new Set())
 
+// 長按支援
+const longPressTimer = ref<number | null>(null)
+const longPressTriggered = ref(false)
+
 // 記憶面板
 const showMemoryPanel = ref(false)
 const memoryTab = ref<'short' | 'long'>('short')
@@ -391,6 +395,46 @@ const handleMessageLongPress = (messageId: string, event: MouseEvent | TouchEven
   showMessageMenu.value = true
 }
 
+// Touch 事件處理（iOS 支援）
+const handleTouchStart = (messageId: string, event: TouchEvent) => {
+  if (isMultiSelectMode.value) return
+
+  longPressTriggered.value = false
+
+  // 儲存觸控位置
+  if (event.touches && event.touches[0]) {
+    menuPosition.value = { x: event.touches[0].clientX, y: event.touches[0].clientY }
+  }
+
+  // 設定長按計時器（500ms）
+  longPressTimer.value = window.setTimeout(() => {
+    longPressTriggered.value = true
+    selectedMessageForMenu.value = messageId
+    showMessageMenu.value = true
+
+    // 觸發震動回饋（如果支援）
+    if (navigator.vibrate) {
+      navigator.vibrate(50)
+    }
+  }, 500)
+}
+
+const handleTouchEnd = () => {
+  // 清除長按計時器
+  if (longPressTimer.value) {
+    clearTimeout(longPressTimer.value)
+    longPressTimer.value = null
+  }
+}
+
+const handleTouchMove = () => {
+  // 如果手指移動，取消長按
+  if (longPressTimer.value) {
+    clearTimeout(longPressTimer.value)
+    longPressTimer.value = null
+  }
+}
+
 // 關閉選單
 const closeMessageMenu = () => {
   showMessageMenu.value = false
@@ -609,7 +653,10 @@ onMounted(() => {
           message.senderId === 'user' ? 'user-message' : 'character-message',
           { 'multi-select-mode': isMultiSelectMode, 'selected': selectedMessagesForDelete.has(message.id) }
         ]" @click="isMultiSelectMode ? toggleMessageSelection(message.id) : null"
-        @contextmenu.prevent="handleMessageLongPress(message.id, $event)">
+        @contextmenu.prevent="handleMessageLongPress(message.id, $event)"
+        @touchstart="handleTouchStart(message.id, $event)"
+        @touchend="handleTouchEnd"
+        @touchmove="handleTouchMove">
         <!-- 多選模式的 checkbox -->
         <div v-if="isMultiSelectMode" class="message-checkbox">
           <input type="checkbox" :checked="selectedMessagesForDelete.has(message.id)"

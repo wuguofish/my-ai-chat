@@ -14,7 +14,7 @@ const currentTab = computed(() => {
   return 'chats'
 })
 
-// 輔助函數：檢查是否為當前活動的 tab
+// 輔助函數：檢查是否為目前活動的 tab
 const isActive = (tab: string) => currentTab.value === tab
 
 // 輔助函數：取得圖示的 fill 顏色
