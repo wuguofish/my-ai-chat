@@ -18,6 +18,7 @@ export interface SystemPromptContext {
   shortTermMemories?: Memory[]
   roomSummary?: string
   otherCharactersInRoom?: Character[]
+  isOfflineButMentioned?: boolean  // 是否為離線但被 @all 吵醒
 }
 
 /**
@@ -25,7 +26,7 @@ export interface SystemPromptContext {
  * 包含時間、使用者資料、關係、記憶等完整資訊
  */
 export function generateSystemPrompt(context: SystemPromptContext): string {
-  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary, otherCharactersInRoom } = context
+  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary, otherCharactersInRoom, isOfflineButMentioned } = context
 
   // 如果有自訂 system prompt，使用它作為基礎
   const basePrompt = character.systemPrompt && character.systemPrompt.trim()
@@ -107,6 +108,16 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     const otherCharNames = otherCharactersInRoom.map(c => c.name).join('、')
     parts.push(`\n\n## 群聊參與者\n除了 ${user.nickname} 之外，還有以下角色參與對話：${otherCharNames}`)
 
+    // ID 對照表 + 在線狀態
+    parts.push(`\n\n## 參與者 ID 對照表與在線狀態`)
+    parts.push(`\n- 全體成員：@all（呼叫所有人）`)
+    parts.push(`\n- ${user.nickname}：@user（永遠在線）`)    
+    otherCharactersInRoom.forEach(char => {
+      const status = getCharacterStatus(char)
+      const statusText = status === 'online' ? '在線' : status === 'away' ? '忙碌中' : '離線'
+      parts.push(`\n- ${char.name}：@${char.id}（${statusText}）`)
+    })
+
     const relevantRelationships = characterRelationships.filter(rel =>
       otherCharactersInRoom.some(c => c.id === rel.toCharacterId)
     )
@@ -155,7 +166,23 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
 
   // 群聊時的額外規則
   if (otherCharactersInRoom && otherCharactersInRoom.length > 0) {
-    instructions.push(`- 在群聊中，可用 \`@角色名稱\` 的方式明確指出回話對象。`)
+    instructions.push(`\n## 群聊 @ 功能使用規則`)
+    instructions.push(`- 若要特定對象回應你的話，必須使用 @ID 的方式標註（參考上方的 ID 對照表）`)
+    instructions.push(`- 例如想叫「小美」回話，要寫：「@char_xxx 小美你覺得呢？」（用 ID，不是用名字）`)
+    instructions.push(`- 可以在對話中自由使用暱稱或稱呼，但 @ 標註必須使用正確的 ID`)
+    instructions.push(`- 你也可以 @ 使用者（${user.nickname}），方式為：@user`)
+    instructions.push(`- 若要呼叫所有人，使用：@all`)
+  }
+
+  // 離線被 @all 吵醒的特殊指示
+  if (isOfflineButMentioned) {
+    instructions.push(`\n## 特殊狀態：離線被打擾`)
+    instructions.push(`你目前處於離線/休息狀態（睡覺、忙碌等），但被 @all 打擾了。`)
+    instructions.push(`請根據你的性格，簡短表達你的反應，例如：`)
+    instructions.push(`- 不耐煩：「在睡，沒事別吵」「幹嘛啦...」`)
+    instructions.push(`- 溫和：「在忙耶，有什麼事嗎？」「現在不太方便...」`)
+    instructions.push(`- 好奇：「怎麼了？」「發生什麼事？」`)
+    instructions.push(`回應完後，除非再次被直接 @，否則不要繼續參與對話。`)
   }
 
   parts.push(instructions.join('\n'))
@@ -265,4 +292,192 @@ export function generateChatRoomName(characterNames: string[]): string {
     return `${characterNames[0]}、${characterNames[1]} 和 ${characterNames[2]}`
   }
   return `${characterNames[0]} 等 ${characterNames.length} 人`
+}
+
+/**
+ * 將訊息中的 @ID 轉換為 @名字（供使用者閱讀）
+ */
+export function formatMessageForDisplay(message: string, characters: Character[], userName: string = '你'): string {
+  let formatted = message
+
+  // 處理 @all（不區分大小寫，統一轉為 @all）
+  formatted = formatted.replace(/@all/gi, '@all')
+
+  // 先處理 @user
+  formatted = formatted.replace(/@user/g, `@${userName}`)
+
+  // 處理 @角色ID
+  characters.forEach(char => {
+    const regex = new RegExp(`@${char.id}`, 'g')
+    formatted = formatted.replace(regex, `@${char.name}`)
+  })
+
+  return formatted
+}
+
+/**
+ * 將訊息中的 @名字 轉換為 @ID（供 AI 處理）
+ */
+export function formatMessageForAI(message: string, characters: Character[], userName: string): string {
+  let formatted = message
+
+  // 處理 @all（不區分大小寫，統一轉為小寫 @all）
+  formatted = formatted.replace(/@all/gi, '@all')
+
+  // 先處理 @使用者名字
+  const userNameRegex = new RegExp(`@${userName}`, 'g')
+  formatted = formatted.replace(userNameRegex, '@user')
+
+  // 處理 @角色名字
+  characters.forEach(char => {
+    const regex = new RegExp(`@${char.name}`, 'g')
+    formatted = formatted.replace(regex, `@${char.id}`)
+  })
+
+  return formatted
+}
+
+/**
+ * 解析訊息中被 @ 的角色 ID（從已轉換為 ID 格式的訊息中解析）
+ */
+export function parseMentionedCharacterIds(message: string, allCharacterIds: string[]): string[] {
+  const mentionedIds: string[] = []
+
+  allCharacterIds.forEach(charId => {
+    if (message.includes(`@${charId}`)) {
+      mentionedIds.push(charId)
+    }
+  })
+
+  return mentionedIds
+}
+
+/**
+ * 取得角色目前的狀態（根據作息時間）
+ * @param character 角色物件
+ * @param currentTime 當前時間（可選，預設為現在）
+ * @returns 角色狀態 'online' | 'away' | 'offline'
+ */
+export function getCharacterStatus(character: Character, currentTime?: Date): 'online' | 'away' | 'offline' {
+  const now = currentTime || new Date()
+  const currentHour = now.getHours()
+
+  // 優先使用新格式 activePeriods
+  if (character.activePeriods && character.activePeriods.length > 0) {
+    // 找到當前時間所在的時段
+    for (const period of character.activePeriods) {
+      if (period.start <= period.end) {
+        // 正常時段：例如 8:00 到 18:00
+        if (currentHour >= period.start && currentHour < period.end) {
+          return period.status
+        }
+      } else {
+        // 跨日時段：例如 23:00 到 02:00
+        if (currentHour >= period.start || currentHour < period.end) {
+          return period.status
+        }
+      }
+    }
+    // 如果沒有匹配的時段，預設為離線
+    return 'offline'
+  }
+
+  // 向後兼容舊格式 activeHours（簡單的 online/offline 二分法）
+  if (character.activeHours) {
+    const { start, end } = character.activeHours
+    const isInActiveHours = (start <= end)
+      ? (currentHour >= start && currentHour < end)
+      : (currentHour >= start || currentHour < end)
+
+    return isInActiveHours ? 'online' : 'offline'
+  }
+
+  // 如果沒有設定作息時間，預設為全天在線
+  return 'online'
+}
+
+/**
+ * 檢查角色目前是否在線（根據作息時間）
+ * @deprecated 建議使用 getCharacterStatus()，此函數保留作為向後兼容
+ * @param character 角色物件
+ * @param currentTime 當前時間（可選，預設為現在）
+ * @returns 是否在線
+ */
+export function isCharacterOnline(character: Character, currentTime?: Date): boolean {
+  return getCharacterStatus(character, currentTime) === 'online'
+}
+
+/**
+ * 決定群聊中哪些角色應該回應
+ * @param message 訊息內容（已轉換為 ID 格式）
+ * @param allCharacters 聊天室中的所有角色
+ * @returns 應該回應的角色 ID 陣列
+ */
+export function determineRespondingCharacters(
+  message: string,
+  allCharacters: Character[]
+): string[] {
+  const respondingIds: string[] = []
+
+  // 檢查是否有 @all
+  const hasAtAll = /@all/i.test(message)
+
+  if (hasAtAll) {
+    // @all：根據狀態決定回應機率
+    allCharacters.forEach(char => {
+      const status = getCharacterStatus(char)
+      let probability = 0
+
+      if (status === 'online') {
+        probability = 1.0  // 100% 回應
+      } else if (status === 'away') {
+        probability = 0.5  // 50% 回應
+      } else {
+        probability = 0.1  // 10% 回應
+      }
+
+      if (Math.random() < probability) {
+        respondingIds.push(char.id)
+      }
+    })
+
+    return respondingIds
+  }
+
+  // 1. 先找出所有被 @ 的角色
+  const mentionedIds = parseMentionedCharacterIds(
+    message,
+    allCharacters.map(c => c.id)
+  )
+
+  // 被 @ 的角色根據狀態決定回應機率
+  mentionedIds.forEach(charId => {
+    const char = allCharacters.find(c => c.id === charId)
+    if (!char) return
+
+    const status = getCharacterStatus(char)
+    let probability = 0
+
+    if (status === 'online') {
+      probability = 1.0  // 100% 回應
+    } else if (status === 'away') {
+      probability = 0.8  // 80% 回應
+    } else {
+      probability = 0.3  // 30% 回應
+    }
+
+    if (Math.random() < probability) {
+      respondingIds.push(charId)
+    }
+  })
+
+  // 2. 找出所有在線的角色（排除已被 @ 的）
+  const onlineCharacters = allCharacters.filter(char =>
+    getCharacterStatus(char) === 'online' && !mentionedIds.includes(char.id)
+  )
+
+  // 3. 在線的角色全部加入回應列表
+  respondingIds.push(...onlineCharacters.map(c => c.id))
+
+  return respondingIds
 }

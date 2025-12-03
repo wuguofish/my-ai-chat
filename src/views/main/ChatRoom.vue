@@ -6,7 +6,15 @@ import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useUserStore } from '@/stores/user'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { useMemoriesStore } from '@/stores/memories'
-import { formatMessageTime } from '@/utils/chatHelpers'
+import {
+  formatMessageTime,
+  formatMessageForAI,
+  formatMessageForDisplay,
+  determineRespondingCharacters,
+  parseMentionedCharacterIds,
+  isCharacterOnline,
+  getCharacterStatus
+} from '@/utils/chatHelpers'
 import { getCharacterResponse } from '@/services/gemini'
 import { generateMemorySummary, extractLongTermMemories } from '@/services/memoryService'
 import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle } from 'lucide-vue-next'
@@ -32,9 +40,31 @@ const character = computed(() => {
   return characterStore.getCharacterById(charId) || null
 })
 
+// 群組中的所有角色
+const groupCharacters = computed(() => {
+  if (!room.value || room.value.type !== 'group') return []
+  return room.value.characterIds
+    .map(id => characterStore.getCharacterById(id))
+    .filter((c): c is NonNullable<typeof c> => c !== null)
+})
+
 // 使用者資訊
 const userName = computed(() => userStore.userName)
 const userAvatar = computed(() => userStore.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName.value)}&background=667eea&color=fff`)
+
+// 單人聊天角色狀態
+const characterStatus = computed(() => {
+  if (!character.value) return null
+  return getCharacterStatus(character.value)
+})
+
+const characterStatusText = computed(() => {
+  const status = characterStatus.value
+  if (!status) return '線上'
+  if (status === 'online') return '在線'
+  if (status === 'away') return '忙碌中'
+  return '離線'
+})
 
 // 取得訊息發送者的頭像
 const getSenderAvatar = (senderId: string, senderName: string) => {
@@ -45,6 +75,18 @@ const getSenderAvatar = (senderId: string, senderName: string) => {
   // 角色頭像
   const char = characterStore.getCharacterById(senderId)
   return char?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=764ba2&color=fff`
+}
+
+// 格式化訊息內容（將 @ID 轉換為 @名字）
+const formatMessageContent = (content: string) => {
+  if (!room.value) return content
+
+  // 取得聊天室中的所有角色
+  const allCharacters = room.value.characterIds
+    .map(id => characterStore.getCharacterById(id))
+    .filter((c): c is NonNullable<typeof c> => c !== null)
+
+  return formatMessageForDisplay(content, allCharacters, userName.value)
 }
 
 // 輸入框
@@ -58,6 +100,9 @@ const selectedMessageForMenu = ref<string | null>(null)
 const menuPosition = ref({ x: 0, y: 0 })
 const isMultiSelectMode = ref(false)
 const selectedMessagesForDelete = ref<Set<string>>(new Set())
+
+// 群組成員 Modal
+const showMembersModal = ref(false)
 
 // 滾動到底部
 const scrollToBottom = async () => {
@@ -141,10 +186,22 @@ const processShortTermMemories = async () => {
 
 // 發送訊息
 const handleSendMessage = async () => {
-  if (!messageInput.value.trim() || !character.value || isLoading.value) return
+  if (!messageInput.value.trim() || isLoading.value || !room.value) return
 
   const userMessage = messageInput.value.trim()
   messageInput.value = ''
+
+  // 判斷是單人還是群組聊天
+  if (room.value.type === 'single') {
+    await handleSingleChatMessage(userMessage)
+  } else {
+    await handleGroupChatMessage(userMessage)
+  }
+}
+
+// 處理單人聊天訊息
+const handleSingleChatMessage = async (userMessage: string) => {
+  if (!character.value) return
 
   // 新增使用者訊息
   chatRoomStore.addMessage(roomId.value, {
@@ -160,7 +217,6 @@ const handleSendMessage = async () => {
   isLoading.value = true
 
   try {
-    // 呼叫 Gemini API 取得角色回應
     const apiKey = userStore.apiKey
     if (!apiKey) {
       alert('尚未設定 API Key，請到設定頁面設定')
@@ -170,23 +226,10 @@ const handleSendMessage = async () => {
     // 取得使用者與角色的關係
     const userRelationship = relationshipsStore.getUserCharacterRelationship(character.value.id)
 
-    // 取得角色間的關係（群聊時需要）
-    const characterRelationships = room.value?.type === 'group'
-      ? relationshipsStore.getCharacterRelationships(character.value.id)
-      : undefined
-
-    // 取得群聊中的其他角色（群聊時需要）
-    const otherCharactersInRoom = room.value?.type === 'group' && character.value
-      ? room.value.characterIds
-          .filter(id => id !== character.value!.id)
-          .map(id => characterStore.getCharacterById(id))
-          .filter((c): c is NonNullable<typeof c> => c !== null)
-      : undefined
-
-    // 取得角色的長期記憶（全域重要記憶）
+    // 取得角色的長期記憶
     const longTermMemories = memoriesStore.getCharacterMemories(character.value.id)
 
-    // 取得聊天室的短期記憶（情境記憶）
+    // 取得聊天室的短期記憶
     const shortTermMemories = memoriesStore.getRoomMemories(roomId.value)
 
     // 取得聊天室摘要
@@ -206,19 +249,17 @@ const handleSendMessage = async () => {
         updatedAt: new Date().toISOString()
       },
       room: room.value,
-      messages: messages.value.slice(0, -1), // 排除剛剛加入的使用者訊息，避免重複
+      messages: messages.value.slice(0, -1),
       userMessage,
       context: {
         userRelationship,
-        characterRelationships,
-        otherCharactersInRoom,
         longTermMemories,
         shortTermMemories,
         roomSummary
       }
     })
 
-    // 更新好感度（如果 AI 有回傳新的好感度）
+    // 更新好感度
     if (aiResponse.newAffection !== undefined) {
       relationshipsStore.updateAffection(character.value.id, aiResponse.newAffection)
     }
@@ -233,7 +274,188 @@ const handleSendMessage = async () => {
 
     scrollToBottom()
 
-    // 記憶處理：每 15 則訊息生成短期記憶
+    // 記憶處理
+    await handleMemoryGeneration()
+  } catch (error) {
+    console.error('Failed to get character response:', error)
+    alert('取得回應時發生錯誤')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// 處理群組聊天訊息
+const handleGroupChatMessage = async (userMessage: string) => {
+  if (!room.value) return
+
+  // 取得聊天室中的所有角色
+  const allCharacters = room.value.characterIds
+    .map(id => characterStore.getCharacterById(id))
+    .filter((c): c is NonNullable<typeof c> => c !== null)
+
+  if (allCharacters.length === 0) return
+
+  // 轉換使用者訊息：@名字 → @ID
+  const messageForAI = formatMessageForAI(userMessage, allCharacters, userName.value)
+
+  // 新增使用者訊息（儲存原始訊息）
+  chatRoomStore.addMessage(roomId.value, {
+    roomId: roomId.value,
+    senderId: 'user',
+    senderName: userName.value,
+    content: userMessage
+  })
+
+  scrollToBottom()
+
+  // 等待角色回應
+  isLoading.value = true
+
+  try {
+    const apiKey = userStore.apiKey
+    if (!apiKey) {
+      alert('尚未設定 API Key，請到設定頁面設定')
+      return
+    }
+
+    // 多輪對話邏輯
+    const MAX_ROUNDS = 10 // 最多 10 輪
+    let currentRound = 0
+    const conversationHistory: Array<{ senderId: string; content: string }> = [
+      { senderId: 'user', content: messageForAI }
+    ]
+
+    // 記錄最近兩輪的對話模式，用於偵測無限循環
+    let lastTwoRoundsPattern: string[] = []
+
+    while (currentRound < MAX_ROUNDS) {
+      currentRound++
+
+      // 決定這一輪要回應的角色
+      let respondingCharacterIds: string[]
+
+      if (currentRound === 1) {
+        // 第一輪：在線角色 + 被 @ 的角色
+        respondingCharacterIds = determineRespondingCharacters(messageForAI, allCharacters)
+      } else {
+        // 後續輪：只有被上一輪訊息 @ 的角色
+        const lastRoundMessages = conversationHistory.slice(-(conversationHistory.length - (currentRound - 2)))
+        const mentionedIds = new Set<string>()
+
+        lastRoundMessages.forEach(msg => {
+          const mentioned = parseMentionedCharacterIds(msg.content, allCharacters.map(c => c.id))
+          mentioned.forEach(id => mentionedIds.add(id))
+        })
+
+        // 排除使用者
+        respondingCharacterIds = Array.from(mentionedIds).filter(id => id !== 'user')
+      }
+
+      // 沒有角色要回應，結束對話
+      if (respondingCharacterIds.length === 0) {
+        console.log(`第 ${currentRound} 輪：沒有角色需要回應，結束對話`)
+        break
+      }
+
+      // 偵測無限循環：檢查是否連續兩輪都是同樣的角色在互相 @
+      const currentPattern = respondingCharacterIds.sort().join(',')
+      lastTwoRoundsPattern.push(currentPattern)
+
+      if (lastTwoRoundsPattern.length > 2) {
+        lastTwoRoundsPattern.shift() // 只保留最近兩輪
+      }
+
+      // 如果連續兩輪都是同樣的角色組合，視為無限循環，強制結束
+      if (lastTwoRoundsPattern.length === 2 && lastTwoRoundsPattern[0] === lastTwoRoundsPattern[1]) {
+        console.log(`偵測到無限循環（${currentPattern}），強制結束對話`)
+        break
+      }
+
+      console.log(`第 ${currentRound} 輪：${respondingCharacterIds.length} 位角色回應`)
+
+      // 依序讓角色回應
+      for (const charId of respondingCharacterIds) {
+        const currentCharacter = characterStore.getCharacterById(charId)
+        if (!currentCharacter) continue
+
+        // 判斷角色是否為離線但被 @all 吵醒
+        const isOffline = !isCharacterOnline(currentCharacter)
+        const hasAtAll = /@all/i.test(messageForAI)
+        const isOfflineButMentioned = isOffline && hasAtAll
+
+        // 取得使用者與角色的關係
+        const userRelationship = relationshipsStore.getUserCharacterRelationship(currentCharacter.id)
+
+        // 取得角色間的關係
+        const characterRelationships = relationshipsStore.getCharacterRelationships(currentCharacter.id)
+
+        // 取得群聊中的其他角色
+        const otherCharactersInRoom = allCharacters.filter(c => c.id !== currentCharacter.id)
+
+        // 取得角色的長期記憶
+        const longTermMemories = memoriesStore.getCharacterMemories(currentCharacter.id)
+
+        // 取得聊天室的短期記憶
+        const shortTermMemories = memoriesStore.getRoomMemories(roomId.value)
+
+        // 取得聊天室摘要
+        const roomSummary = memoriesStore.getRoomSummary(roomId.value)
+
+        // 呼叫 AI
+        const aiResponse = await getCharacterResponse({
+          apiKey,
+          character: currentCharacter,
+          user: userStore.profile || {
+            id: 'user',
+            nickname: userName.value,
+            avatar: userAvatar.value,
+            apiConfig: {
+              geminiApiKey: apiKey
+            },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          },
+          room: room.value,
+          messages: messages.value.slice(0, -1),
+          userMessage: messageForAI,
+          context: {
+            userRelationship,
+            characterRelationships,
+            otherCharactersInRoom,
+            longTermMemories,
+            shortTermMemories,
+            roomSummary,
+            isOfflineButMentioned
+          }
+        })
+
+        // 更新好感度
+        if (aiResponse.newAffection !== undefined) {
+          relationshipsStore.updateAffection(currentCharacter.id, aiResponse.newAffection)
+        }
+
+        // 轉換 AI 回應：@名字 → @ID（為了偵測提及）
+        const aiResponseForAI = formatMessageForAI(aiResponse.text, allCharacters, userName.value)
+
+        // 記錄到對話歷史（用於下一輪判斷）
+        conversationHistory.push({
+          senderId: currentCharacter.id,
+          content: aiResponseForAI
+        })
+
+        // 新增角色訊息（儲存原始訊息）
+        chatRoomStore.addMessage(roomId.value, {
+          roomId: roomId.value,
+          senderId: currentCharacter.id,
+          senderName: currentCharacter.name,
+          content: aiResponse.text
+        })
+
+        scrollToBottom()
+      }
+    }
+
+    // 記憶處理
     await handleMemoryGeneration()
   } catch (error) {
     console.error('Failed to get character response:', error)
@@ -351,7 +573,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div v-if="room && character" class="chat-room page">
+  <div v-if="room && (character || groupCharacters.length > 0)" class="chat-room page">
     <!-- Header -->
     <div class="chat-header">
       <button v-if="!isMultiSelectMode" class="back-btn" @click="handleBack">
@@ -361,17 +583,43 @@ onMounted(() => {
         <X :size="24" />
       </button>
 
-      <div v-if="!isMultiSelectMode" class="chat-header-info">
-        <div class="avatar">
-          <img :src="character.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(character.name)}&background=764ba2&color=fff`" :alt="character.name">
+      <!-- 單人聊天 Header -->
+      <div v-if="!isMultiSelectMode && room.type === 'single' && character" class="chat-header-info">
+        <div class="avatar-wrapper">
+          <div class="avatar">
+            <img :src="character.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(character.name)}&background=764ba2&color=fff`" :alt="character.name">
+          </div>
+          <div v-if="characterStatus" :class="['status-indicator', characterStatus]" />
         </div>
         <div class="info">
           <h2 class="name">{{ character.name }}</h2>
-          <p class="status">線上</p>
+          <p class="status">{{ characterStatusText }}</p>
         </div>
       </div>
 
-      <div v-else class="multi-select-header">
+      <!-- 群組聊天 Header -->
+      <div v-if="!isMultiSelectMode && room.type === 'group'" class="chat-header-info group-header">
+        <div class="group-avatars">
+          <div
+            v-for="(char, index) in groupCharacters.slice(0, 3)"
+            :key="char.id"
+            class="avatar-small"
+            :style="{ zIndex: 3 - index }"
+          >
+            <img :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`" :alt="char.name">
+          </div>
+          <span v-if="groupCharacters.length > 3" class="more-count">+{{ groupCharacters.length - 3 }}</span>
+        </div>
+        <div class="info">
+          <h2 class="name">{{ room.name }}</h2>
+          <p class="status">{{ groupCharacters.length }} 位成員</p>
+        </div>
+        <button class="btn-secondary btn-sm members-btn" @click="showMembersModal = true">
+          成員
+        </button>
+      </div>
+
+      <div v-else-if="isMultiSelectMode" class="multi-select-header">
         <h2 class="name">已選取 {{ selectedMessagesForDelete.size }} 則訊息</h2>
       </div>
 
@@ -388,7 +636,8 @@ onMounted(() => {
         <div class="empty-icon">
           <MessageCircle :size="64" :stroke-width="1.5" />
         </div>
-        <p>開始和 {{ character.name }} 聊天吧！</p>
+        <p v-if="room.type === 'single' && character">開始和 {{ character.name }} 聊天吧！</p>
+        <p v-else-if="room.type === 'group'">開始群組聊天吧！</p>
       </div>
 
       <div
@@ -419,14 +668,14 @@ onMounted(() => {
             <span class="sender-name">{{ message.senderName }}</span>
             <span class="message-time">{{ formatMessageTime(message.timestamp) }}</span>
           </div>
-          <div class="message-text">{{ message.content }}</div>
+          <div class="message-text">{{ formatMessageContent(message.content) }}</div>
         </div>
       </div>
 
       <!-- Loading indicator -->
       <div v-if="isLoading" class="message character-message loading-message">
         <div class="message-avatar">
-          <img :src="character.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(character.name)}&background=764ba2&color=fff`" :alt="character.name">
+          <div class="typing-placeholder-avatar"></div>
         </div>
         <div class="message-content">
           <div class="typing-indicator">
@@ -474,6 +723,34 @@ onMounted(() => {
         <Send :size="20" />
       </button>
     </div>
+
+    <!-- 群組成員 Modal -->
+    <div v-if="showMembersModal" class="modal-overlay" @click="showMembersModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>群組成員</h3>
+          <button class="modal-close" @click="showMembersModal = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="members-list">
+            <div v-for="char in groupCharacters" :key="char.id" class="member-item">
+              <div class="member-avatar-wrapper">
+                <div class="member-avatar">
+                  <img :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`" :alt="char.name">
+                </div>
+                <div :class="['status-indicator', getCharacterStatus(char)]" />
+              </div>
+              <div class="member-info">
+                <h4 class="member-name">{{ char.name }}</h4>
+                <p class="member-status">
+                  {{ getCharacterStatus(char) === 'online' ? '在線' : getCharacterStatus(char) === 'away' ? '忙碌中' : '離線' }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -518,6 +795,10 @@ onMounted(() => {
   gap: var(--spacing-md);
 }
 
+.chat-header-info .avatar-wrapper {
+  position: relative;
+}
+
 .chat-header-info .avatar {
   width: 48px;
   height: 48px;
@@ -530,6 +811,29 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* 狀態指示器 */
+.status-indicator {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-bg-primary);
+}
+
+.status-indicator.online {
+  background: #52c41a;
+}
+
+.status-indicator.away {
+  background: #faad14;
+}
+
+.status-indicator.offline {
+  background: #999;
 }
 
 .chat-header-info .info {
@@ -549,6 +853,59 @@ onMounted(() => {
   font-size: var(--text-sm);
   color: var(--color-success);
   margin: 0;
+}
+
+/* 群組頭像 */
+.group-avatars {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.avatar-small {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--color-bg-secondary);
+  border: 2px solid var(--color-bg-primary);
+  margin-left: -8px;
+}
+
+.avatar-small:first-child {
+  margin-left: 0;
+}
+
+.avatar-small img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.more-count {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  margin-left: var(--spacing-xs);
+}
+
+/* Loading 佔位頭像 */
+.typing-placeholder-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .spacer {
@@ -846,6 +1203,71 @@ onMounted(() => {
 
 .menu-item.delete:hover {
   background: rgba(244, 67, 54, 0.1);
+}
+
+/* 成員按鈕 */
+.members-btn {
+  margin-left: auto;
+}
+
+/* 成員 Modal */
+.members-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+  transition: all var(--transition);
+}
+
+.member-item:hover {
+  background: var(--color-bg-hover);
+}
+
+.member-avatar-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.member-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--color-bg-primary);
+}
+
+.member-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.member-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.member-name {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-xs) 0;
+}
+
+.member-status {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
 }
 
 @media (max-width: 768px) {

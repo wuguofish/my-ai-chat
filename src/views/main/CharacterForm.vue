@@ -2,8 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
-import type { Character, Gender } from '@/types'
-import { LIMITS } from '@/utils/constants'
+import type { Character, Gender, ActivePeriod } from '@/types'
+import { LIMITS, SCHEDULE_TEMPLATES, type ScheduleTemplate } from '@/utils/constants'
 import AvatarCropper from '@/components/common/AvatarCropper.vue'
 import { v4 as uuidv4 } from 'uuid'
 import {ArrowLeft} from 'lucide-vue-next'
@@ -34,6 +34,13 @@ const avatar = ref('')
 const systemPrompt = ref('')
 const maxOutputTokens = ref<number>(2048)
 
+// 作息時間
+const scheduleMode = ref<'disabled' | 'template' | 'custom'>('disabled')
+const selectedTemplateId = ref('always-online')
+const customPeriods = ref<ActivePeriod[]>([
+  { start: 0, end: 24, status: 'online' }
+])
+
 // 事件記憶
 const events = ref<string[]>([])
 const newEvent = ref('')
@@ -62,6 +69,28 @@ onMounted(() => {
       systemPrompt.value = character.systemPrompt || ''
       maxOutputTokens.value = character.maxOutputTokens || 2048
       events.value = [...character.events]
+
+      // 載入作息時間設定
+      if (character.activePeriods && character.activePeriods.length > 0) {
+        // 新格式：檢查是否匹配某個模板
+        const matchedTemplate = SCHEDULE_TEMPLATES.find(template =>
+          JSON.stringify(template.periods) === JSON.stringify(character.activePeriods)
+        )
+
+        if (matchedTemplate) {
+          scheduleMode.value = 'template'
+          selectedTemplateId.value = matchedTemplate.id
+        } else {
+          scheduleMode.value = 'custom'
+          customPeriods.value = [...character.activePeriods]
+        }
+      } else if (character.activeHours) {
+        // 舊格式：轉換為模板模式（向後兼容）
+        scheduleMode.value = 'template'
+        selectedTemplateId.value = 'always-online'
+      } else {
+        scheduleMode.value = 'disabled'
+      }
     } else {
       router.push('/main/characters')
     }
@@ -95,6 +124,14 @@ const handleSubmit = () => {
     systemPrompt: systemPrompt.value.trim() || undefined,
     maxOutputTokens: maxOutputTokens.value || undefined,
     events: events.value.filter(e => e.trim() !== ''),
+
+    // 儲存作息時間（新格式）
+    activePeriods: scheduleMode.value === 'template'
+      ? SCHEDULE_TEMPLATES.find(t => t.id === selectedTemplateId.value)?.periods
+      : scheduleMode.value === 'custom'
+        ? customPeriods.value
+        : undefined,
+
     createdAt: isEditMode.value
       ? characterStore.getCharacterById(editingCharacterId.value)?.createdAt || new Date().toISOString()
       : new Date().toISOString(),
@@ -273,6 +310,76 @@ const getDefaultAvatar = (name: string) => {
           <label for="dislikes">討厭的事物（選填）</label>
           <input id="dislikes" v-model="dislikes" type="text" placeholder="例如：吵鬧、不誠實" class="input-field"
             maxlength="100">
+        </div>
+      </div>
+
+      <!-- 作息時間設定 -->
+      <div class="form-section">
+        <h3>作息時間設定（選填）</h3>
+        <p class="section-desc">設定角色的作息習慣，影響群組聊天時的回應機率</p>
+
+        <div class="form-group">
+          <label>選擇模式</label>
+          <div class="schedule-mode-tabs">
+            <button
+              type="button"
+              :class="['mode-tab', { active: scheduleMode === 'disabled' }]"
+              @click="scheduleMode = 'disabled'"
+            >
+              停用
+            </button>
+            <button
+              type="button"
+              :class="['mode-tab', { active: scheduleMode === 'template' }]"
+              @click="scheduleMode = 'template'"
+            >
+              快速模板
+            </button>
+            <button
+              type="button"
+              :class="['mode-tab', { active: scheduleMode === 'custom' }]"
+              @click="scheduleMode = 'custom'"
+            >
+              自訂時段
+            </button>
+          </div>
+        </div>
+
+        <!-- 模板選擇 -->
+        <div v-if="scheduleMode === 'template'" class="form-group">
+          <label for="scheduleTemplate">選擇作息模板</label>
+          <select id="scheduleTemplate" v-model="selectedTemplateId" class="input-field">
+            <option v-for="template in SCHEDULE_TEMPLATES" :key="template.id" :value="template.id">
+              {{ template.name }} - {{ template.description }}
+            </option>
+          </select>
+          <div class="template-preview">
+            <h4>時段說明：</h4>
+            <div v-for="(period, index) in SCHEDULE_TEMPLATES.find(t => t.id === selectedTemplateId)?.periods || []" :key="index" class="period-item">
+              <span class="period-time">
+                {{ String(period.start).padStart(2, '0') }}:00 - {{ String(period.end).padStart(2, '0') }}:00
+              </span>
+              <span :class="['period-status', period.status]">
+                {{ period.status === 'online' ? '在線' : period.status === 'away' ? '忙碌' : '離線' }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 自訂時段說明 -->
+        <div v-if="scheduleMode === 'custom'" class="custom-notice">
+          <p>⚠️ 自訂時段功能尚未完成，請先使用快速模板</p>
+          <p class="help-text">未來版本將支援完整的自訂時段設定</p>
+        </div>
+
+        <!-- 狀態說明 -->
+        <div v-if="scheduleMode !== 'disabled'" class="status-explanation">
+          <h4>狀態說明：</h4>
+          <ul>
+            <li><strong class="status-online">在線：</strong>100% 回應所有訊息</li>
+            <li><strong class="status-away">忙碌：</strong>被 @ 時 80% 回應，@all 時 50% 回應</li>
+            <li><strong class="status-offline">離線：</strong>被 @ 時 30% 回應，@all 時 10% 回應</li>
+          </ul>
         </div>
       </div>
 
@@ -622,6 +729,140 @@ const getDefaultAvatar = (name: string) => {
   background: #d32f2f;
 }
 
+/* 作息時間設定 */
+.schedule-mode-tabs {
+  display: flex;
+  gap: var(--spacing-sm);
+  background: var(--color-bg-secondary);
+  padding: var(--spacing-xs);
+  border-radius: var(--radius);
+}
+
+.mode-tab {
+  flex: 1;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  transition: all var(--transition);
+}
+
+.mode-tab:hover {
+  background: var(--color-bg-hover);
+}
+
+.mode-tab.active {
+  background: var(--color-primary);
+  color: white;
+  font-weight: 600;
+}
+
+.template-preview {
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+}
+
+.template-preview h4 {
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-md) 0;
+  font-weight: 600;
+}
+
+.period-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  margin-bottom: var(--spacing-xs);
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-sm);
+}
+
+.period-time {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  font-family: monospace;
+}
+
+.period-status {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.period-status.online {
+  background: #52c41a;
+  color: white;
+}
+
+.period-status.away {
+  background: #faad14;
+  color: white;
+}
+
+.period-status.offline {
+  background: #999;
+  color: white;
+}
+
+.custom-notice {
+  padding: var(--spacing-lg);
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: var(--radius);
+  margin-top: var(--spacing-lg);
+}
+
+.custom-notice p {
+  margin: var(--spacing-xs) 0;
+  color: var(--color-text-primary);
+}
+
+.status-explanation {
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+}
+
+.status-explanation h4 {
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-md) 0;
+  font-weight: 600;
+}
+
+.status-explanation ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.status-explanation li {
+  padding: var(--spacing-sm) 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.status-online {
+  color: #52c41a;
+}
+
+.status-away {
+  color: #faad14;
+}
+
+.status-offline {
+  color: #999;
+}
+
 .error-message {
   color: var(--color-error);
   font-size: var(--text-base);
@@ -681,6 +922,16 @@ const getDefaultAvatar = (name: string) => {
 
   .event-input-group {
     flex-direction: column;
+  }
+
+  .schedule-mode-tabs {
+    flex-direction: column;
+  }
+
+  .period-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-xs);
   }
 }
 </style>

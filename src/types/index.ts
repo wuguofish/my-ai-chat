@@ -49,6 +49,16 @@ export interface AppSettings {
 
 export type Gender = 'male' | 'female' | 'unset'
 
+// 角色在線狀態
+export type CharacterStatus = 'online' | 'away' | 'offline'
+
+// 作息時段
+export interface ActivePeriod {
+  start: number  // 0-23
+  end: number    // 0-23
+  status: CharacterStatus
+}
+
 export interface Event {
   id: string
   title: string
@@ -71,6 +81,14 @@ export interface Character {
   systemPrompt?: string
   maxOutputTokens?: number
   events: string[]
+
+  // 作息時間設定（支援舊格式和新格式）
+  activeHours?: {
+    start: number  // 0-23，例如 8 代表早上 8 點
+    end: number    // 0-23，例如 23 代表晚上 11 點
+  }
+  activePeriods?: ActivePeriod[]  // 新格式：支援多時段
+
   createdAt: string
   updatedAt: string
 }

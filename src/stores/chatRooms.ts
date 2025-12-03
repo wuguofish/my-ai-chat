@@ -61,6 +61,10 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     return createChatRoom(characterName, [characterId], 'single')
   }
 
+  function createGroupChatRoom(characterIds: string[], groupName: string) {
+    return createChatRoom(groupName, characterIds, 'group')
+  }
+
   function getMessages(roomId: string) {
     return messages.value[roomId] || []
   }
@@ -145,6 +149,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     // Actions
     createChatRoom,
     createSingleChatRoom,
+    createGroupChatRoom,
     deleteChatRoom,
     setCurrentRoom,
     addMessage,
