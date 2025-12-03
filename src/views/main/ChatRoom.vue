@@ -215,6 +215,31 @@ const handleGenerateContext = async () => {
 
 // 手動生成短期記憶
 const isGeneratingMemory = ref(false)
+
+// 記錄每個聊天室最後處理記憶的訊息數量（從 localStorage 讀取）
+const MEMORY_TRACKING_KEY = 'ai-chat-memory-tracking'
+const CONTEXT_TRACKING_KEY = 'ai-chat-context-tracking'
+
+const loadTrackingData = (key: string): Record<string, number> => {
+  try {
+    const data = localStorage.getItem(key)
+    return data ? JSON.parse(data) : {}
+  } catch {
+    return {}
+  }
+}
+
+const saveTrackingData = (key: string, data: Record<string, number>) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(data))
+  } catch (error) {
+    console.error('Failed to save tracking data:', error)
+  }
+}
+
+const lastMemoryProcessedCount = ref<Record<string, number>>(loadTrackingData(MEMORY_TRACKING_KEY))
+const lastContextProcessedCount = ref<Record<string, number>>(loadTrackingData(CONTEXT_TRACKING_KEY))
+
 const handleGenerateMemory = async () => {
   if (isGeneratingMemory.value) return
 
@@ -322,11 +347,27 @@ const scrollToBottom = async () => {
 }
 
 // 記憶處理：每 15 則訊息生成短期記憶
-const handleMemoryGeneration = async () => {
-  const currentMessages = messages.value
+// targetRoomId: 可選參數，指定要處理的聊天室 ID（背景執行時使用）
+const handleMemoryGeneration = async (targetRoomId?: string) => {
+  const processRoomId = targetRoomId || roomId.value
+  const targetRoom = chatRoomStore.getRoomById(processRoomId)
+  const currentMessages = chatRoomStore.getMessagesByRoomId(processRoomId)
 
-  // 每 15 則訊息觸發一次記憶生成
-  if (currentMessages.length % 15 !== 0) return
+  const messageCount = currentMessages.length
+
+  // 如果訊息數量不足 15 則，就不處理
+  if (messageCount < 15) return
+
+  // 取得這個聊天室上次處理的訊息數量
+  const lastProcessed = lastMemoryProcessedCount.value[processRoomId] || 0
+
+  // 計算應該在哪個訊息數量觸發（每 15 則一次）
+  const nextThreshold = Math.floor(lastProcessed / 15 + 1) * 15
+
+  // 如果還沒達到下個門檻，就不處理
+  if (messageCount < nextThreshold) return
+
+  console.log(`[記憶] 聊天室 ${processRoomId}: 訊息數 ${messageCount}，上次處理 ${lastProcessed}，門檻 ${nextThreshold}`)
 
   try {
     const apiKey = userStore.apiKey
@@ -339,40 +380,50 @@ const handleMemoryGeneration = async () => {
     const summary = await generateMemorySummary(apiKey, recentMessages)
 
     // 判斷是私聊還是群聊
-    if (room.value?.type === 'single' && character.value) {
+    if (targetRoom?.type === 'single') {
       // 私聊：為單一角色生成記憶
+      const targetCharacterId = targetRoom.characterIds[0]
+      if (!targetCharacterId) return
+
       const result = memoriesStore.addCharacterShortTermMemory(
-        character.value.id,
+        targetCharacterId,
         summary,
         'auto',
-        roomId.value
+        processRoomId
       )
 
       // 如果返回 null，表示需要處理記憶（6 筆全未處理）
       if (result === null) {
         console.log('短期記憶已滿，開始提取長期記憶...')
-        await processShortTermMemoriesForCharacter(character.value.id)
+        await processShortTermMemoriesForCharacter(targetCharacterId)
 
         // 處理完後，再次嘗試新增
         memoriesStore.addCharacterShortTermMemory(
-          character.value.id,
+          targetCharacterId,
           summary,
           'auto',
-          roomId.value
+          processRoomId
         )
       }
 
       // 私聊：直接使用短期記憶更新聊天室情境
-      memoriesStore.updateRoomSummary(roomId.value, summary)
-      editingContextContent.value = summary
-    } else if (room.value?.type === 'group') {
+      memoriesStore.updateRoomSummary(processRoomId, summary)
+      // 只有在當前聊天室時才更新 UI
+      if (processRoomId === roomId.value) {
+        editingContextContent.value = summary
+      }
+    } else if (targetRoom?.type === 'group') {
       // 群聊：為所有參與的角色生成記憶
-      for (const char of groupCharacters.value) {
+      const targetCharacters = targetRoom.characterIds
+        .map(id => characterStore.getCharacterById(id))
+        .filter((c): c is NonNullable<typeof c> => c !== null)
+
+      for (const char of targetCharacters) {
         const result = memoriesStore.addCharacterShortTermMemory(
           char.id,
           summary,
           'auto',
-          roomId.value
+          processRoomId
         )
 
         // 如果返回 null，表示該角色需要處理記憶
@@ -385,11 +436,16 @@ const handleMemoryGeneration = async () => {
             char.id,
             summary,
             'auto',
-            roomId.value
+            processRoomId
           )
         }
       }
     }
+
+    // 記錄已處理的訊息數量並存到 localStorage
+    lastMemoryProcessedCount.value[processRoomId] = messageCount
+    saveTrackingData(MEMORY_TRACKING_KEY, lastMemoryProcessedCount.value)
+    console.log(`[記憶] 已更新處理記錄: ${processRoomId} -> ${messageCount}`)
   } catch (error) {
     console.error('記憶生成失敗:', error)
     // 靜默失敗，不影響正常對話
@@ -397,14 +453,30 @@ const handleMemoryGeneration = async () => {
 }
 
 // 聊天室情境處理：群聊每 30 則訊息更新一次
-const handleRoomContextGeneration = async () => {
-  const currentMessages = messages.value
+// targetRoomId: 可選參數，指定要處理的聊天室 ID（背景執行時使用）
+const handleRoomContextGeneration = async (targetRoomId?: string) => {
+  const processRoomId = targetRoomId || roomId.value
+  const targetRoom = chatRoomStore.getRoomById(processRoomId)
+  const currentMessages = chatRoomStore.getMessagesByRoomId(processRoomId)
 
   // 只處理群聊
-  if (room.value?.type !== 'group') return
+  if (targetRoom?.type !== 'group') return
 
-  // 每 30 則訊息觸發一次情境生成
-  if (currentMessages.length % 30 !== 0) return
+  const messageCount = currentMessages.length
+
+  // 如果訊息數量不足 30 則，就不處理
+  if (messageCount < 30) return
+
+  // 取得這個聊天室上次處理的訊息數量
+  const lastProcessed = lastContextProcessedCount.value[processRoomId] || 0
+
+  // 計算應該在哪個訊息數量觸發（每 30 則一次）
+  const nextThreshold = Math.floor(lastProcessed / 30 + 1) * 30
+
+  // 如果還沒達到下個門檻，就不處理
+  if (messageCount < nextThreshold) return
+
+  console.log(`[情境] 聊天室 ${processRoomId}: 訊息數 ${messageCount}，上次處理 ${lastProcessed}，門檻 ${nextThreshold}`)
 
   try {
     const apiKey = userStore.apiKey
@@ -417,10 +489,16 @@ const handleRoomContextGeneration = async () => {
     const summary = await generateMemorySummary(apiKey, recentMessages)
 
     // 更新聊天室情境
-    memoriesStore.updateRoomSummary(roomId.value, summary)
-    editingContextContent.value = summary
+    memoriesStore.updateRoomSummary(processRoomId, summary)
+    // 只有在當前聊天室時才更新 UI
+    if (processRoomId === roomId.value) {
+      editingContextContent.value = summary
+    }
 
-    console.log('聊天室情境已更新')
+    // 記錄已處理的訊息數量並存到 localStorage
+    lastContextProcessedCount.value[processRoomId] = messageCount
+    saveTrackingData(CONTEXT_TRACKING_KEY, lastContextProcessedCount.value)
+    console.log(`[情境] 聊天室情境已更新，已更新處理記錄: ${processRoomId} -> ${messageCount}`)
   } catch (error) {
     console.error('情境生成失敗:', error)
     // 靜默失敗，不影響正常對話
@@ -480,9 +558,14 @@ const handleSendMessage = async () => {
 const handleSingleChatMessage = async (userMessage: string) => {
   if (!character.value) return
 
+  // 保存當前聊天室 ID、room 和角色，用於背景執行
+  const currentRoomId = roomId.value
+  const currentRoom = room.value
+  const currentCharacter = character.value
+
   // 新增使用者訊息
-  chatRoomStore.addMessage(roomId.value, {
-    roomId: roomId.value,
+  chatRoomStore.addMessage(currentRoomId, {
+    roomId: currentRoomId,
     senderId: 'user',
     senderName: userName.value,
     content: userMessage
@@ -501,26 +584,30 @@ const handleSingleChatMessage = async (userMessage: string) => {
     }
 
     // 取得使用者與角色的關係
-    const userRelationship = relationshipsStore.getUserCharacterRelationship(character.value.id)
+    const userRelationship = relationshipsStore.getUserCharacterRelationship(currentCharacter.id)
 
     // 取得角色間的關係
-    const characterRelationships = relationshipsStore.getCharacterRelationships(character.value.id)
+    const characterRelationships = relationshipsStore.getCharacterRelationships(currentCharacter.id)
 
     // 取得所有角色（用於解析關係中的角色名稱）
     const allCharacters = characterStore.characters
 
     // 取得角色的長期記憶
-    const longTermMemories = memoriesStore.getCharacterMemories(character.value.id)
+    const longTermMemories = memoriesStore.getCharacterMemories(currentCharacter.id)
 
     // 取得角色的短期記憶（改為綁定角色而非聊天室）
-    const shortTermMemories = memoriesStore.getCharacterShortTermMemories(character.value.id)
+    const shortTermMemories = memoriesStore.getCharacterShortTermMemories(currentCharacter.id)
 
     // 取得聊天室摘要
-    const roomSummary = memoriesStore.getRoomSummary(roomId.value)
+    const roomSummary = memoriesStore.getRoomSummary(currentRoomId)
+
+    // 從 store 取得該聊天室的最新訊息（即使使用者已切換到其他聊天室）
+    const targetRoom = chatRoomStore.getRoomById(currentRoomId)
+    const currentMessages = chatRoomStore.getMessagesByRoomId(currentRoomId)
 
     const aiResponse = await getCharacterResponse({
       apiKey,
-      character: character.value,
+      character: currentCharacter,
       user: userStore.profile || {
         id: 'user',
         nickname: userName.value,
@@ -531,8 +618,8 @@ const handleSingleChatMessage = async (userMessage: string) => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       },
-      room: room.value,
-      messages: messages.value.slice(0, -1),
+      room: targetRoom || currentRoom,
+      messages: currentMessages.slice(0, -1),
       userMessage,
       context: {
         userRelationship,
@@ -546,24 +633,27 @@ const handleSingleChatMessage = async (userMessage: string) => {
 
     // 更新好感度
     if (aiResponse.newAffection !== undefined) {
-      relationshipsStore.updateAffection(character.value.id, aiResponse.newAffection)
+      relationshipsStore.updateAffection(currentCharacter.id, aiResponse.newAffection)
     }
 
     // 新增角色訊息
-    chatRoomStore.addMessage(roomId.value, {
-      roomId: roomId.value,
-      senderId: character.value.id,
-      senderName: character.value.name,
+    chatRoomStore.addMessage(currentRoomId, {
+      roomId: currentRoomId,
+      senderId: currentCharacter.id,
+      senderName: currentCharacter.name,
       content: aiResponse.text
     })
 
-    scrollToBottom()
+    // 只有在使用者還在同一個聊天室時才滾動
+    if (roomId.value === currentRoomId) {
+      scrollToBottom()
+    }
 
-    // 記憶處理
-    await handleMemoryGeneration()
+    // 記憶處理（針對原聊天室）
+    await handleMemoryGeneration(currentRoomId)
 
-    // 聊天室情境處理（群聊專用）
-    await handleRoomContextGeneration()
+    // 聊天室情境處理（群聊專用，針對原聊天室）
+    await handleRoomContextGeneration(currentRoomId)
   } catch (error) {
     console.error('Failed to get character response:', error)
     alert('取得回應時發生錯誤')
@@ -576,8 +666,12 @@ const handleSingleChatMessage = async (userMessage: string) => {
 const handleGroupChatMessage = async (userMessage: string) => {
   if (!room.value) return
 
+  // 保存當前聊天室 ID 和資料，用於背景執行
+  const currentRoomId = roomId.value
+  const currentRoom = room.value
+
   // 取得聊天室中的所有角色
-  const allCharacters = room.value.characterIds
+  const allCharacters = currentRoom.characterIds
     .map(id => characterStore.getCharacterById(id))
     .filter((c): c is NonNullable<typeof c> => c !== null)
 
@@ -587,8 +681,8 @@ const handleGroupChatMessage = async (userMessage: string) => {
   const messageForAI = formatMessageForAI(userMessage, allCharacters, userName.value)
 
   // 新增使用者訊息（儲存原始訊息）
-  chatRoomStore.addMessage(roomId.value, {
-    roomId: roomId.value,
+  chatRoomStore.addMessage(currentRoomId, {
+    roomId: currentRoomId,
     senderId: 'user',
     senderName: userName.value,
     content: userMessage
@@ -690,7 +784,11 @@ const handleGroupChatMessage = async (userMessage: string) => {
         const shortTermMemories = memoriesStore.getCharacterShortTermMemories(currentCharacter.id)
 
         // 取得聊天室摘要
-        const roomSummary = memoriesStore.getRoomSummary(roomId.value)
+        const roomSummary = memoriesStore.getRoomSummary(currentRoomId)
+
+        // 從 store 取得該聊天室的最新訊息（即使使用者已切換到其他聊天室）
+        const targetRoom = chatRoomStore.getRoomById(currentRoomId)
+        const currentMessages = chatRoomStore.getMessagesByRoomId(currentRoomId)
 
         // 呼叫 AI
         const aiResponse = await getCharacterResponse({
@@ -706,9 +804,9 @@ const handleGroupChatMessage = async (userMessage: string) => {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           },
-          room: room.value,
-          // 傳入當前最新的訊息歷史（排除正在生成的這一則）
-          messages: (currentRound === 1 && isFirstCharacterInThisRound) ? messages.value.slice(0, -1) : messages.value,
+          room: targetRoom || currentRoom,
+          // 傳入該聊天室的最新訊息歷史（排除正在生成的這一則）
+          messages: (currentRound === 1 && isFirstCharacterInThisRound) ? currentMessages.slice(0, -1) : currentMessages,
           // 只有第一輪的第一個角色需要傳入 userMessage，其他角色會在 messages 中看到
           userMessage: (currentRound === 1 && isFirstCharacterInThisRound) ? messageForAI : '',
           context: {
@@ -738,25 +836,29 @@ const handleGroupChatMessage = async (userMessage: string) => {
         })
 
         // 新增角色訊息（儲存原始訊息）
-        chatRoomStore.addMessage(roomId.value, {
-          roomId: roomId.value,
+        chatRoomStore.addMessage(currentRoomId, {
+          roomId: currentRoomId,
           senderId: currentCharacter.id,
           senderName: currentCharacter.name,
           content: aiResponse.text
         })
 
-        scrollToBottom()
+        // 只有在使用者還在同一個聊天室時才滾動
+        if (roomId.value === currentRoomId) {
+          scrollToBottom()
+        }
 
         // 標記已經處理過第一個角色了
         isFirstCharacterInThisRound = false
       }
     }
 
-    // 記憶處理
-    await handleMemoryGeneration()
+    // 記憶處理（針對原聊天室）
+    // 需要確保記憶處理是針對 currentRoomId，而非當前顯示的聊天室
+    await handleMemoryGeneration(currentRoomId)
 
-    // 聊天室情境處理（群聊專用）
-    await handleRoomContextGeneration()
+    // 聊天室情境處理（群聊專用，針對原聊天室）
+    await handleRoomContextGeneration(currentRoomId)
   } catch (error) {
     console.error('Failed to get character response:', error)
     alert('取得回應時發生錯誤')
