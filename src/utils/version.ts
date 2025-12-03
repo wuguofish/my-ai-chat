@@ -28,7 +28,7 @@ export async function fetchChangelog(): Promise<VersionInfo[]> {
 
   try {
     const timestamp = new Date().getTime()
-    const response = await fetch(`/CHANGELOG.md?t=${timestamp}`, {
+    const response = await fetch(`${import.meta.env.BASE_URL}CHANGELOG.md?t=${timestamp}`, {
       cache: 'no-cache',
       headers: {
         'Cache-Control': 'no-cache'
@@ -102,7 +102,7 @@ export async function fetchServerVersion(): Promise<string> {
   try {
     // 加上時間戳避免快取
     const timestamp = new Date().getTime()
-    const response = await fetch(`/version.json?t=${timestamp}`, {
+    const response = await fetch(`${import.meta.env.BASE_URL}version.json?t=${timestamp}`, {
       cache: 'no-cache',
       headers: {
         'Cache-Control': 'no-cache'
