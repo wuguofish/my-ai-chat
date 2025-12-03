@@ -22,6 +22,39 @@ export interface CharacterResponse {
 }
 
 /**
+ * 驗證 API Key 是否有效
+ * 使用 countTokens 方法，不會消耗 API 額度
+ */
+export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
+  try {
+    if (!apiKey || !apiKey.trim()) {
+      return { valid: false, error: 'API Key 不能為空' }
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+    // 使用 countTokens 來驗證，不會消耗額度
+    await model.countTokens('test')
+
+    return { valid: true }
+  } catch (error: any) {
+    console.error('API Key 驗證失敗:', error)
+
+    // 根據錯誤類型提供更詳細的訊息
+    if (error.message?.includes('API_KEY_INVALID') || error.message?.includes('invalid')) {
+      return { valid: false, error: 'API Key 無效' }
+    } else if (error.message?.includes('quota') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+      return { valid: false, error: 'API Key 額度已用盡' }
+    } else if (error.message?.includes('permission') || error.message?.includes('PERMISSION_DENIED')) {
+      return { valid: false, error: 'API Key 權限不足' }
+    } else {
+      return { valid: false, error: `驗證失敗：${error.message || '未知錯誤'}` }
+    }
+  }
+}
+
+/**
  * 呼叫 Gemini API 取得角色回應
  */
 export async function getCharacterResponse(params: GetCharacterResponseParams): Promise<CharacterResponse> {

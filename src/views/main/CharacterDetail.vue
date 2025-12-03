@@ -614,7 +614,7 @@ const getRelationshipTypeText = (type: string) => {
   justify-content: space-between;
   align-items: center;
   top: 0;
-  width: 100vw;
+  width: 100%;
   padding: var(--spacing-lg);
   border-bottom: 2px solid var(--color-border);
   z-index: var(--z-sticky);
@@ -627,9 +627,6 @@ const getRelationshipTypeText = (type: string) => {
   left: 50%;
   transform: translateX(-50%);
   margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--color-text-primary);
 }
 
 .header .btn-ghost {

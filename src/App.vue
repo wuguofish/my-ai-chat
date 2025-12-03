@@ -1,9 +1,60 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { checkVersion, updateStoredVersion, clearCacheAndReload, CURRENT_VERSION, getVersionInfo } from '@/utils/version'
+
+// 版本更新提示
+const showUpdateDialog = ref(false)
+const isNewVersion = ref(false)
+
+onMounted(() => {
+  // 檢查版本
+  isNewVersion.value = checkVersion()
+
+  if (isNewVersion.value) {
+    showUpdateDialog.value = true
+  }
+})
+
+// 確認更新
+const handleUpdate = async () => {
+  showUpdateDialog.value = false
+  updateStoredVersion()
+
+  // 清除快取並重新載入
+  await clearCacheAndReload()
+}
+
+// 稍後更新
+const handleLater = () => {
+  showUpdateDialog.value = false
+  // 不更新版本號，下次啟動時還會提示
+}
 </script>
 
 <template>
-    <RouterView />
+  <!-- 版本更新提示對話框 -->
+  <div v-if="showUpdateDialog" class="update-dialog-overlay">
+    <div class="update-dialog">
+      <h3>🎉 發現新版本</h3>
+      <p class="version-info">版本 {{ CURRENT_VERSION }} 已發布！</p>
+      <div class="update-features">
+        <p><strong>更新內容：</strong></p>
+        <ul>
+          <li v-for="(feature, index) in getVersionInfo(CURRENT_VERSION)?.features" :key="index">
+            {{ feature }}
+          </li>
+        </ul>
+      </div>
+      <p class="update-note">建議立即更新以獲得最佳體驗</p>
+      <div class="dialog-actions">
+        <button @click="handleUpdate" class="btn-primary">立即更新</button>
+        <button @click="handleLater" class="btn-secondary">稍後再說</button>
+      </div>
+    </div>
+  </div>
+
+  <RouterView />
 </template>
 
 <style>
@@ -26,5 +77,103 @@ html, body, #app {
 #app {
   background-color: #f5f5f5;
   color: #333;
+}
+
+/* 版本更新對話框樣式 */
+.update-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.update-dialog {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.update-dialog h3 {
+  margin: 0 0 16px;
+  font-size: 20px;
+  color: #333;
+}
+
+.version-info {
+  color: #666;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.update-features {
+  background: #f8f9fa;
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.update-features p {
+  margin: 0 0 8px;
+  font-weight: 600;
+  color: #333;
+}
+
+.update-features ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.update-features li {
+  color: #666;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.update-note {
+  color: #999;
+  font-size: 13px;
+  margin-bottom: 20px;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.dialog-actions button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #0056b3;
+}
+
+.btn-secondary {
+  background: #e9ecef;
+  color: #666;
+}
+
+.btn-secondary:hover {
+  background: #dee2e6;
 }
 </style>

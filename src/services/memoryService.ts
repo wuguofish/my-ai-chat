@@ -18,7 +18,7 @@ export async function generateMemorySummary(
       model: 'gemini-2.5-flash',
       generationConfig: {
         temperature: 0.3,  // 較低溫度，確保摘要穩定
-        maxOutputTokens: 1024
+        maxOutputTokens: 2048
       }
     })
 
@@ -63,7 +63,7 @@ export async function extractLongTermMemories(
       model: 'gemini-2.5-flash-lite',
       generationConfig: {
         temperature: 0.3,
-        maxOutputTokens: 1024
+        maxOutputTokens: 2048
       }
     })
 

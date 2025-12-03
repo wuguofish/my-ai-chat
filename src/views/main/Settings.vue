@@ -7,7 +7,10 @@ import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useMemoriesStore } from '@/stores/memories'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { googleAuthService } from '@/services/googleAuth'
-import { googleDriveService, TokenInvalidError } from '@/services/googleDrive'
+import { googleDriveService } from '@/services/googleDrive'
+import { CURRENT_VERSION, clearCacheAndReload } from '@/utils/version'
+import { validateApiKey } from '@/services/gemini'
+import { Eye, EyeOff } from 'lucide-vue-next'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -35,6 +38,8 @@ googleAuthService.setTokenInvalidCallback(async () => {
 
 const showApiKey = ref(false)
 const apiKeyInput = ref(userStore.apiKey)
+const isValidatingApiKey = ref(false)
+const apiKeyValidationResult = ref<{ valid: boolean; error?: string } | null>(null)
 
 // 使用者個人資訊編輯
 const showEditProfile = ref(false)
@@ -81,6 +86,32 @@ const handleUpdateApiKey = () => {
   if (apiKeyInput.value.trim()) {
     userStore.updateApiKey(apiKeyInput.value.trim())
     alert('API Key 已更新')
+  }
+}
+
+const handleValidateApiKey = async () => {
+  if (!apiKeyInput.value.trim()) {
+    alert('請先輸入 API Key')
+    return
+  }
+
+  try {
+    isValidatingApiKey.value = true
+    apiKeyValidationResult.value = null
+
+    const result = await validateApiKey(apiKeyInput.value.trim())
+    apiKeyValidationResult.value = result
+
+    if (result.valid) {
+      alert('✅ API Key 有效且可正常使用')
+    } else {
+      alert(`❌ ${result.error || 'API Key 無效'}`)
+    }
+  } catch (error) {
+    alert('檢測失敗，請稍後再試')
+    console.error('API Key 檢測錯誤:', error)
+  } finally {
+    isValidatingApiKey.value = false
   }
 }
 
@@ -229,29 +260,29 @@ const handleGoogleBackup = async () => {
   } catch (error) {
     console.error('備份失敗:', error)
 
-    // 處理 token 無效錯誤
-    if (error instanceof TokenInvalidError) {
-      // 標記為連線中斷
-      checkGoogleConnection()
+    alert('備份失敗：' + (error as Error).message)
 
-      // 詢問使用者是否要重新授權
-      const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續備份？')
-      if (shouldReauth) {
-        try {
-          await googleAuthService.handleTokenInvalid()
-          checkGoogleConnection()
+    // 標記為連線中斷
+    isSyncing.value = false
+    isGoogleConnected.value = false;
 
-          // 重新授權成功，重試備份
-          if (isGoogleConnected.value) {
-            alert('重新授權成功！請再次點擊備份按鈕。')
-          }
-        } catch (reauthError) {
-          alert('重新授權失敗：' + (reauthError as Error).message)
+    // 詢問使用者是否要重新授權
+    const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續備份？')
+    if (shouldReauth) {
+      try {
+        googleAuthService.signOut()
+        await googleAuthService.requestAuth()
+        checkGoogleConnection()
+        // 重新授權成功，重試備份
+        if (isGoogleConnected.value) {
+          alert('重新授權成功！即將重新執行備份。')
+          handleGoogleBackup()
         }
+      } catch (reauthError) {
+        alert('重新授權失敗：' + (reauthError as Error).message)
       }
-    } else {
-      alert('備份失敗：' + (error as Error).message)
     }
+    
   } finally {
     isSyncing.value = false
   }
@@ -310,30 +341,29 @@ const handleGoogleRestore = async () => {
     window.location.reload()
   } catch (error) {
     console.error('還原失敗:', error)
+    
+    // 標記為連線中斷
+    isSyncing.value = false
+    isGoogleConnected.value = false;
 
-    // 處理 token 無效錯誤
-    if (error instanceof TokenInvalidError) {
-      // 標記為連線中斷
-      checkGoogleConnection()
+    // 詢問使用者是否要重新授權
+    const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續備份？')
+    if (shouldReauth) {
+      try {
+        googleAuthService.signOut()
+        await googleAuthService.requestAuth()
+        checkGoogleConnection()
 
-      // 詢問使用者是否要重新授權
-      const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續還原？')
-      if (shouldReauth) {
-        try {
-          await googleAuthService.handleTokenInvalid()
-          checkGoogleConnection()
-
-          // 重新授權成功，重試還原
-          if (isGoogleConnected.value) {
-            alert('重新授權成功！請再次點擊還原按鈕。')
-          }
-        } catch (reauthError) {
-          alert('重新授權失敗：' + (reauthError as Error).message)
+        // 重新授權成功，重試還原
+        if (isGoogleConnected.value) {
+          alert('重新授權成功！即將重新執行還原。')
+          handleGoogleRestore();
         }
+      } catch (reauthError) {
+        alert('重新授權失敗：' + (reauthError as Error).message)
       }
-    } else {
-      alert('還原失敗：' + (error as Error).message)
     }
+    
   } finally {
     isSyncing.value = false
   }
@@ -415,12 +445,25 @@ const handleGoogleRestore = async () => {
           <input id="apiKey" v-model="apiKeyInput" :type="showApiKey ? 'text' : 'password'" class="input-field"
             placeholder="輸入你的 Gemini API Key">
           <button class="btn btn-info" @click="showApiKey = !showApiKey">
-            {{ showApiKey ? '隱藏' : '顯示' }}
+            <EyeOff v-if="showApiKey" :size="18" />
+            <Eye v-else :size="18" />
           </button>
         </div>
-        <button class="btn-primary btn-small" @click="handleUpdateApiKey">
-          更新 API Key
-        </button>
+        <div class="button-group">
+          <button class="btn-primary btn" @click="handleUpdateApiKey">
+            更新 API Key
+          </button>
+          <button
+            class="btn-info btn"
+            @click="handleValidateApiKey"
+            :disabled="isValidatingApiKey"
+          >
+            {{ isValidatingApiKey ? '檢測中...' : '檢測 API Key' }}
+          </button>
+        </div>
+        <p class="api-key-hint">
+          💡 完整資訊請前往 <a href="https://aistudio.google.com/app/api-keys" target="_blank" rel="noopener noreferrer">Google AI Studio</a> 查看額度與管理 API Key
+        </p>
       </div>
     </div>
 
@@ -526,7 +569,7 @@ const handleGoogleRestore = async () => {
       <div class="about-info">
         <div class="about-header">
           <h4>AI 聊天應用</h4>
-          <span class="version-badge">v1.0.0</span>
+          <span class="version-badge">v{{ CURRENT_VERSION }}</span>
         </div>
         <p class="about-desc">
           一個基於 Gemini AI 的角色扮演聊天應用，支援記憶系統和關係好感度追蹤。
@@ -539,15 +582,18 @@ const handleGoogleRestore = async () => {
           <a href="https://github.com/wugofish/my-ai-chat/blob/main/CHANGELOG.md" target="_blank" class="link-btn">
             <span>📝</span> 完整更新履歷
           </a>
+          <button @click="clearCacheAndReload" class="link-btn">
+            <span>🔄</span> 清除快取並重新載入
+          </button>
         </div>
 
         <div class="changelog">
-          <h5>最新更新 (v1.0.0)</h5>
+          <h5>最新更新 (v{{ CURRENT_VERSION }})</h5>
           <ul>
             <li><strong>角色管理系統</strong> - 建立和管理 AI 角色</li>
             <li><strong>記憶系統</strong> - 長期/短期記憶自動管理</li>
             <li><strong>關係系統</strong> - 好感度追蹤與等級變化</li>
-            <li><strong>群聊功能</strong> - 支援多角色對話</li>
+            <li><strong>Google Drive 同步</strong> - 雲端備份與還原</li>
           </ul>
         </div>
 
@@ -645,13 +691,51 @@ const handleGoogleRestore = async () => {
 /* API 設定 */
 .api-key-input {
   display: flex;
-  gap: var(--spacing-sm);
+  position: relative;
   margin-bottom: var(--spacing-md);
+}
+
+.api-key-input input {
+  flex: 1;
+  padding-right: 50px; /* 為按鈕留出空間 */
+}
+
+.api-key-input .btn {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  min-width: 48px;
+  padding: 0 var(--spacing-sm);
+}
+
+.api-key-hint {
+  margin-top: var(--spacing-md);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.api-key-hint a {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.api-key-hint a:hover {
+  text-decoration: underline;
 }
 
 .btn-small {
   padding: var(--spacing-sm) var(--spacing-xl);
   font-size: var(--text-sm);
+}
+
+.btn-icon {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
 }
 
 /* Google Drive 同步 */
