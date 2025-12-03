@@ -470,16 +470,13 @@ const handleGoogleRestore = async () => {
           <button class="btn-primary btn" @click="handleUpdateApiKey">
             更新 API Key
           </button>
-          <button
-            class="btn-info btn"
-            @click="handleValidateApiKey"
-            :disabled="isValidatingApiKey"
-          >
+          <button class="btn-info btn" @click="handleValidateApiKey" :disabled="isValidatingApiKey">
             {{ isValidatingApiKey ? '檢測中...' : '檢測 API Key' }}
           </button>
         </div>
         <p class="api-key-hint">
-          💡 完整資訊請前往 <a href="https://aistudio.google.com/app/api-keys" target="_blank" rel="noopener noreferrer">Google AI Studio</a> 查看額度與管理 API Key
+          💡 完整資訊請前往 <a href="https://aistudio.google.com/app/api-keys" target="_blank" rel="noopener noreferrer">Google
+            AI Studio</a> 查看額度與管理 API Key
         </p>
       </div>
     </div>
@@ -496,12 +493,7 @@ const handleGoogleRestore = async () => {
         </div>
 
         <div class="action-list">
-          <button
-            v-if="!isGoogleConnected"
-            class="action-btn"
-            @click="handleGoogleConnect"
-            :disabled="isSyncing"
-          >
+          <button v-if="!isGoogleConnected" class="action-btn" @click="handleGoogleConnect" :disabled="isSyncing">
             <span class="action-icon">🔗</span>
             <div class="action-text">
               <div class="action-title">連線 Google Drive</div>
@@ -509,12 +501,7 @@ const handleGoogleRestore = async () => {
             </div>
           </button>
 
-          <button
-            v-else
-            class="action-btn"
-            @click="handleGoogleDisconnect"
-            :disabled="isSyncing"
-          >
+          <button v-else class="action-btn" @click="handleGoogleDisconnect" :disabled="isSyncing">
             <span class="action-icon">🔌</span>
             <div class="action-text">
               <div class="action-title">中斷連線</div>
@@ -522,11 +509,7 @@ const handleGoogleRestore = async () => {
             </div>
           </button>
 
-          <button
-            class="action-btn"
-            @click="handleGoogleBackup"
-            :disabled="isSyncing || !isGoogleConnected"
-          >
+          <button class="action-btn" @click="handleGoogleBackup" :disabled="isSyncing || !isGoogleConnected">
             <span class="action-icon">☁️</span>
             <div class="action-text">
               <div class="action-title">{{ isSyncing ? '備份中...' : '備份到 Google Drive' }}</div>
@@ -534,11 +517,7 @@ const handleGoogleRestore = async () => {
             </div>
           </button>
 
-          <button
-            class="action-btn"
-            @click="handleGoogleRestore"
-            :disabled="isSyncing || !isGoogleConnected"
-          >
+          <button class="action-btn" @click="handleGoogleRestore" :disabled="isSyncing || !isGoogleConnected">
             <span class="action-icon">📥</span>
             <div class="action-text">
               <div class="action-title">{{ isSyncing ? '還原中...' : '從 Google Drive 還原' }}</div>
@@ -582,14 +561,14 @@ const handleGoogleRestore = async () => {
 
     <!-- 關於 -->
     <div class="settings-section">
-      <h3>關於本應用</h3>
+      <h3>關於 愛茶的 AI Chat</h3>
       <div class="about-info">
         <div class="about-header">
-          <h4>AI 聊天應用</h4>
+          <h4>愛茶的 AI Chat</h4>
           <span class="version-badge">v{{ currentVersion }}</span>
         </div>
         <p class="about-desc">
-          一個基於 Gemini AI 的角色扮演聊天應用，支援記憶系統和關係好感度追蹤。
+          和專屬於你的 AI 夥伴們泡茶聊天，建立美好的互動記憶。
         </p>
 
         <div class="about-links">
