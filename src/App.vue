@@ -1,33 +1,53 @@
 <script setup lang="ts">
-import { RouterView } from 'vue-router'
-import { onMounted, ref } from 'vue'
-import { checkVersion, updateStoredVersion, clearCacheAndReload, CURRENT_VERSION, getVersionInfo } from '@/utils/version'
+import { RouterView, useRouter } from 'vue-router'
+import { onMounted, ref, watch } from 'vue'
+import { checkVersion, updateStoredVersion, clearCacheAndReload, fetchServerVersion, getVersionInfo, type VersionInfo } from '@/utils/version'
 import { useMemoriesStore } from '@/stores/memories'
 import { useChatRoomsStore } from '@/stores/chatRooms'
+import { useCharacterStore } from '@/stores/characters'
 
 // 版本更新提示
 const showUpdateDialog = ref(false)
 const isNewVersion = ref(false)
+const serverVersion = ref('')
+const versionInfo = ref<VersionInfo | null>(null)
 
 const memoriesStore = useMemoriesStore()
 const chatRoomsStore = useChatRoomsStore()
+const characterStore = useCharacterStore()
+const router = useRouter()
 
-onMounted(() => {
+// 檢查版本的函數
+const performVersionCheck = async () => {
+  isNewVersion.value = await checkVersion()
+  if (isNewVersion.value) {
+    // 取得伺服器版本號和更新說明
+    serverVersion.value = await fetchServerVersion()
+    versionInfo.value = await getVersionInfo(serverVersion.value) || null
+    showUpdateDialog.value = true
+  }
+}
+
+onMounted(async () => {
   // 遷移舊版本的記憶資料（需要傳入聊天室列表）
   memoriesStore.migrateLegacyRoomMemories(chatRoomsStore.chatRooms)
 
-  // 檢查版本
-  isNewVersion.value = checkVersion()
+  // 為沒有作息設定的舊角色加上預設作息
+  characterStore.migrateCharacterSchedules()
 
-  if (isNewVersion.value) {
-    showUpdateDialog.value = true
-  }
+  // 初始版本檢查
+  await performVersionCheck()
+})
+
+// 監聽路由變化，每次導航時檢查版本
+watch(() => router.currentRoute.value.path, async () => {
+  await performVersionCheck()
 })
 
 // 確認更新
 const handleUpdate = async () => {
   showUpdateDialog.value = false
-  updateStoredVersion()
+  await updateStoredVersion()
 
   // 清除快取並重新載入
   await clearCacheAndReload()
@@ -45,11 +65,11 @@ const handleLater = () => {
   <div v-if="showUpdateDialog" class="update-dialog-overlay">
     <div class="update-dialog">
       <h3>🎉 發現新版本</h3>
-      <p class="version-info">版本 {{ CURRENT_VERSION }} 已發布！</p>
-      <div class="update-features">
+      <p class="version-info">版本 {{ serverVersion }} 已發布！</p>
+      <div v-if="versionInfo?.features && versionInfo.features.length > 0" class="update-features">
         <p><strong>更新內容：</strong></p>
         <ul>
-          <li v-for="(feature, index) in getVersionInfo(CURRENT_VERSION)?.features" :key="index">
+          <li v-for="(feature, index) in versionInfo.features" :key="index">
             {{ feature }}
           </li>
         </ul>

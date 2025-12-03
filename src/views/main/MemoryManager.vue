@@ -23,9 +23,13 @@ const shortTermMemories = computed(() =>
   memoriesStore.getCharacterShortTermMemories(characterId.value)
 )
 
-// 編輯狀態
+// 編輯狀態（長期記憶）
 const editingMemoryId = ref<string | null>(null)
 const editingContent = ref('')
+
+// 編輯狀態（短期記憶）
+const editingShortMemoryId = ref<string | null>(null)
+const editingShortContent = ref('')
 
 // 新增記憶
 const showAddModal = ref(false)
@@ -94,6 +98,37 @@ const handleDeleteMemory = (memoryId: string) => {
   }
 }
 
+// 編輯短期記憶
+const handleEditShortMemory = (memory: Memory) => {
+  editingShortMemoryId.value = memory.id
+  editingShortContent.value = memory.content
+}
+
+const handleSaveShortEdit = () => {
+  if (!editingShortMemoryId.value || !editingShortContent.value.trim()) return
+
+  memoriesStore.updateCharacterShortTermMemory(
+    characterId.value,
+    editingShortMemoryId.value,
+    editingShortContent.value.trim()
+  )
+
+  editingShortMemoryId.value = null
+  editingShortContent.value = ''
+}
+
+const handleCancelShortEdit = () => {
+  editingShortMemoryId.value = null
+  editingShortContent.value = ''
+}
+
+// 刪除短期記憶
+const handleDeleteShortMemory = (memoryId: string) => {
+  if (confirm('確定要刪除這條短期記憶嗎？')) {
+    memoriesStore.deleteCharacterShortTermMemory(characterId.value, memoryId)
+  }
+}
+
 // 格式化日期
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleDateString('zh-TW', {
@@ -142,7 +177,17 @@ const formatDate = (dateString: string) => {
 
         <div v-else class="memory-list">
           <div v-for="memory in shortTermMemories" :key="memory.id" class="memory-item card">
-            <div class="memory-view">
+            <!-- 編輯模式 -->
+            <div v-if="editingShortMemoryId === memory.id" class="memory-edit">
+              <textarea v-model="editingShortContent" class="input-field" rows="3" placeholder="輸入記憶內容..." />
+              <div class="button-group">
+                <button class="btn btn-primary" @click="handleSaveShortEdit">儲存</button>
+                <button class="btn btn-secondary" @click="handleCancelShortEdit">取消</button>
+              </div>
+            </div>
+
+            <!-- 檢視模式 -->
+            <div v-else class="memory-view">
               <div class="memory-meta">
                 <span class="memory-source badge" :class="{ processed: memory.processed }">
                   {{ memory.processed ? '已處理' : '未處理' }}
@@ -153,6 +198,10 @@ const formatDate = (dateString: string) => {
                 </span>
               </div>
               <div class="memory-content">{{ memory.content }}</div>
+              <div class="memory-actions button-group">
+                <button class="btn btn-secondary btn-sm" @click="handleEditShortMemory(memory)">編輯</button>
+                <button class="btn btn-danger btn-sm" @click="handleDeleteShortMemory(memory.id)">刪除</button>
+              </div>
             </div>
           </div>
         </div>

@@ -20,6 +20,7 @@ export const useRelationshipsStore = defineStore('relationships', {
   getters: {
     // 取得使用者與特定角色的關係
     getUserCharacterRelationship: (state) => (characterId: string) => {
+      
       return state.userToCharacter.find(r => r.characterId === characterId)
     },
 

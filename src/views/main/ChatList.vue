@@ -507,10 +507,6 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
   font-weight: bold;
 }
 
-:deep(i) {
-  font-style: italic;
-}
-
 :deep(.tag-text) {
   color: var(--color-info)!important;
 }

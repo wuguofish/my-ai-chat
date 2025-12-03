@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
 import type { Character, Gender, ActivePeriod } from '@/types'
-import { LIMITS, SCHEDULE_TEMPLATES, type ScheduleTemplate } from '@/utils/constants'
+import { LIMITS, SCHEDULE_TEMPLATES } from '@/utils/constants'
 import AvatarCropper from '@/components/common/AvatarCropper.vue'
 import { v4 as uuidv4 } from 'uuid'
 import {ArrowLeft} from 'lucide-vue-next'
@@ -34,9 +34,9 @@ const avatar = ref('')
 const systemPrompt = ref('')
 const maxOutputTokens = ref<number>(2048)
 
-// 作息時間
-const scheduleMode = ref<'disabled' | 'template' | 'custom'>('disabled')
-const selectedTemplateId = ref('always-online')
+// 作息時間（預設為上班族模板）
+const scheduleMode = ref<'disabled' | 'template' | 'custom'>('template')
+const selectedTemplateId = ref('office-worker')
 const customPeriods = ref<ActivePeriod[]>([
   { start: 0, end: 24, status: 'online' }
 ])
@@ -321,13 +321,13 @@ const getDefaultAvatar = (name: string) => {
         <div class="form-group">
           <label>選擇模式</label>
           <div class="schedule-mode-tabs">
-            <button
+            <!-- <button
               type="button"
               :class="['mode-tab', { active: scheduleMode === 'disabled' }]"
               @click="scheduleMode = 'disabled'"
             >
               停用
-            </button>
+            </button> -->
             <button
               type="button"
               :class="['mode-tab', { active: scheduleMode === 'template' }]"

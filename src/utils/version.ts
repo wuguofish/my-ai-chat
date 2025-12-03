@@ -3,53 +3,146 @@
  */
 
 // 當前版本號（每次更新時記得更新這個值）
-export const CURRENT_VERSION = '1.2.0'
-
-// 版本歷史
-export const VERSION_HISTORY = [
-  {
-    version: '1.2.0',
-    date: '2025-01-17',
-    features: [
-      '新增 API Key 檢測功能，可驗證 Key 是否有效且不消耗額度',
-      '優化 API Key 輸入欄位，加入顯示/隱藏密碼功能',
-      '改善 API Key 設定區塊 UI，採用 input group 設計',
-      '新增 Google AI Studio 連結，方便查看額度與管理 API Key',
-      '修復 iOS 長按複製/刪除訊息功能',
-      '改善系統提示詞說明文字，避免使用者重複設定',
-      '優化聊天室長期記憶顯示，改為唯讀模式並引導至記憶管理頁'
-    ]
-  },
-  {
-    version: '1.1.0',
-    date: '2024-01-16',
-    features: [
-      '新增記憶管理面板，可查看與管理角色記憶',
-      '新增手動生成記憶功能，可即時將對話轉換為記憶',
-      '優化匯出/匯入功能，現在包含聊天訊息',
-      '改善底部導航列的圖示顯示效果',
-      '程式碼重構，提升可維護性'
-    ]
-  },
-  {
-    version: '1.0.0',
-    date: '2024-01-15',
-    features: [
-      '初始版本發布',
-      '基礎聊天功能',
-      '角色管理系統',
-      '好感度與關係系統',
-      '記憶系統',
-      'Google Drive 同步功能'
-    ]
-  }
-]
+export const CURRENT_VERSION = '1.3.0'
 
 /**
- * 檢查是否有新版本
+ * 版本資訊介面
+ */
+export interface VersionInfo {
+  version: string
+  date: string
+  features: string[]
+}
+
+// 快取的 CHANGELOG 資料
+let cachedChangelog: VersionInfo[] | null = null
+
+/**
+ * 從伺服器取得 CHANGELOG.md 並解析
+ */
+export async function fetchChangelog(): Promise<VersionInfo[]> {
+  // 如果已經快取，直接返回
+  if (cachedChangelog) {
+    return cachedChangelog
+  }
+
+  try {
+    const timestamp = new Date().getTime()
+    const response = await fetch(`/CHANGELOG.md?t=${timestamp}`, {
+      cache: 'no-cache',
+      headers: {
+        'Cache-Control': 'no-cache'
+      }
+    })
+
+    if (!response.ok) {
+      console.warn('無法取得 CHANGELOG，使用空陣列')
+      return []
+    }
+
+    const markdown = await response.text()
+    cachedChangelog = parseChangelog(markdown)
+    return cachedChangelog
+  } catch (error) {
+    console.error('讀取 CHANGELOG 失敗:', error)
+    return []
+  }
+}
+
+/**
+ * 解析 CHANGELOG.md 格式
+ */
+function parseChangelog(markdown: string): VersionInfo[] {
+  const versions: VersionInfo[] = []
+  const lines = markdown.split('\n')
+
+  let currentVersion: VersionInfo | null = null
+
+  for (const line of lines) {
+    // 匹配版本標題：## [1.2.0] - 2025-01-17
+    const versionMatch = line.match(/##\s+\[([^\]]+)\]\s+-\s+(.+)/)
+    if (versionMatch && versionMatch[1] && versionMatch[2]) {
+      // 如果有前一個版本，儲存它
+      if (currentVersion) {
+        versions.push(currentVersion)
+      }
+
+      // 開始新版本
+      currentVersion = {
+        version: versionMatch[1],
+        date: versionMatch[2].trim(),
+        features: []
+      }
+      continue
+    }
+
+    // 匹配功能項目（開頭是 - 或 *）
+    const featureMatch = line.match(/^\s*[-*]\s+(.+)/)
+    if (featureMatch && featureMatch[1] && currentVersion) {
+      const feature = featureMatch[1].trim()
+      // 移除 Markdown 加粗語法 **text**
+      const cleanFeature = feature.replace(/\*\*(.+?)\*\*/g, '$1')
+      currentVersion.features.push(cleanFeature)
+    }
+  }
+
+  // 加入最後一個版本
+  if (currentVersion) {
+    versions.push(currentVersion)
+  }
+
+  return versions
+}
+
+/**
+ * 從伺服器取得最新版本號
+ * @returns 伺服器上的版本號，若失敗則返回本地版本號
+ */
+export async function fetchServerVersion(): Promise<string> {
+  try {
+    // 加上時間戳避免快取
+    const timestamp = new Date().getTime()
+    const response = await fetch(`/version.json?t=${timestamp}`, {
+      cache: 'no-cache',
+      headers: {
+        'Cache-Control': 'no-cache'
+      }
+    })
+
+    if (!response.ok) {
+      console.warn('無法取得伺服器版本，使用本地版本')
+      return CURRENT_VERSION
+    }
+
+    const data = await response.json()
+    return data.version || CURRENT_VERSION
+  } catch (error) {
+    console.warn('取得伺服器版本失敗:', error)
+    return CURRENT_VERSION
+  }
+}
+
+/**
+ * 檢查是否有新版本（比較本地和伺服器版本）
  * @returns 如果是新版本返回 true，否則返回 false
  */
-export function checkVersion(): boolean {
+export async function checkVersion(): Promise<boolean> {
+  const storedVersion = localStorage.getItem('app_version')
+  const serverVersion = await fetchServerVersion()
+
+  // 如果本地沒有儲存版本，或儲存的版本與伺服器版本不同
+  if (!storedVersion || storedVersion !== serverVersion) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * 同步版本檢查（舊版相容，但建議使用 async 版本）
+ * @deprecated 請使用 async checkVersion()
+ */
+export function checkVersionSync(): boolean {
   const storedVersion = localStorage.getItem('app_version')
 
   if (!storedVersion || storedVersion !== CURRENT_VERSION) {
@@ -60,17 +153,19 @@ export function checkVersion(): boolean {
 }
 
 /**
- * 更新儲存的版本號
+ * 更新儲存的版本號（使用伺服器版本）
  */
-export function updateStoredVersion(): void {
-  localStorage.setItem('app_version', CURRENT_VERSION)
+export async function updateStoredVersion(): Promise<void> {
+  const serverVersion = await fetchServerVersion()
+  localStorage.setItem('app_version', serverVersion)
 }
 
 /**
- * 取得版本更新說明
+ * 取得特定版本的更新說明（從 CHANGELOG 取得）
  */
-export function getVersionInfo(version: string) {
-  return VERSION_HISTORY.find(v => v.version === version)
+export async function getVersionInfo(version: string): Promise<VersionInfo | undefined> {
+  const changelog = await fetchChangelog()
+  return changelog.find(v => v.version === version)
 }
 
 /**

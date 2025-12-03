@@ -148,6 +148,36 @@ export const useMemoriesStore = defineStore('memories', () => {
   }
 
   /**
+   * 更新角色短期記憶
+   */
+  function updateCharacterShortTermMemory(characterId: string, memoryId: string, content: string): boolean {
+    const characterMem = characterMemories.value[characterId]
+    if (!characterMem || !characterMem.shortTermMemories) return false
+
+    const memory = characterMem.shortTermMemories.find(m => m.id === memoryId)
+    if (!memory) return false
+
+    memory.content = content
+    characterMem.updatedAt = new Date().toISOString()
+    return true
+  }
+
+  /**
+   * 刪除角色短期記憶
+   */
+  function deleteCharacterShortTermMemory(characterId: string, memoryId: string): boolean {
+    const characterMem = characterMemories.value[characterId]
+    if (!characterMem || !characterMem.shortTermMemories) return false
+
+    const index = characterMem.shortTermMemories.findIndex(m => m.id === memoryId)
+    if (index === -1) return false
+
+    characterMem.shortTermMemories.splice(index, 1)
+    characterMem.updatedAt = new Date().toISOString()
+    return true
+  }
+
+  /**
    * 檢查角色是否需要處理短期記憶（6 筆全未處理）
    */
   function shouldProcessCharacterMemories(characterId: string): boolean {
@@ -384,42 +414,49 @@ export const useMemoriesStore = defineStore('memories', () => {
       const roomMem = roomMemories.value[roomId]
 
       // 如果有舊的 contextMemories 但沒有 summary（新版本的聊天室情境）
-      if (roomMem.contextMemories && roomMem.contextMemories.length > 0 && !roomMem.summary) {
-        const oldMemoriesCount = roomMem.contextMemories.length
+      if (roomMem) { 
+        if (roomMem.contextMemories && roomMem.contextMemories.length > 0 && !roomMem.summary) {
+          const oldMemoriesCount = roomMem.contextMemories.length
 
-        // 找到這個 room 對應的 character（舊版本只有私聊，characterIds 只有一個）
-        const room = chatRooms.find(r => r.id === roomId)
-        const characterId = room?.characterIds?.[0]
+          // 找到這個 room 對應的 character（舊版本只有私聊，characterIds 只有一個）
+          const room = chatRooms.find(r => r.id === roomId)
+          const characterId = room?.characterIds?.[0]
 
-        if (characterId) {
-          // 1. 將舊記憶轉成角色短期記憶
-          roomMem.contextMemories.forEach(oldMemory => {
-            // 使用內部函數新增短期記憶，會自動處理覆蓋邏輯
-            addCharacterShortTermMemory(
-              characterId,
-              oldMemory.content,
-              oldMemory.source || 'auto',
-              roomId
-            )
-          })
+          if (characterId) {
+            // 1. 將舊記憶轉成角色短期記憶
+            roomMem.contextMemories.forEach(oldMemory => {
+              // 使用內部函數新增短期記憶，會自動處理覆蓋邏輯
+              addCharacterShortTermMemory(
+                characterId,
+                oldMemory.content,
+                oldMemory.source || 'auto',
+                roomId
+              )
+            })
 
-          // 2. 取最後一筆作為聊天室情境
-          const lastMemory = roomMem.contextMemories[roomMem.contextMemories.length - 1]
-          roomMem.summary = lastMemory.content
+            // 2. 取最後一筆作為聊天室情境
+              const lastMemory = roomMem.contextMemories[roomMem.contextMemories.length - 1]
+              
+            if (lastMemory) { 
+              roomMem.summary = lastMemory.content
+            }
 
-          console.log(`已遷移聊天室 ${roomId} 的 ${oldMemoriesCount} 筆舊記憶：`)
-          console.log(`  - ${oldMemoriesCount} 筆 → 角色 ${characterId} 的短期記憶`)
-          console.log(`  - 最後一筆 → 聊天室情境`)
-        } else {
-          // 找不到對應角色，只能把最後一筆設為聊天室情境
-          const lastMemory = roomMem.contextMemories[roomMem.contextMemories.length - 1]
-          roomMem.summary = lastMemory.content
-          console.log(`已遷移聊天室 ${roomId} 的最後一筆記憶為情境（找不到對應角色）`)
+            console.log(`已遷移聊天室 ${roomId} 的 ${oldMemoriesCount} 筆舊記憶：`)
+            console.log(`  - ${oldMemoriesCount} 筆 → 角色 ${characterId} 的短期記憶`)
+            console.log(`  - 最後一筆 → 聊天室情境`)
+          } else {
+            // 找不到對應角色，只能把最後一筆設為聊天室情境
+            const lastMemory = roomMem.contextMemories[roomMem.contextMemories.length - 1]
+            if (lastMemory) { 
+              roomMem.summary = lastMemory.content
+            }              
+            console.log(`已遷移聊天室 ${roomId} 的最後一筆記憶為情境（找不到對應角色）`)
+          }
+
+          // 清空舊的 contextMemories（已經不再使用）
+          roomMem.contextMemories = []
+          roomMem.updatedAt = new Date().toISOString()
         }
-
-        // 清空舊的 contextMemories（已經不再使用）
-        roomMem.contextMemories = []
-        roomMem.updatedAt = new Date().toISOString()
       }
     })
   }
@@ -448,6 +485,8 @@ export const useMemoriesStore = defineStore('memories', () => {
     // Character Short-term Memories
     getCharacterShortTermMemories,
     addCharacterShortTermMemory,
+    updateCharacterShortTermMemory,
+    deleteCharacterShortTermMemory,
     markCharacterShortTermMemoriesAsProcessed,
     shouldProcessCharacterMemories,
 

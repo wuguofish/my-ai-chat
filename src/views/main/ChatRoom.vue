@@ -53,6 +53,29 @@ const groupCharacters = computed(() => {
 const userName = computed(() => userStore.userName)
 const userAvatar = computed(() => userStore.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName.value)}&background=667eea&color=fff`)
 
+// @ 選單可選擇的對象
+const mentionOptions = computed(() => {
+  const options: Array<{ id: string; name: string; type: 'all' | 'user' | 'character'; avatar?: string }> = []
+
+  // 只在群聊時顯示 @ 選單
+  if (room.value?.type !== 'group') return options
+
+  // @all（使用 Lucide Users 圖示）
+  options.push({ id: '@all', name: 'all（所有人）', type: 'all' })
+
+  // 所有角色
+  groupCharacters.value.forEach(char => {
+    options.push({
+      id: `@${char.name}`,
+      name: char.name,
+      type: 'character',
+      avatar: char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`
+    })
+  })
+
+  return options
+})
+
 // 單人聊天角色狀態
 const characterStatus = computed(() => {
   if (!character.value) return null
@@ -92,8 +115,14 @@ const formatMessageContent = (content: string) => {
 
 // 輸入框
 const messageInput = ref('')
+const messageInputRef = ref<HTMLTextAreaElement | null>(null)
 const messagesContainer = ref<HTMLElement | null>(null)
 const isLoading = ref(false)
+
+// @ 選單
+const showMentionMenu = ref(false)
+const mentionMenuPosition = ref({ top: 0, left: 0 })
+const mentionCursorPosition = ref(0) // 記錄 @ 符號的位置
 
 // 訊息選單與多選刪除
 const showMessageMenu = ref(false)
@@ -114,8 +143,6 @@ const showMemoryPanel = ref(false)   // 記憶/成員面板
 const showMemberMemoryModal = ref(false)  // 成員記憶彈窗
 const selectedMemberForMemory = ref<Character | null>(null)  // 選中查看記憶的成員
 const memoryTab = ref<'short' | 'long'>('short')
-const editingMemoryId = ref<string | null>(null)
-const editingMemoryContent = ref('')
 
 // 取得短期記憶（角色綁定）
 const shortTermMemories = computed(() => {
@@ -284,44 +311,7 @@ const switchMemoryTab = (tab: 'short' | 'long') => {
   memoryTab.value = tab
 }
 
-// 開始編輯記憶
-const startEditMemory = (memoryId: string, content: string) => {
-  editingMemoryId.value = memoryId
-  editingMemoryContent.value = content
-}
-
-// 取消編輯記憶
-const cancelEditMemory = () => {
-  editingMemoryId.value = null
-  editingMemoryContent.value = ''
-}
-
-// 儲存編輯的記憶（僅限短期記憶）
-const saveEditMemory = () => {
-  if (!editingMemoryId.value || !character.value) return
-  if (memoryTab.value !== 'short') return // 只允許編輯短期記憶
-
-  const success = memoriesStore.updateRoomMemory(roomId.value, editingMemoryId.value, editingMemoryContent.value)
-
-  if (success) {
-    cancelEditMemory()
-  } else {
-    alert('更新記憶失敗')
-  }
-}
-
-// 刪除記憶（僅限短期記憶）
-const deleteMemory = (memoryId: string) => {
-  if (!character.value) return
-  if (memoryTab.value !== 'short') return // 只允許刪除短期記憶
-  if (!confirm('確定要刪除這條記憶嗎？')) return
-
-  const success = memoriesStore.deleteRoomMemory(roomId.value, memoryId)
-
-  if (!success) {
-    alert('刪除記憶失敗')
-  }
-}
+// 記憶編輯功能已移至記憶管理頁面，這裡僅做唯讀顯示
 
 // 滾動到底部
 const scrollToBottom = async () => {
@@ -780,8 +770,67 @@ const isTouchDevice = () => {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0
 }
 
+// 處理輸入框變化（偵測 @ 符號）
+const handleInputChange = () => {
+  if (room.value?.type !== 'group') return
+
+  const textarea = messageInputRef.value
+  if (!textarea) return
+
+  const cursorPos = textarea.selectionStart
+  const textBeforeCursor = messageInput.value.substring(0, cursorPos)
+
+  // 檢查游標前最後一個字元是否為 @
+  if (textBeforeCursor.endsWith('@')) {
+    // 顯示選單
+    showMentionMenu.value = true
+    mentionCursorPosition.value = cursorPos
+
+    // 計算選單位置（在游標下方）
+    // 簡化版：固定在輸入框上方
+    const rect = textarea.getBoundingClientRect()
+    mentionMenuPosition.value = {
+      left: rect.left + 20,
+      top: rect.top - 10
+    }
+  } else {
+    // 隱藏選單
+    showMentionMenu.value = false
+  }
+}
+
+// 選擇 @ 對象
+const selectMention = (option: { id: string; name: string; type: string }) => {
+  const textarea = messageInputRef.value
+  if (!textarea) return
+
+  const cursorPos = mentionCursorPosition.value
+  const beforeAt = messageInput.value.substring(0, cursorPos - 1) // 移除 @
+  const afterCursor = messageInput.value.substring(cursorPos)
+
+  // 插入選擇的名字
+  messageInput.value = beforeAt + option.id + ' ' + afterCursor
+
+  // 設定游標位置到插入文字後
+  nextTick(() => {
+    const newCursorPos = (beforeAt + option.id + ' ').length
+    textarea.setSelectionRange(newCursorPos, newCursorPos)
+    textarea.focus()
+  })
+
+  // 隱藏選單
+  showMentionMenu.value = false
+}
+
 // 處理 Enter 送出
 const handleKeydown = (event: KeyboardEvent) => {
+  // 如果選單開啟，Escape 關閉選單
+  if (showMentionMenu.value && event.key === 'Escape') {
+    showMentionMenu.value = false
+    event.preventDefault()
+    return
+  }
+
   // 在手機上，Enter 就是換行，不送出訊息（需要點按鈕）
   // 在桌面上，Enter 送出，Shift+Enter 換行
   if (!isTouchDevice() && event.key === 'Enter' && !event.shiftKey) {
@@ -915,6 +964,17 @@ onMounted(() => {
     alert('找不到聊天室')
     router.push('/main/chats')
     return
+  }
+
+  // 初始化與聊天室內所有角色的關係（如果尚未建立）
+  if (room.value.type === 'single' && character.value) {
+    // 私聊：初始化與該角色的關係
+    relationshipsStore.initUserCharacterRelationship(character.value.id)
+  } else if (room.value.type === 'group') {
+    // 群聊：初始化與所有角色的關係
+    groupCharacters.value.forEach(char => {
+      relationshipsStore.initUserCharacterRelationship(char.id)
+    })
   }
 
   chatRoomStore.setCurrentRoom(roomId.value)
@@ -1277,11 +1337,40 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- @ 選單 -->
+    <div v-if="showMentionMenu" class="mention-menu" :style="{ top: mentionMenuPosition.top + 'px', left: mentionMenuPosition.left + 'px' }">
+      <div
+        v-for="option in mentionOptions"
+        :key="option.id"
+        class="mention-option"
+        @click="selectMention(option)"
+      >
+        <!-- 頭像 -->
+        <div class="mention-avatar">
+          <template v-if="option.type === 'all'">
+            <Users :size="20" class="mention-icon" />
+          </template>
+          <template v-else>
+            <img :src="option.avatar" :alt="option.name" />
+          </template>
+        </div>
+        <!-- 名稱 -->
+        <span class="mention-name">{{ option.name }}</span>
+      </div>
+    </div>
+
     <!-- Input -->
     <div class="input-container">
-      <textarea v-model="messageInput" class="message-input"
-        :placeholder="isTouchDevice() ? '輸入訊息...' : '輸入訊息... (Enter 送出，Shift+Enter 換行)'" rows="1" :disabled="isLoading"
-        @keydown="handleKeydown"></textarea>
+      <textarea
+        ref="messageInputRef"
+        v-model="messageInput"
+        class="message-input"
+        :placeholder="isTouchDevice() ? '輸入訊息...' : '輸入訊息... (Enter 送出，Shift+Enter 換行)'"
+        rows="1"
+        :disabled="isLoading"
+        @input="handleInputChange"
+        @keydown="handleKeydown"
+      ></textarea>
       <button class="send-btn" :disabled="!messageInput.trim() || isLoading" @click="handleSendMessage">
         <Send :size="20" />
       </button>
@@ -1721,6 +1810,63 @@ onMounted(() => {
 .message.multi-select-mode.selected {
   background: rgba(102, 126, 234, 0.1);
   border-radius: var(--radius-lg);
+}
+
+/* @ 選單 */
+.mention-menu {
+  position: fixed;
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-xs);
+  min-width: 200px;
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 2000;
+  transform: translateY(-100%);
+  margin-top: -10px;
+}
+
+.mention-option {
+  padding: var(--spacing-md) var(--spacing-lg);
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: background var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.mention-option:hover {
+  background: var(--color-bg-hover);
+}
+
+.mention-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-secondary);
+}
+
+.mention-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mention-icon {
+  color: var(--color-primary);
+}
+
+.mention-name {
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+  flex: 1;
 }
 
 /* Message Menu */
@@ -2419,12 +2565,11 @@ onMounted(() => {
 }
 
 :deep(i) {
-  color: var(--color-primary-light);
-  font-style: italic;
+  color: var(--color-info);
 }
 
 :deep(.tag-text) {
-  color: var(--color-info)!important;;
+  color: var(--color-warning)!important;;
 }
 
 @media (max-width: 768px) {

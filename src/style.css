@@ -2,10 +2,54 @@
    AI Chat 應用程式全域樣式
    ========================================== */
 
+/* ===== 字型定義 ===== */
+@font-face {
+  font-family: 'jfOpenHuninn';
+  src:
+    url('@/assets/fonts/jf-openhuninn.woff2') format('woff2'),
+    url('@/assets/fonts/jf-openhuninn.woff') format('woff'),
+    url('@/assets/fonts/jf-openhuninn.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Iansui';
+  src:
+    url('@/assets/fonts/Iansui-Regular.woff2') format('woff2'),
+    url('@/assets/fonts/Iansui-Regular.woff') format('woff'),
+    url('@/assets/fonts/Iansui-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ===== 全域字型設定 =====*/
+/* 全站預設使用 Iansui 字型 */
+* {
+  font-family: 'Iansui', 'Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC', sans-serif;
+}
+
+/* 標題使用 jfOpenHuninn 字型*/
+h1, h2, h3, h4, h5, h6,
+.el-menu-item,
+.el-sub-menu,
+.el-sub-menu__title,
+.el-sub-menu__title span,
+.el-dialog__title,
+.tags-view-item a,
+.el-breadcrumb__inner span,
+.el-breadcrumb__inner a,
+.el-message-box__title,
+.el-card__header {
+  font-family: 'jfOpenHuninn', 'Iansui', 'Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC', sans-serif !important;
+}
+
+
 :root {
   /* 字體設定 */
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei',
-    'Noto Sans TC', sans-serif;
+
   line-height: 1.5;
   font-weight: 400;
 
@@ -123,6 +167,13 @@ body {
 /* ==========================================
    通用元素樣式
    ========================================== */
+/* 解決中文字體斜體不斜的問題 */
+i {
+  font-style: normal;          /* 防止瀏覽器自帶 italic */
+  display: inline-block;       /* 讓 transform 生效 */
+  transform: skew(-20deg);     /* 偽斜角度 */
+  transform-origin: left center;
+}
 
 
 a {

@@ -8,7 +8,7 @@ import { useMemoriesStore } from '@/stores/memories'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService } from '@/services/googleDrive'
-import { CURRENT_VERSION, clearCacheAndReload } from '@/utils/version'
+import { fetchServerVersion, clearCacheAndReload, getVersionInfo, type VersionInfo } from '@/utils/version'
 import { validateApiKey } from '@/services/gemini'
 import { Eye, EyeOff } from 'lucide-vue-next'
 
@@ -19,6 +19,16 @@ const chatRoomStore = useChatRoomsStore()
 const memoriesStore = useMemoriesStore()
 const relationshipsStore = useRelationshipsStore()
 
+// 版本資訊
+const currentVersion = ref('')
+const versionInfo = ref<VersionInfo | null>(null)
+
+// 取得版本資訊
+const loadVersionInfo = async () => {
+  currentVersion.value = await fetchServerVersion()
+  versionInfo.value = await getVersionInfo(currentVersion.value) || null
+}
+
 // Google Drive 同步狀態
 const isGoogleConnected = ref(false)
 const isSyncing = ref(false)
@@ -28,8 +38,9 @@ const checkGoogleConnection = () => {
   isGoogleConnected.value = googleAuthService.isTokenValid()
 }
 
-// 初始化時檢查
+// 初始化
 checkGoogleConnection()
+loadVersionInfo()
 
 // 設定 token 失效回調
 googleAuthService.setTokenInvalidCallback(async () => {
@@ -188,6 +199,9 @@ const handleImportData = (event: Event) => {
 
           // 遷移舊版本的記憶資料（如果有）
           memoriesStore.migrateLegacyRoomMemories(chatRoomStore.chatRooms)
+
+          // 為沒有作息設定的角色加上預設作息
+          characterStore.migrateCharacterSchedules()
 
           alert('匯入成功！')
           window.location.reload()
@@ -572,7 +586,7 @@ const handleGoogleRestore = async () => {
       <div class="about-info">
         <div class="about-header">
           <h4>AI 聊天應用</h4>
-          <span class="version-badge">v{{ CURRENT_VERSION }}</span>
+          <span class="version-badge">v{{ currentVersion }}</span>
         </div>
         <p class="about-desc">
           一個基於 Gemini AI 的角色扮演聊天應用，支援記憶系統和關係好感度追蹤。
@@ -590,13 +604,12 @@ const handleGoogleRestore = async () => {
           </button>
         </div>
 
-        <div class="changelog">
-          <h5>最新更新 (v{{ CURRENT_VERSION }})</h5>
+        <div v-if="versionInfo" class="changelog">
+          <h5>最新更新 (v{{ currentVersion }})</h5>
           <ul>
-            <li><strong>角色管理系統</strong> - 建立和管理 AI 角色</li>
-            <li><strong>記憶系統</strong> - 長期/短期記憶自動管理</li>
-            <li><strong>關係系統</strong> - 好感度追蹤與等級變化</li>
-            <li><strong>Google Drive 同步</strong> - 雲端備份與還原</li>
+            <li v-for="(feature, index) in versionInfo.features" :key="index">
+              {{ feature }}
+            </li>
           </ul>
         </div>
 

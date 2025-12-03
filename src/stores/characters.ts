@@ -5,7 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Character } from '@/types'
-import { LIMITS } from '@/utils/constants'
+import { LIMITS, SCHEDULE_TEMPLATES } from '@/utils/constants'
 
 export const useCharacterStore = defineStore('characters', () => {
   // State
@@ -52,6 +52,28 @@ export const useCharacterStore = defineStore('characters', () => {
     characters.value = []
   }
 
+  /**
+   * 為沒有作息設定的舊角色加上預設作息（上班族）
+   */
+  function migrateCharacterSchedules() {
+    const officeWorkerTemplate = SCHEDULE_TEMPLATES.find(t => t.id === 'office-worker')
+    if (!officeWorkerTemplate) return
+
+    let migratedCount = 0
+
+    characters.value.forEach(character => {
+      // 如果角色沒有 activePeriods 或是空陣列，加上預設值
+      if (!character.activePeriods || character.activePeriods.length === 0) {
+        character.activePeriods = [...officeWorkerTemplate.periods]
+        migratedCount++
+      }
+    })
+
+    if (migratedCount > 0) {
+      console.log(`已為 ${migratedCount} 位角色設定預設作息（上班族）`)
+    }
+  }
+
   return {
     // State
     characters,
@@ -64,7 +86,9 @@ export const useCharacterStore = defineStore('characters', () => {
     addCharacter,
     updateCharacter,
     deleteCharacter,
-    clearCharacters
+    clearCharacters,
+    // Migration
+    migrateCharacterSchedules
   }
 }, {
   persist: {

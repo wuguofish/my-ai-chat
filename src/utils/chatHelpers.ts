@@ -163,7 +163,7 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     `- 你不知道其他人的內部設定或秘密，除非他們在對話中說出來或在記憶中曾經揭示。`,
     `- 回覆必須口語化、生活化。避免使用書信體或過於正式的用語。`,
     `- 避免重複已經講過的話、問候或話題。`,
-    `- 對話中若需要描述動作，用<i>動作</i>表達，並用第三人稱描述所有人的動作。`,
+    `- 對話中若需要描述動作，用 *動作* 表達（Markdown 斜體語法），並用第三人稱描述所有人的動作。`,
     `- 請務必回應使用者的每一句話，避免只回傳空洞的動作描述（如「看著你」、「微笑」），必須要有實際的對話內容。`,
     `- 嚴禁輸出思考過程：只輸出你真正要傳送給對方的文字。`,
     `- 禁止連續輸出無意義的內容（如「...」、「......」）。`,
@@ -175,7 +175,8 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     instructions.push(`\n## 群聊 @ 功能使用規則`)
     instructions.push(`- 若提到特定對象的話，必須使用 @ID 的方式標註（參考上方的ID對照表）`)
     instructions.push(`- 例如提到「小美」，要寫：「@char_xxx 小美你覺得呢？」（用 ID，不是用名字）`)
-    instructions.push(`- 可以在對話中自由使用暱稱或稱呼，但提及時必須同時標註該人物，且 @ 標註確保使用存在於ID對照表內的正確ID`)
+    instructions.push(`- 可以在對話中自由使用暱稱或稱呼，但第一次提及時必須在對話中@ 標註該人物，且確保使用存在於ID對照表內的正確ID`)
+    instructions.push(`- 同一則對話內，即使提到多次也禁止重複使用@標註同一個人`)
     instructions.push(`- 你也可以 @ 使用者（${user.nickname}），方式為：@user`)
     instructions.push(`- 若要呼叫所有人，使用：@all`)
   }
@@ -309,15 +310,16 @@ export function generateChatRoomName(characterNames: string[]): string {
 
 /**
  * 將訊息中的 @ID 轉換為 @名字（供使用者閱讀）
+ * 同時將 *動作* 轉換為 <i>動作</i>
  */
 export function formatMessageForDisplay(message: string, characters: Character[], userName: string = '你'): string {
   let formatted = message
 
   // 處理 @all（不區分大小寫，統一轉為 @all）
-  formatted = formatted.replace(/@all/gi, '@all')
+  formatted = formatted.replace(/@all/gi, '<span class="tag-text">@all</span>')
 
   // 先處理 @user
-  formatted = formatted.replace(/@user/g, `@${userName}`)
+  formatted = formatted.replace(/@user/g, `<span class="tag-text">@${userName}</span>`)
 
   // 處理 @角色ID
   characters.forEach(char => {
@@ -326,6 +328,9 @@ export function formatMessageForDisplay(message: string, characters: Character[]
     const regex = new RegExp(`@${escapedId}`, 'g')
     formatted = formatted.replace(regex, `<span class="tag-text">@${char.name}</span>`)
   })
+
+  // 處理動作標記：*動作* → <i>動作</i>
+  formatted = formatted.replace(/\*([^*]+)\*/g, '<i>$1</i>')
 
   return formatted
 }
