@@ -2,12 +2,20 @@
 import { RouterView } from 'vue-router'
 import { onMounted, ref } from 'vue'
 import { checkVersion, updateStoredVersion, clearCacheAndReload, CURRENT_VERSION, getVersionInfo } from '@/utils/version'
+import { useMemoriesStore } from '@/stores/memories'
+import { useChatRoomsStore } from '@/stores/chatRooms'
 
 // 版本更新提示
 const showUpdateDialog = ref(false)
 const isNewVersion = ref(false)
 
+const memoriesStore = useMemoriesStore()
+const chatRoomsStore = useChatRoomsStore()
+
 onMounted(() => {
+  // 遷移舊版本的記憶資料（需要傳入聊天室列表）
+  memoriesStore.migrateLegacyRoomMemories(chatRoomsStore.chatRooms)
+
   // 檢查版本
   isNewVersion.value = checkVersion()
 

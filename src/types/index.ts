@@ -146,7 +146,8 @@ export interface Memory {
 
 export interface CharacterGlobalMemory {
   characterId: string
-  importantMemories: Memory[]
+  importantMemories: Memory[]  // 長期記憶
+  shortTermMemories: Memory[]  // 短期記憶緩衝區（最多 6 筆，跨所有聊天室）
   updatedAt: string
 }
 

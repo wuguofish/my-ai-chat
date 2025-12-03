@@ -186,6 +186,9 @@ const handleImportData = (event: Event) => {
             })
           }
 
+          // 遷移舊版本的記憶資料（如果有）
+          memoriesStore.migrateLegacyRoomMemories(chatRoomStore.chatRooms)
+
           alert('匯入成功！')
           window.location.reload()
         }

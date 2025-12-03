@@ -4,7 +4,7 @@
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai'
 import type { Character, Message, UserProfile, ChatRoom } from '@/types'
-import { generateSystemPrompt, type SystemPromptContext } from '@/utils/chatHelpers'
+import { generateSystemPrompt, convertToShortIds, convertToLongIds, type SystemPromptContext } from '@/utils/chatHelpers'
 
 export interface GetCharacterResponseParams {
   apiKey: string
@@ -64,12 +64,17 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
     // 初始化 Gemini AI
     const genAI = new GoogleGenerativeAI(apiKey)
 
+    // 判斷是否為群聊，群聊時使用短 ID
+    const isGroupChat = room?.type === 'group'
+    const useShortIds = isGroupChat && context?.otherCharactersInRoom && context.otherCharactersInRoom.length > 0
+
     // 產生 system prompt（包含完整情境資訊）
     const systemPrompt = generateSystemPrompt({
       character,
       user,
       room,
-      ...context
+      ...context,
+      useShortIds
     })
 
     // 建立模型配置
@@ -106,16 +111,31 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
     })
 
     // 建立對話歷史
-    const history = messages.slice(-20).map(msg => {
+    // 將對話歷史中的長 ID 轉換為短 ID（群聊時）
+    const processedMessages = useShortIds && context?.otherCharactersInRoom
+      ? messages.map(msg => ({
+          ...msg,
+          content: convertToShortIds(msg.content, context.otherCharactersInRoom!)
+        }))
+      : messages
+
+    let _userMsg = isGroupChat && userMessage.length>0 ?
+      "["+user.nickname+"]: " + userMessage : userMessage
+
+    // 將使用者訊息也轉換為短 ID
+    if (useShortIds && context?.otherCharactersInRoom) {
+      _userMsg = convertToShortIds(_userMsg, context.otherCharactersInRoom)
+    }
+
+    const history = processedMessages.slice(-20).map(msg => {
       const isUser = msg.senderId === 'user'
-      const isCurrentCharacter = msg.senderId === character.id
 
       // 群聊時需要標註發言者，單人聊天則不需要
-      const isGroupChat = room?.type === 'group'
+      
       let content = msg.content
 
-      if (isGroupChat && !isCurrentCharacter) {
-        // 在群聊中，如果不是當前角色發言，需要標註發言者
+      if (isGroupChat) {
+        // 在群聊中，所有訊息都需要標註發言者
         content = `[${msg.senderName}]: ${msg.content}`
       }
 
@@ -131,9 +151,36 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
     })
 
     // 傳送訊息
-    const result = await chat.sendMessage(userMessage)
+    const result = await chat.sendMessage(_userMsg)
     const response = result.response
-    const text = response.text()
+    let text = response.text()
+
+    // 移除 AI 可能自作聰明加上的 [角色名]: 前綴
+    // 例如：「[楊竣宇]: 大家午安」→「大家午安」
+    text = text.replace(/^\[.*?\]:\s*/g, '')
+
+    // 將短 ID 轉換回長 ID（群聊時）
+    if (useShortIds && context?.otherCharactersInRoom) {
+      text = convertToLongIds(text, context.otherCharactersInRoom)
+    }
+
+    // 過濾無效的 @ 標記（群聊時）
+    if (isGroupChat && context?.otherCharactersInRoom) {
+      // 建立有效 ID 集合
+      const validIds = new Set<string>()
+      validIds.add('user') // 使用者
+      validIds.add('all')  // @all
+      context.otherCharactersInRoom.forEach(char => {
+        validIds.add(char.id)
+      })
+
+      // 找出所有 @ 標記
+      const atPattern = /@([a-zA-Z0-9\-]+)/g
+      text = text.replace(atPattern, (match, id) => {
+        // 如果 ID 有效，保留；否則移除整個 @ 標記
+        return validIds.has(id) ? match : ''
+      })
+    }
 
     // 解析好感度（從最後一行提取）
     const lines = text.trim().split('\n')

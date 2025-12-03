@@ -6,7 +6,7 @@ import { useRelationshipsStore } from '@/stores/relationships'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import type { Character } from '@/types'
-import { Plus, ArrowLeft, MessageCircle, Edit, Brain, Trash2, X, Heart } from 'lucide-vue-next'
+import { Plus, ArrowLeft, MessageCircle, Edit, Bubbles, Trash2, X, Heart } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -343,7 +343,7 @@ const getRelationshipTypeText = (type: string) => {
           </button>
           <button class="function-btn" @click="handleManageMemories">
             <span class="icon">
-              <Brain :size="32" />
+              <Bubbles :size="32" />
             </span>
             <span class="text">管理記憶</span>
           </button>

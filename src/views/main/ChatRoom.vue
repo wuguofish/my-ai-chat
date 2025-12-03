@@ -6,6 +6,7 @@ import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useUserStore } from '@/stores/user'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { useMemoriesStore } from '@/stores/memories'
+import type { Character } from '@/types'
 import {
   formatMessageTime,
   formatMessageForAI,
@@ -17,7 +18,7 @@ import {
 } from '@/utils/chatHelpers'
 import { getCharacterResponse } from '@/services/gemini'
 import { generateMemorySummary, extractLongTermMemories } from '@/services/memoryService'
-import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Brain } from 'lucide-vue-next'
+import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -107,16 +108,19 @@ const showMembersModal = ref(false)
 const longPressTimer = ref<number | null>(null)
 const longPressTriggered = ref(false)
 
-// 記憶面板
-const showMemoryPanel = ref(false)
+// 面板狀態
+const showContextPanel = ref(false)  // 情境面板
+const showMemoryPanel = ref(false)   // 記憶/成員面板
+const showMemberMemoryModal = ref(false)  // 成員記憶彈窗
+const selectedMemberForMemory = ref<Character | null>(null)  // 選中查看記憶的成員
 const memoryTab = ref<'short' | 'long'>('short')
 const editingMemoryId = ref<string | null>(null)
 const editingMemoryContent = ref('')
 
-// 取得短期記憶
+// 取得短期記憶（角色綁定）
 const shortTermMemories = computed(() => {
   if (!character.value) return []
-  return memoriesStore.getRoomMemories(roomId.value)
+  return memoriesStore.getCharacterShortTermMemories(character.value.id)
 })
 
 // 取得長期記憶
@@ -125,9 +129,154 @@ const longTermMemories = computed(() => {
   return memoriesStore.getCharacterMemories(character.value.id)
 })
 
-// 開關記憶面板
+// 情境編輯狀態
+const editingContext = ref(false)
+const editingContextContent = ref('')
+
+// 開關情境面板
+const toggleContextPanel = () => {
+  showContextPanel.value = !showContextPanel.value
+  if (showContextPanel.value) {
+    // 開啟時載入目前的聊天室情境
+    editingContextContent.value = memoriesStore.getRoomSummary(roomId.value)
+  }
+}
+
+// 儲存聊天室情境
+const handleSaveContext = () => {
+  memoriesStore.updateRoomSummary(roomId.value, editingContextContent.value.trim())
+  editingContext.value = false
+}
+
+// 手動生成/更新聊天室情境
+const isGeneratingContext = ref(false)
+const handleGenerateContext = async () => {
+  if (isGeneratingContext.value) return
+
+  const currentMessages = messages.value
+  if (currentMessages.length < 10) {
+    alert('訊息數量不足，無法生成情境（至少需要 10 則訊息）')
+    return
+  }
+
+  try {
+    isGeneratingContext.value = true
+    const apiKey = userStore.apiKey
+    if (!apiKey) {
+      alert('請先在設定中填入 API Key')
+      return
+    }
+
+    // 取得最近 20 則訊息
+    const recentMessages = currentMessages.slice(-20)
+
+    // 生成情境摘要
+    const summary = await generateMemorySummary(apiKey, recentMessages)
+
+    // 更新聊天室情境
+    memoriesStore.updateRoomSummary(roomId.value, summary)
+    editingContextContent.value = summary
+
+    alert('情境更新成功！')
+  } catch (error) {
+    console.error('生成情境失敗:', error)
+    alert('生成情境失敗：' + (error as Error).message)
+  } finally {
+    isGeneratingContext.value = false
+  }
+}
+
+// 手動生成短期記憶
+const isGeneratingMemory = ref(false)
+const handleGenerateMemory = async () => {
+  if (isGeneratingMemory.value) return
+
+  const currentMessages = messages.value
+  if (currentMessages.length < 10) {
+    alert('訊息數量不足，無法生成記憶（至少需要 10 則訊息）')
+    return
+  }
+
+  try {
+    isGeneratingMemory.value = true
+    const apiKey = userStore.apiKey
+    if (!apiKey) {
+      alert('請先在設定中填入 API Key')
+      return
+    }
+
+    // 取得最近 15 則訊息
+    const recentMessages = currentMessages.slice(-15)
+
+    // 生成短期記憶摘要
+    const summary = await generateMemorySummary(apiKey, recentMessages)
+
+    // 判斷是私聊還是群聊
+    if (room.value?.type === 'single' && character.value) {
+      // 私聊：為單一角色生成記憶
+      const result = memoriesStore.addCharacterShortTermMemory(
+        character.value.id,
+        summary,
+        'manual',
+        roomId.value
+      )
+
+      if (result === null) {
+        if (confirm('短期記憶已滿（6 筆全未處理），是否要先提取長期記憶？')) {
+          await processShortTermMemoriesForCharacter(character.value.id)
+          memoriesStore.addCharacterShortTermMemory(
+            character.value.id,
+            summary,
+            'manual',
+            roomId.value
+          )
+          alert('記憶生成成功！')
+        }
+      } else {
+        alert('記憶生成成功！')
+      }
+    } else if (room.value?.type === 'group') {
+      // 群聊：為所有參與角色生成記憶
+      let successCount = 0
+      for (const char of groupCharacters.value) {
+        const result = memoriesStore.addCharacterShortTermMemory(
+          char.id,
+          summary,
+          'manual',
+          roomId.value
+        )
+
+        if (result === null) {
+          // 如果該角色記憶已滿，自動處理
+          await processShortTermMemoriesForCharacter(char.id)
+          memoriesStore.addCharacterShortTermMemory(
+            char.id,
+            summary,
+            'manual',
+            roomId.value
+          )
+        }
+        successCount++
+      }
+      alert(`記憶生成成功！已為 ${successCount} 位角色生成記憶`)
+    }
+  } catch (error) {
+    console.error('生成記憶失敗:', error)
+    alert('生成記憶失敗：' + (error as Error).message)
+  } finally {
+    isGeneratingMemory.value = false
+  }
+}
+
+// 開關記憶/成員面板
 const toggleMemoryPanel = () => {
   showMemoryPanel.value = !showMemoryPanel.value
+}
+
+// 開啟成員記憶彈窗
+const handleViewMemberMemory = (char: Character) => {
+  selectedMemberForMemory.value = char
+  showMemberMemoryModal.value = true
 }
 
 // 切換記憶分頁
@@ -174,56 +323,6 @@ const deleteMemory = (memoryId: string) => {
   }
 }
 
-// 手動生成短期記憶
-const isGeneratingMemory = ref(false)
-const manualGenerateMemory = async () => {
-  if (!character.value) return
-  if (isGeneratingMemory.value) return
-
-  const currentMessages = messages.value
-
-  // 檢查訊息數量
-  if (currentMessages.length < 10) {
-    alert('訊息數量不足 15 則，無法生成記憶')
-    return
-  }
-
-  try {
-    isGeneratingMemory.value = true
-    const apiKey = userStore.apiKey
-    if (!apiKey) {
-      alert('請先在設定中填入 API Key')
-      return
-    }
-
-    // 取得最近 15 則訊息
-    const recentMessages = currentMessages.slice(-15)
-
-    // 生成短期記憶摘要
-    const summary = await generateMemorySummary(apiKey, recentMessages)
-
-    // 嘗試新增短期記憶
-    const result = memoriesStore.addRoomMemory(roomId.value, summary, 'manual')
-
-    // 如果返回 null，表示需要處理記憶（6 筆全未處理）
-    if (result === null) {
-      if (confirm('短期記憶已滿（6 筆全未處理），是否要先提取長期記憶？')) {
-        await processShortTermMemories()
-        // 處理完後，再次嘗試新增
-        memoriesStore.addRoomMemory(roomId.value, summary, 'manual')
-        alert('記憶生成成功！')
-      }
-    } else {
-      alert('記憶生成成功！')
-    }
-  } catch (error) {
-    console.error('生成記憶失敗:', error)
-    alert('生成記憶失敗：' + (error as Error).message)
-  } finally {
-    isGeneratingMemory.value = false
-  }
-}
-
 // 滾動到底部
 const scrollToBottom = async () => {
   await nextTick()
@@ -234,8 +333,6 @@ const scrollToBottom = async () => {
 
 // 記憶處理：每 15 則訊息生成短期記憶
 const handleMemoryGeneration = async () => {
-  if (!character.value) return
-
   const currentMessages = messages.value
 
   // 每 15 則訊息觸發一次記憶生成
@@ -251,16 +348,57 @@ const handleMemoryGeneration = async () => {
     // 生成短期記憶摘要
     const summary = await generateMemorySummary(apiKey, recentMessages)
 
-    // 嘗試新增短期記憶
-    const result = memoriesStore.addRoomMemory(roomId.value, summary, 'auto')
+    // 判斷是私聊還是群聊
+    if (room.value?.type === 'single' && character.value) {
+      // 私聊：為單一角色生成記憶
+      const result = memoriesStore.addCharacterShortTermMemory(
+        character.value.id,
+        summary,
+        'auto',
+        roomId.value
+      )
 
-    // 如果返回 null，表示需要處理記憶（6 筆全未處理）
-    if (result === null) {
-      console.log('短期記憶已滿，開始提取長期記憶...')
-      await processShortTermMemories()
+      // 如果返回 null，表示需要處理記憶（6 筆全未處理）
+      if (result === null) {
+        console.log('短期記憶已滿，開始提取長期記憶...')
+        await processShortTermMemoriesForCharacter(character.value.id)
 
-      // 處理完後，再次嘗試新增
-      memoriesStore.addRoomMemory(roomId.value, summary, 'auto')
+        // 處理完後，再次嘗試新增
+        memoriesStore.addCharacterShortTermMemory(
+          character.value.id,
+          summary,
+          'auto',
+          roomId.value
+        )
+      }
+
+      // 私聊：直接使用短期記憶更新聊天室情境
+      memoriesStore.updateRoomSummary(roomId.value, summary)
+      editingContextContent.value = summary
+    } else if (room.value?.type === 'group') {
+      // 群聊：為所有參與的角色生成記憶
+      for (const char of groupCharacters.value) {
+        const result = memoriesStore.addCharacterShortTermMemory(
+          char.id,
+          summary,
+          'auto',
+          roomId.value
+        )
+
+        // 如果返回 null，表示該角色需要處理記憶
+        if (result === null) {
+          console.log(`${char.name} 的短期記憶已滿，開始提取長期記憶...`)
+          await processShortTermMemoriesForCharacter(char.id)
+
+          // 處理完後，再次嘗試新增
+          memoriesStore.addCharacterShortTermMemory(
+            char.id,
+            summary,
+            'auto',
+            roomId.value
+          )
+        }
+      }
     }
   } catch (error) {
     console.error('記憶生成失敗:', error)
@@ -268,16 +406,45 @@ const handleMemoryGeneration = async () => {
   }
 }
 
-// 處理短期記憶，提取長期記憶
-const processShortTermMemories = async () => {
-  if (!character.value) return
+// 聊天室情境處理：群聊每 30 則訊息更新一次
+const handleRoomContextGeneration = async () => {
+  const currentMessages = messages.value
+
+  // 只處理群聊
+  if (room.value?.type !== 'group') return
+
+  // 每 30 則訊息觸發一次情境生成
+  if (currentMessages.length % 30 !== 0) return
 
   try {
     const apiKey = userStore.apiKey
     if (!apiKey) return
 
-    // 取得所有短期記憶
-    const shortTermMemories = memoriesStore.getRoomMemories(roomId.value)
+    // 取得最近 30 則訊息
+    const recentMessages = currentMessages.slice(-30)
+
+    // 生成聊天室情境摘要
+    const summary = await generateMemorySummary(apiKey, recentMessages)
+
+    // 更新聊天室情境
+    memoriesStore.updateRoomSummary(roomId.value, summary)
+    editingContextContent.value = summary
+
+    console.log('聊天室情境已更新')
+  } catch (error) {
+    console.error('情境生成失敗:', error)
+    // 靜默失敗，不影響正常對話
+  }
+}
+
+// 處理指定角色的短期記憶，提取長期記憶
+const processShortTermMemoriesForCharacter = async (characterId: string) => {
+  try {
+    const apiKey = userStore.apiKey
+    if (!apiKey) return
+
+    // 取得指定角色的所有短期記憶
+    const shortTermMemories = memoriesStore.getCharacterShortTermMemories(characterId)
 
     if (shortTermMemories.length === 0) return
 
@@ -287,15 +454,15 @@ const processShortTermMemories = async () => {
     // 將提取的長期記憶存入角色記憶
     for (const content of longTermMemoryContents) {
       memoriesStore.addCharacterMemory(
-        character.value.id,
+        characterId,
         content,
         'auto',
         roomId.value
       )
     }
 
-    // 標記所有短期記憶為已處理
-    memoriesStore.markRoomMemoriesAsProcessed(roomId.value)
+    // 標記角色的所有短期記憶為已處理
+    memoriesStore.markCharacterShortTermMemoriesAsProcessed(characterId)
 
     console.log(`成功提取 ${longTermMemoryContents.length} 條長期記憶`)
   } catch (error) {
@@ -346,11 +513,17 @@ const handleSingleChatMessage = async (userMessage: string) => {
     // 取得使用者與角色的關係
     const userRelationship = relationshipsStore.getUserCharacterRelationship(character.value.id)
 
+    // 取得角色間的關係
+    const characterRelationships = relationshipsStore.getCharacterRelationships(character.value.id)
+
+    // 取得所有角色（用於解析關係中的角色名稱）
+    const allCharacters = characterStore.characters
+
     // 取得角色的長期記憶
     const longTermMemories = memoriesStore.getCharacterMemories(character.value.id)
 
-    // 取得聊天室的短期記憶
-    const shortTermMemories = memoriesStore.getRoomMemories(roomId.value)
+    // 取得角色的短期記憶（改為綁定角色而非聊天室）
+    const shortTermMemories = memoriesStore.getCharacterShortTermMemories(character.value.id)
 
     // 取得聊天室摘要
     const roomSummary = memoriesStore.getRoomSummary(roomId.value)
@@ -373,6 +546,8 @@ const handleSingleChatMessage = async (userMessage: string) => {
       userMessage,
       context: {
         userRelationship,
+        characterRelationships,
+        allCharacters,
         longTermMemories,
         shortTermMemories,
         roomSummary
@@ -396,6 +571,9 @@ const handleSingleChatMessage = async (userMessage: string) => {
 
     // 記憶處理
     await handleMemoryGeneration()
+
+    // 聊天室情境處理（群聊專用）
+    await handleRoomContextGeneration()
   } catch (error) {
     console.error('Failed to get character response:', error)
     alert('取得回應時發生錯誤')
@@ -493,6 +671,9 @@ const handleGroupChatMessage = async (userMessage: string) => {
 
       console.log(`第 ${currentRound} 輪：${respondingCharacterIds.length} 位角色回應`)
 
+      // 記錄這一輪是否為第一個角色（只有第一輪的第一個角色需要傳入 userMessage）
+      let isFirstCharacterInThisRound = true
+
       // 依序讓角色回應
       for (const charId of respondingCharacterIds) {
         const currentCharacter = characterStore.getCharacterById(charId)
@@ -515,8 +696,8 @@ const handleGroupChatMessage = async (userMessage: string) => {
         // 取得角色的長期記憶
         const longTermMemories = memoriesStore.getCharacterMemories(currentCharacter.id)
 
-        // 取得聊天室的短期記憶
-        const shortTermMemories = memoriesStore.getRoomMemories(roomId.value)
+        // 取得角色的短期記憶（改為綁定角色而非聊天室）
+        const shortTermMemories = memoriesStore.getCharacterShortTermMemories(currentCharacter.id)
 
         // 取得聊天室摘要
         const roomSummary = memoriesStore.getRoomSummary(roomId.value)
@@ -536,12 +717,15 @@ const handleGroupChatMessage = async (userMessage: string) => {
             updatedAt: new Date().toISOString()
           },
           room: room.value,
-          messages: messages.value.slice(0, -1),
-          userMessage: messageForAI,
+          // 傳入當前最新的訊息歷史（排除正在生成的這一則）
+          messages: (currentRound === 1 && isFirstCharacterInThisRound) ? messages.value.slice(0, -1) : messages.value,
+          // 只有第一輪的第一個角色需要傳入 userMessage，其他角色會在 messages 中看到
+          userMessage: (currentRound === 1 && isFirstCharacterInThisRound) ? messageForAI : '',
           context: {
             userRelationship,
             characterRelationships,
             otherCharactersInRoom,
+            allCharacters,
             longTermMemories,
             shortTermMemories,
             roomSummary,
@@ -572,11 +756,17 @@ const handleGroupChatMessage = async (userMessage: string) => {
         })
 
         scrollToBottom()
+
+        // 標記已經處理過第一個角色了
+        isFirstCharacterInThisRound = false
       }
     }
 
     // 記憶處理
     await handleMemoryGeneration()
+
+    // 聊天室情境處理（群聊專用）
+    await handleRoomContextGeneration()
   } catch (error) {
     console.error('Failed to get character response:', error)
     alert('取得回應時發生錯誤')
@@ -747,7 +937,9 @@ onMounted(() => {
       <div v-if="!isMultiSelectMode && room.type === 'single' && character" class="chat-header-info">
         <div class="avatar-wrapper">
           <div class="avatar">
-            <img :src="character.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(character.name)}&background=764ba2&color=fff`" :alt="character.name">
+            <img
+              :src="character.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(character.name)}&background=764ba2&color=fff`"
+              :alt="character.name">
           </div>
           <div v-if="characterStatus" :class="['status-indicator', characterStatus]" />
 
@@ -761,13 +953,11 @@ onMounted(() => {
       <!-- 群組聊天 Header -->
       <div v-if="!isMultiSelectMode && room.type === 'group'" class="chat-header-info group-header">
         <div class="group-avatars">
-          <div
-            v-for="(char, index) in groupCharacters.slice(0, 3)"
-            :key="char.id"
-            class="avatar-small"
-            :style="{ zIndex: 3 - index }"
-          >
-            <img :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`" :alt="char.name">
+          <div v-for="(char, index) in groupCharacters.slice(0, 3)" :key="char.id" class="avatar-small"
+            :style="{ zIndex: 3 - index }">
+            <img
+              :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`"
+              :alt="char.name">
           </div>
           <span v-if="groupCharacters.length > 3" class="more-count">+{{ groupCharacters.length - 3 }}</span>
         </div>
@@ -775,9 +965,6 @@ onMounted(() => {
           <h2 class="name">{{ room.name }}</h2>
           <p class="status">{{ groupCharacters.length }} 位成員</p>
         </div>
-        <button class="btn-secondary btn-sm members-btn" @click="showMembersModal = true">
-          成員
-        </button>
       </div>
 
       <div v-else-if="isMultiSelectMode" class="multi-select-header">
@@ -786,10 +973,17 @@ onMounted(() => {
 
       <div class="spacer"></div>
 
-      <!-- 記憶按鈕 -->
-      <button v-if="!isMultiSelectMode" class="memory-btn btn btn-info" @click="toggleMemoryPanel">
-        <Brain :size="20" />
-        <span class="memory-btn-label">記憶</span>
+      <!-- 情境按鈕 -->
+      <button v-if="!isMultiSelectMode" class="btn btn-info-outline" @click="toggleContextPanel">
+        <FileText :size="20" />
+        <span class="context-btn-label">情境</span>
+      </button>
+
+      <!-- 記憶/成員按鈕 -->
+      <button v-if="!isMultiSelectMode" class="btn btn-info" @click="toggleMemoryPanel">
+        <Bubbles v-if="room.type === 'single'" :size="20" />
+        <Users v-else :size="20" />
+        <span class="memory-btn-label">{{ room.type === 'single' ? '記憶' : '成員' }}</span>
       </button>
 
       <button v-if="isMultiSelectMode" class="delete-btn btn btn-danger"
@@ -798,18 +992,60 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- 記憶面板 -->
-    <div v-if="showMemoryPanel" class="memory-panel-overlay" @click="showMemoryPanel = false">
-      <div class="memory-panel" @click.stop>
-        <div class="memory-panel-header">
-          <h3>{{ character?.name }} 的記憶</h3>
+    <!-- 情境面板 -->
+    <div v-if="showContextPanel" class="panel-overlay" @click="showContextPanel = false">
+      <div class="panel" @click.stop>
+        <div class="panel-header">
+          <h3>聊天室情境</h3>
+          <button class="close-btn" @click="showContextPanel = false">
+            <X :size="20" />
+          </button>
+        </div>
+
+        <div class="panel-content">
+          <div class="info-hint">
+            <p>💡 聊天室情境會提供給 AI，幫助角色理解目前的對話背景</p>
+          </div>
+
+          <div v-if="!editingContext" class="context-view">
+            <div v-if="editingContextContent.trim()" class="context-display">
+              {{ editingContextContent }}
+            </div>
+            <div v-else class="context-display empty">
+              尚未設定聊天室情境
+            </div>
+          </div>
+          <div v-else class="context-edit">
+            <textarea v-model="editingContextContent" class="context-textarea" rows="8"
+              placeholder="輸入聊天室情境...（例如：大家正在討論週末的旅遊計畫）"></textarea>
+          </div>
+        </div>
+        <div v-if="!editingContext" class="panel-actions">
+          <button class="btn btn-success" @click="handleGenerateContext" :disabled="isGeneratingContext">
+            {{ isGeneratingContext ? '生成中...' : '自動生成情境' }}
+          </button>
+          <button class="btn btn-primary" @click="editingContext = true">編輯情境</button>
+        </div>
+        <div v-else class="panel-actions">
+          <button class="btn btn-success" @click="handleSaveContext">儲存</button>
+          <button class="btn btn-secondary" @click="editingContext = false">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 記憶/成員面板 -->
+    <div v-if="showMemoryPanel" class="panel-overlay" @click="showMemoryPanel = false">
+      <div class="panel" @click.stop>
+        <div class="panel-header">
+          <h3 v-if="room.type === 'single'">{{ character?.name }} 的記憶</h3>
+          <h3 v-else>群組成員</h3>
           <button class="close-btn" @click="showMemoryPanel = false">
             <X :size="20" />
           </button>
         </div>
 
-        <!-- 記憶分頁 -->
-        <div class="memory-tabs">
+        <!-- 私聊：記憶分頁 -->
+        <div v-if="room.type === 'single'" class="memory-tabs">
           <button :class="['tab', { active: memoryTab === 'short' }]" @click="switchMemoryTab('short')">
             短期記憶 ({{ shortTermMemories.length }}/6)
           </button>
@@ -818,52 +1054,43 @@ onMounted(() => {
           </button>
         </div>
 
-        <!-- 短期記憶列表 -->
-        <div v-if="memoryTab === 'short'" class="memory-list">
-          <!-- 手動生成記憶按鈕 -->
-          <div class="generate-memory-section">
-            <button class="btn btn-generate-memory" @click="manualGenerateMemory"
-              :disabled="isGeneratingMemory || messages.length < 15">
-              {{ isGeneratingMemory ? '生成中...' : '手動生成記憶' }}
+        <!-- 私聊：短期記憶列表（唯讀） -->
+        <template v-if="room.type === 'single' && memoryTab === 'short'">
+          <div class="panel-content">
+            <div class="info-hint">
+              <p>💡 記憶僅供檢視，如需管理請前往角色詳情頁</p>
+            </div>
+
+            <div v-if="shortTermMemories.length === 0" class="empty-memory">
+              <p>尚無短期記憶</p>
+              <p class="hint">每 15 則訊息會自動生成一條短期記憶摘要</p>
+            </div>
+
+            <div v-else class="memory-list">
+              <div v-for="memory in shortTermMemories" :key="memory.id" class="memory-item readonly">
+                <div class="memory-content">
+                  <p class="memory-text">{{ memory.content }}</p>
+                  <div class="memory-meta">
+                    <span class="memory-time">{{ new Date(memory.createdAt).toLocaleDateString() }} {{ new
+                      Date(memory.createdAt).toLocaleTimeString() }}</span>
+                    <span v-if="memory.processed" class="processed-badge">已處理</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel-actions">
+            <button class="btn btn-primary" @click="handleGenerateMemory" :disabled="isGeneratingMemory">
+              {{ isGeneratingMemory ? '生成中...' : '立即生成記憶' }}
             </button>
-            <p class="hint">將最新 15 則訊息生成為短期記憶</p>
           </div>
+        </template>
 
-          <div v-if="shortTermMemories.length === 0" class="empty-memory">
-            <p>尚無短期記憶</p>
-            <p class="hint">每 15 則訊息會自動生成一條短期記憶摘要</p>
-          </div>
 
-          <div v-for="memory in shortTermMemories" :key="memory.id" class="memory-item">
-            <div v-if="editingMemoryId === memory.id" class="memory-edit">
-              <textarea v-model="editingMemoryContent" class="memory-textarea" rows="5"
-                placeholder="編輯記憶內容..."></textarea>
-              <span class="text-white text-sm">編輯記憶中...</span>
-              <div class="memory-actions">
-                <button class="btn btn-success btn-sm" @click="saveEditMemory">儲存</button>
-                <button class="btn btn-secondary btn-sm" @click="cancelEditMemory">取消</button>
-              </div>
-            </div>
-
-            <div v-else class="memory-content">
-              <p class="memory-text">{{ memory.content }}</p>
-              <div class="memory-meta">
-                <span class="memory-time">{{ new Date(memory.createdAt).toLocaleDateString() }} {{ new
-                  Date(memory.createdAt).toLocaleTimeString() }}</span>
-                <span v-if="memory.processed" class="processed-badge">已處理</span>
-              </div>
-              <div class="memory-actions">
-                <button class="btn btn-sm btn-primary" @click="startEditMemory(memory.id, memory.content)">編輯</button>
-                <button class="btn btn-sm btn-danger" @click="deleteMemory(memory.id)">刪除</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 長期記憶列表（唯讀） -->
-        <div v-else class="memory-list">
-          <div class="readonly-hint">
-            <p>💡 長期記憶僅供檢視，如需管理請前往角色詳情頁</p>
+        <!-- 私聊：長期記憶列表（唯讀） -->
+        <div v-if="room.type === 'single' && memoryTab === 'long'" class="panel-content">
+          <div class="info-hint">
+            <p>💡 記憶僅供檢視，如需管理請前往角色詳情頁</p>
           </div>
 
           <div v-if="longTermMemories.length === 0" class="empty-memory">
@@ -871,13 +1098,114 @@ onMounted(() => {
             <p class="hint">AI 會自動將重要的對話內容提取為長期記憶</p>
           </div>
 
-          <div v-for="memory in longTermMemories" :key="memory.id" class="memory-item readonly">
-            <div class="memory-content">
-              <p class="memory-text">{{ memory.content }}</p>
-              <div class="memory-meta">
-                <span class="memory-time">{{ new Date(memory.createdAt).toLocaleDateString() }} {{ new
-                  Date(memory.createdAt).toLocaleTimeString() }}</span>
-                <span v-if="memory.sourceRoomId" class="source-badge">來自聊天室</span>
+          <div v-else class="memory-list">
+            <div v-for="memory in longTermMemories" :key="memory.id" class="memory-item readonly">
+              <div class="memory-content">
+                <p class="memory-text">{{ memory.content }}</p>
+                <div class="memory-meta">
+                  <span class="memory-time">{{ new Date(memory.createdAt).toLocaleDateString() }} {{ new
+                    Date(memory.createdAt).toLocaleTimeString() }}</span>
+                  <span v-if="memory.sourceRoomId" class="source-badge">來自聊天室</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 群聊：成員列表 -->
+        <div v-if="room.type === 'group'" class="panel-content">
+          <div class="members-list">
+            <div v-for="char in groupCharacters" :key="char.id" class="member-item"
+              @click="handleViewMemberMemory(char)">
+              <div class="member-avatar">
+                <img
+                  :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`"
+                  :alt="char.name">
+                <div :class="['status-dot', getCharacterStatus(char)]" />
+              </div>
+              <div class="member-info">
+                <h4 class="member-name">{{ char.name }}</h4>
+                <p class="member-status">{{ getCharacterStatus(char) === 'online' ? '在線' : getCharacterStatus(char) ===
+                  'away' ? '忙碌中' : '離線' }}</p>
+              </div>
+              <button class="btn btn-info" @click="toggleMemoryPanel">
+                <Bubbles :size="20" />記憶
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 成員記憶彈窗 -->
+    <div v-if="showMemberMemoryModal && selectedMemberForMemory" class="panel-overlay"
+      @click="showMemberMemoryModal = false">
+      <div class="panel" @click.stop>
+        <div class="panel-header">
+          <h3>{{ selectedMemberForMemory.name }} 的記憶</h3>
+          <button class="close-btn" @click="showMemberMemoryModal = false">
+            <X :size="20" />
+          </button>
+        </div>
+
+        <!-- 記憶分頁 -->
+        <div class="memory-tabs">
+          <button :class="['tab', { active: memoryTab === 'short' }]" @click="switchMemoryTab('short')">
+            短期記憶 ({{ memoriesStore.getCharacterShortTermMemories(selectedMemberForMemory.id).length }}/6)
+          </button>
+          <button :class="['tab', { active: memoryTab === 'long' }]" @click="switchMemoryTab('long')">
+            長期記憶 ({{ memoriesStore.getCharacterMemories(selectedMemberForMemory.id).length }})
+          </button>
+        </div>
+
+        <!-- 短期記憶列表（唯讀） -->
+        <div v-if="memoryTab === 'short'" class="panel-content">
+          <div class="info-hint">
+            <p>💡 記憶僅供檢視，如需管理請前往角色詳情頁</p>
+          </div>
+
+          <div v-if="memoriesStore.getCharacterShortTermMemories(selectedMemberForMemory.id).length === 0"
+            class="empty-memory">
+            <p>尚無短期記憶</p>
+            <p class="hint">每 15 則訊息會自動生成一條短期記憶摘要</p>
+          </div>
+
+          <div v-else class="memory-list">
+            <div v-for="memory in memoriesStore.getCharacterShortTermMemories(selectedMemberForMemory.id)"
+              :key="memory.id" class="memory-item readonly">
+              <div class="memory-content">
+                <p class="memory-text">{{ memory.content }}</p>
+                <div class="memory-meta">
+                  <span class="memory-time">{{ new Date(memory.createdAt).toLocaleDateString() }} {{ new
+                    Date(memory.createdAt).toLocaleTimeString() }}</span>
+                  <span v-if="memory.processed" class="processed-badge">已處理</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 長期記憶列表（唯讀） -->
+        <div v-if="memoryTab === 'long'" class="panel-content">
+          <div class="info-hint">
+            <p>💡 記憶僅供檢視，如需管理請前往角色詳情頁</p>
+          </div>
+
+          <div v-if="memoriesStore.getCharacterMemories(selectedMemberForMemory.id).length === 0" class="empty-memory">
+            <p>尚無長期記憶</p>
+            <p class="hint">AI 會自動將重要的對話內容提取為長期記憶</p>
+          </div>
+
+          <div v-else class="memory-list">
+            <div v-for="memory in memoriesStore.getCharacterMemories(selectedMemberForMemory.id)" :key="memory.id"
+              class="memory-item readonly">
+              <div class="memory-content">
+                <p class="memory-text">{{ memory.content }}</p>
+                <div class="memory-meta">
+                  <span class="memory-time">{{ new Date(memory.createdAt).toLocaleDateString() }} {{ new
+                    Date(memory.createdAt).toLocaleTimeString() }}</span>
+                  <span v-if="memory.sourceRoomId" class="source-badge">來自聊天室</span>
+                </div>
               </div>
             </div>
           </div>
@@ -901,9 +1229,7 @@ onMounted(() => {
           { 'multi-select-mode': isMultiSelectMode, 'selected': selectedMessagesForDelete.has(message.id) }
         ]" @click="isMultiSelectMode ? toggleMessageSelection(message.id) : null"
         @contextmenu.prevent="handleMessageLongPress(message.id, $event)"
-        @touchstart="handleTouchStart(message.id, $event)"
-        @touchend="handleTouchEnd"
-        @touchmove="handleTouchMove">
+        @touchstart="handleTouchStart(message.id, $event)" @touchend="handleTouchEnd" @touchmove="handleTouchMove">
         <!-- 多選模式的 checkbox -->
         <div v-if="isMultiSelectMode" class="message-checkbox">
           <input type="checkbox" :checked="selectedMessagesForDelete.has(message.id)"
@@ -918,7 +1244,7 @@ onMounted(() => {
             <span class="sender-name">{{ message.senderName }}</span>
             <span class="message-time">{{ formatMessageTime(message.timestamp) }}</span>
           </div>
-          <div class="message-text">{{ formatMessageContent(message.content) }}</div>
+          <div class="message-text" v-html="formatMessageContent(message.content)"></div>
         </div>
       </div>
 
@@ -973,14 +1299,17 @@ onMounted(() => {
             <div v-for="char in groupCharacters" :key="char.id" class="member-item">
               <div class="member-avatar-wrapper">
                 <div class="member-avatar">
-                  <img :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`" :alt="char.name">
+                  <img
+                    :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`"
+                    :alt="char.name">
                 </div>
                 <div :class="['status-indicator', getCharacterStatus(char)]" />
               </div>
               <div class="member-info">
                 <h4 class="member-name">{{ char.name }}</h4>
                 <p class="member-status">
-                  {{ getCharacterStatus(char) === 'online' ? '在線' : getCharacterStatus(char) === 'away' ? '忙碌中' : '離線' }}
+                  {{ getCharacterStatus(char) === 'online' ? '在線' : getCharacterStatus(char) === 'away' ? '忙碌中' : '離線'
+                  }}
                 </p>
               </div>
             </div>
@@ -992,6 +1321,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
+
 .chat-room {
   display: flex;
   flex-direction: column;
@@ -1569,10 +1899,11 @@ onMounted(() => {
 
 /* 記憶分頁 */
 .memory-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--border-color);
+  display: flex;  
+  border-bottom: 2px solid var(--color-border);
   border-radius: 0px;
   padding: 0 20px;
+  flex-shrink: 0;
 }
 
 .memory-tabs .tab {
@@ -1587,14 +1918,15 @@ onMounted(() => {
   transition: all 0.2s;
 }
 
-.memory-tabs .tab:hover {
-  color: var(--text-primary);
-}
-
 .memory-tabs .tab.active {
   color: var(--color-primary);
   border-bottom-color: var(--color-primary);
   font-weight: 500;
+}
+
+.memory-tabs .tab:hover {
+  color: var(--color-text-white);
+  background: var(--color-primary-light);
 }
 
 /* 記憶列表 */
@@ -1748,19 +2080,351 @@ onMounted(() => {
   background: linear-gradient(135deg, #999 0%, #666 100%);
 }
 
-.readonly-hint {
-  background: linear-gradient(135deg, #f0f0f020, #e0e0e040);
-  border: 1px solid #e0e0e080;
-  border-radius: 8px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  text-align: center;
+
+/* ==================== 新增：情境面板樣式 ==================== */
+
+/* 面板遮罩 */
+.panel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
 }
 
-.readonly-hint p {
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 面板容器 */
+.panel {
+  width: 100%;
+  max-width: 80vw;
+  height: 90%;
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* 面板標題 */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-xl);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.panel-header h3 {
   margin: 0;
-  font-size: 13px;
-  color: var(--text-secondary);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.close-btn {
+  padding: var(--spacing-sm);
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: all var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+/* 面板內容 */
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  height: 100%;
+}
+
+/* 情境資訊提示 */
+.info-hint {
+  background: linear-gradient(135deg, #667eea20, #764ba220);
+  border: 1px solid #667eea40;
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+}
+
+.info-hint p {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+/* 情境檢視模式 */
+.context-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  padding: 20px;
+}
+
+.context-display {
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+  padding: var(--spacing-lg);
+  min-height: 215px;
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.context-display.empty {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 情境編輯模式 */
+.context-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  padding: 20px;
+}
+
+.context-textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: var(--spacing-lg);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: var(--text-base);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  background: var(--color-bg-primary);
+  resize: vertical;
+  transition: border-color var(--transition);
+}
+
+.context-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.context-textarea::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.context-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: flex-end;
+}
+
+.context-actions .btn {
+  padding: var(--spacing-md) var(--spacing-xl);
+  font-size: var(--text-base);
+}
+
+/* ==================== 新增：成員列表樣式 ==================== */
+
+.members-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.member-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg);
+  padding: var(--spacing-lg);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.member-item:hover {
+  background: var(--color-bg-hover);
+  box-shadow: var(--shadow-sm);
+  transform: translateX(4px);
+}
+
+.member-item:active {
+  transform: translateX(2px);
+}
+
+/* 成員頭像區域 */
+.member-avatar {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+}
+
+.member-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  background: var(--color-bg-secondary);
+}
+
+/* 狀態點 */
+.status-dot {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  border: 3px solid var(--color-bg-primary);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+.status-dot.online {
+  background: #52c41a;
+}
+
+.status-dot.away {
+  background: #faad14;
+}
+
+.status-dot.offline {
+  background: #999;
+}
+
+/* 成員資訊 */
+.member-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.member-name {
+  margin: 0 0 var(--spacing-xs) 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-status {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+/* 成員箭頭 */
+.member-arrow {
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: color var(--transition);
+}
+
+.member-item:hover .member-arrow {
+  color: var(--color-primary);
+}
+
+/* ==================== 新增：Header 按鈕樣式 ==================== */
+
+.context-btn,
+.memory-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-radius: var(--radius);
+  transition: all var(--transition);
+  border: none;
+  cursor: pointer;
+}
+
+.context-btn {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-primary);
+}
+
+.context-btn:hover {
+  background: var(--color-bg-hover);
+  box-shadow: var(--shadow-sm);
+}
+
+.memory-btn {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+}
+
+.memory-btn:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.context-btn-label,
+.memory-btn-label {
+  font-weight: 500;
+}
+
+/* 面板操作區 */
+.panel-actions {
+  padding: var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-md);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+
+.panel-actions .btn {
+  flex: 1;
+  max-width: 200px;
+}
+
+:deep(i) {
+  color: var(--color-primary-light);
+  font-style: italic;
+}
+
+:deep(.tag-text) {
+  color: var(--color-info)!important;;
 }
 
 @media (max-width: 768px) {
@@ -1784,5 +2448,47 @@ onMounted(() => {
     max-width: 100%;
     max-height: 90vh;
   }
+
+  /* 響應式：面板 */
+  .panel {
+    max-width: 100%;
+    max-height: 85vh;
+  }
+
+  /* 響應式：Header 按鈕文字 */
+  .context-btn-label,
+  .memory-btn-label {
+    display: none;
+  }
+
+  .context-btn,
+  .memory-btn {
+    padding: var(--spacing-sm);
+  }
+
+  /* 響應式：成員項目 */
+  .member-item {
+    padding: var(--spacing-md);
+  }
+
+  .member-avatar {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* 響應式：情境面板 */
+  .context-textarea {
+    min-height: 120px;
+  }
+
+  .context-actions {
+    flex-direction: column;
+  }
+
+  .context-actions .btn {
+    width: 100%;
+  }
 }
+
+
 </style>

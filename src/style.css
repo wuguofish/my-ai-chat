@@ -124,6 +124,7 @@ body {
    通用元素樣式
    ========================================== */
 
+
 a {
   color: var(--color-primary);
   text-decoration: none;
@@ -149,6 +150,8 @@ p {
   line-height: 1.6;
   color: var(--color-text-secondary);
 }
+
+
 
 /* ==========================================
    按鈕基礎樣式
@@ -196,14 +199,16 @@ button:disabled {
 }
 
 .btn-secondary {
-  background: var(--color-bg-secondary);
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-border);
+  background: var(--color-text-white)!important;
+  color: var(--color-primary)!important;
+  border: 1px solid var(--color-primary)!important;
   border-radius: var(--radius);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: var(--color-bg-hover);
+  background: var(--color-bg-hover)!important;
+  border: 1px solid var(--color-text-primary)!important;
+  color: var(--color-text-primary)!important;
 }
 
 .btn-danger {
@@ -217,13 +222,29 @@ button:disabled {
 
 .btn-info {
   background: var(--color-info);
+  border: 1px solid var(--color-info)!important;
   color: var(--color-text-white);  
 }
 
 .btn-info:hover:not(:disabled) {
   background: #2fd3d3;
+  border: 1px solid var(#2fd3d3)!important;
   color: var(--color-text-primary);
 }
+
+.btn-info-outline {
+  background: var(--color-text-white);
+  border: 1px solid var(--color-info)!important;
+  color: var(--color-info);  
+}
+
+.btn-info-outline:hover:not(:disabled) {
+  background: #2fd3d3;
+  background: #2fd3d3;
+  border: 1px solid var(#2fd3d3)!important;
+  color: var(--color-text-primary);
+}
+
 
 .btn-warning {
   background: var(--color-warning);

@@ -18,7 +18,9 @@ export interface SystemPromptContext {
   shortTermMemories?: Memory[]
   roomSummary?: string
   otherCharactersInRoom?: Character[]
+  allCharacters?: Character[]  // 所有角色列表（用於私聊時解析角色關係中的角色名稱）
   isOfflineButMentioned?: boolean  // 是否為離線但被 @all 吵醒
+  useShortIds?: boolean  // 是否使用短 ID（群聊專用）
 }
 
 /**
@@ -26,14 +28,10 @@ export interface SystemPromptContext {
  * 包含時間、使用者資料、關係、記憶等完整資訊
  */
 export function generateSystemPrompt(context: SystemPromptContext): string {
-  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary, otherCharactersInRoom, isOfflineButMentioned } = context
+  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary, otherCharactersInRoom, allCharacters, isOfflineButMentioned, useShortIds } = context
 
-  // 如果有自訂 system prompt，使用它作為基礎
-  
   const parts: string[] = [generateDefaultCharacterPrompt(character)]
-
   
-
   // 1. 目前時間資訊
   const now = new Date()
   const timeInfo = `\n\n## 目前情境\n目前時間：${now.toLocaleString('zh-TW', {
@@ -102,29 +100,38 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     parts.push(affectionRules)
   }
 
-  // 5. 與其他角色的關係（群聊時）
-  if (otherCharactersInRoom && otherCharactersInRoom.length > 0 && characterRelationships && characterRelationships.length > 0) {
+  // 5. 群聊參與者與ID對照表（群聊時必須提供）
+  if (otherCharactersInRoom && otherCharactersInRoom.length > 0) {
     const otherCharNames = otherCharactersInRoom.map(c => c.name).join('、')
     parts.push(`\n\n## 群聊參與者\n除了 ${user.nickname} 之外，還有以下角色參與對話：${otherCharNames}`)
 
-    // ID 對照表 + 在線狀態
-    parts.push(`\n\n## 參與者 ID 對照表與在線狀態`)
+    //ID對照表 + 在線狀態（無論是否有關係，都要提供ID對照表）
+    parts.push(`\n\n## 參與者ID對照表與在線狀態`)
     parts.push(`\n- 全體成員：@all（呼叫所有人）`)
-    parts.push(`\n- ${user.nickname}：@user（永遠在線）`)    
-    otherCharactersInRoom.forEach(char => {
+    parts.push(`\n- ${user.nickname}：@user（永遠在線）`)
+    otherCharactersInRoom.forEach((char, index) => {
       const status = getCharacterStatus(char)
       const statusText = status === 'online' ? '在線' : status === 'away' ? '忙碌中' : '離線'
-      parts.push(`\n- ${char.name}：@${char.id}（${statusText}）`)
+      // 使用短 ID（數字）來節省 token
+      const charId = useShortIds ? `${index + 1}` : char.id
+      parts.push(`\n- ${char.name}：@${charId}（${statusText}）`)
     })
+  }
 
-    const relevantRelationships = characterRelationships.filter(rel =>
-      otherCharactersInRoom.some(c => c.id === rel.toCharacterId)
-    )
+  // 6. 與其他角色的關係
+  if (characterRelationships && characterRelationships.length > 0 && allCharacters) {
+    // 群聊時：只顯示聊天室內的角色關係
+    // 私聊時：顯示所有角色關係（因為短期記憶可能提到其他聊天室的角色）
+    const relevantRelationships = otherCharactersInRoom
+      ? characterRelationships.filter(rel =>
+          otherCharactersInRoom.some(c => c.id === rel.toCharacterId)
+        )
+      : characterRelationships
 
     if (relevantRelationships.length > 0) {
       parts.push(`\n\n## 與其他角色的關係`)
       relevantRelationships.forEach(rel => {
-        const otherChar = otherCharactersInRoom.find(c => c.id === rel.toCharacterId)
+        const otherChar = allCharacters.find(c => c.id === rel.toCharacterId)
         if (otherChar) {
           parts.push(`\n- 與 ${otherChar.name}：${rel.description}${rel.note ? `（${rel.note}）` : ''}`)
         }
@@ -156,7 +163,7 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     `- 你不知道其他人的內部設定或秘密，除非他們在對話中說出來或在記憶中曾經揭示。`,
     `- 回覆必須口語化、生活化。避免使用書信體或過於正式的用語。`,
     `- 避免重複已經講過的話、問候或話題。`,
-    `- 對話中若需要描述動作，用(動作)表達，並用第三人稱描述所有人的動作。`,
+    `- 對話中若需要描述動作，用<i>動作</i>表達，並用第三人稱描述所有人的動作。`,
     `- 請務必回應使用者的每一句話，避免只回傳空洞的動作描述（如「看著你」、「微笑」），必須要有實際的對話內容。`,
     `- 嚴禁輸出思考過程：只輸出你真正要傳送給對方的文字。`,
     `- 禁止連續輸出無意義的內容（如「...」、「......」）。`,
@@ -166,9 +173,9 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
   // 群聊時的額外規則
   if (otherCharactersInRoom && otherCharactersInRoom.length > 0) {
     instructions.push(`\n## 群聊 @ 功能使用規則`)
-    instructions.push(`- 若要特定對象回應你的話，必須使用 @ID 的方式標註（參考上方的 ID 對照表）`)
-    instructions.push(`- 例如想叫「小美」回話，要寫：「@char_xxx 小美你覺得呢？」（用 ID，不是用名字）`)
-    instructions.push(`- 可以在對話中自由使用暱稱或稱呼，但 @ 標註必須使用正確的 ID`)
+    instructions.push(`- 若提到特定對象的話，必須使用 @ID 的方式標註（參考上方的ID對照表）`)
+    instructions.push(`- 例如提到「小美」，要寫：「@char_xxx 小美你覺得呢？」（用 ID，不是用名字）`)
+    instructions.push(`- 可以在對話中自由使用暱稱或稱呼，但提及時必須同時標註該人物，且 @ 標註確保使用存在於ID對照表內的正確ID`)
     instructions.push(`- 你也可以 @ 使用者（${user.nickname}），方式為：@user`)
     instructions.push(`- 若要呼叫所有人，使用：@all`)
   }
@@ -186,6 +193,7 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
 
   parts.push(instructions.join('\n'))
 
+  // 如果有自訂 system prompt，要將其加入
   const basePrompt = character.systemPrompt && character.systemPrompt.trim()
     ? character.systemPrompt
     : ''
@@ -313,8 +321,10 @@ export function formatMessageForDisplay(message: string, characters: Character[]
 
   // 處理 @角色ID
   characters.forEach(char => {
-    const regex = new RegExp(`@${char.id}`, 'g')
-    formatted = formatted.replace(regex, `@${char.name}`)
+    // Escape 特殊字元，避免正則表達式錯誤
+    const escapedId = char.id.replace(/[\.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(`@${escapedId}`, 'g')
+    formatted = formatted.replace(regex, `<span class="tag-text">@${char.name}</span>`)
   })
 
   return formatted
@@ -329,13 +339,15 @@ export function formatMessageForAI(message: string, characters: Character[], use
   // 處理 @all（不區分大小寫，統一轉為小寫 @all）
   formatted = formatted.replace(/@all/gi, '@all')
 
-  // 先處理 @使用者名字
-  const userNameRegex = new RegExp(`@${userName}`, 'g')
+  // 先處理 @使用者名字（escape 特殊字元）
+  const escapedUserName = userName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const userNameRegex = new RegExp(`@${escapedUserName}`, 'g')
   formatted = formatted.replace(userNameRegex, '@user')
 
-  // 處理 @角色名字
+  // 處理 @角色名字（escape 特殊字元）
   characters.forEach(char => {
-    const regex = new RegExp(`@${char.name}`, 'g')
+    const escapedName = char.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(`@${escapedName}`, 'g')
     formatted = formatted.replace(regex, `@${char.id}`)
   })
 
@@ -485,4 +497,43 @@ export function determineRespondingCharacters(
   respondingIds.push(...onlineCharacters.map(c => c.id))
 
   return respondingIds
+}
+
+/**
+ * 將訊息中的長 ID 轉換為短 ID（供 AI 處理）
+ * @param message 原始訊息
+ * @param characters 角色列表（順序很重要！）
+ * @returns 轉換後的訊息
+ */
+export function convertToShortIds(message: string, characters: Character[]): string {
+  let result = message
+
+  // 將每個角色的長 ID 替換為短 ID（數字索引+1）
+  characters.forEach((char, index) => {
+    const shortId = `${index + 1}`
+    const escapedLongId = char.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(`@${escapedLongId}`, 'g')
+    result = result.replace(regex, `@${shortId}`)
+  })
+
+  return result
+}
+
+/**
+ * 將訊息中的短 ID 轉換回長 ID（供儲存）
+ * @param message AI 回應的訊息
+ * @param characters 角色列表（順序很重要！）
+ * @returns 轉換後的訊息
+ */
+export function convertToLongIds(message: string, characters: Character[]): string {
+  let result = message
+
+  // 將每個短 ID 替換回長 ID
+  characters.forEach((char, index) => {
+    const shortId = `${index + 1}`
+    const regex = new RegExp(`@${shortId}(?!\\d)`, 'g') // 確保不會匹配到 @10, @11 等
+    result = result.replace(regex, `@${char.id}`)
+  })
+
+  return result
 }

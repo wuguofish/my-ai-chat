@@ -18,6 +18,11 @@ const longTermMemories = computed(() =>
   memoriesStore.getCharacterMemories(characterId.value)
 )
 
+// 短期記憶（角色短期記憶緩衝區）
+const shortTermMemories = computed(() =>
+  memoriesStore.getCharacterShortTermMemories(characterId.value)
+)
+
 // 編輯狀態
 const editingMemoryId = ref<string | null>(null)
 const editingContent = ref('')
@@ -116,14 +121,48 @@ const formatDate = (dateString: string) => {
     <div class="content-section centered">
       <!-- 說明 -->
       <div class="info-box">
-        <p>💡 長期記憶會在所有對話中提供給 AI，讓角色記住重要的事情。</p>
+        <p>💡 <strong>長期記憶</strong>：永久保存的重要記憶，會在所有對話中提供給 AI</p>
+        <p>💭 <strong>短期記憶</strong>：每 15 則訊息自動生成，最多保留 6 筆，當 6 筆全部未處理時會自動提取為長期記憶</p>
+      </div>
+
+      <!-- 短期記憶列表 -->
+      <div class="memory-section">
+        <div class="section-header">
+          <div class="section-title">
+            <h3>短期記憶緩衝區</h3>
+            <span class="memory-count badge">{{ shortTermMemories.length }}/6 筆</span>
+          </div>
+        </div>
+
+        <div v-if="shortTermMemories.length === 0" class="empty-state">
+          <div class="empty-state-icon">💭</div>
+          <h3>尚無短期記憶</h3>
+          <p>短期記憶會在聊天過程中自動生成</p>
+        </div>
+
+        <div v-else class="memory-list">
+          <div v-for="memory in shortTermMemories" :key="memory.id" class="memory-item card">
+            <div class="memory-view">
+              <div class="memory-meta">
+                <span class="memory-source badge" :class="{ processed: memory.processed }">
+                  {{ memory.processed ? '已處理' : '未處理' }}
+                </span>
+                <span class="memory-date text-tertiary">{{ formatDate(memory.createdAt) }}</span>
+                <span v-if="memory.sourceRoomId" class="memory-room text-tertiary">
+                  來源：聊天室
+                </span>
+              </div>
+              <div class="memory-content">{{ memory.content }}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 長期記憶列表 -->
       <div class="memory-section">
         <div class="section-header">
           <div class="section-title">
-            <h3>重要記憶</h3>
+            <h3>長期記憶</h3>
             <span class="memory-count badge">{{ longTermMemories.length }} 筆</span>
           </div>
           <button class="btn btn-primary" @click="handleAddMemory">+ 新增記憶</button>
@@ -276,6 +315,11 @@ const formatDate = (dateString: string) => {
   background: var(--color-bg-secondary);
   border-radius: var(--radius-sm);
   font-weight: 500;
+}
+
+.memory-source.processed {
+  background: #d1f2eb;
+  color: #00695c;
 }
 
 .memory-actions {

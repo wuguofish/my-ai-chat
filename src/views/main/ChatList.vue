@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
-import { formatMessageTime, getCharacterStatus } from '@/utils/chatHelpers'
+import { formatMessageTime, getCharacterStatus, formatMessageForDisplay } from '@/utils/chatHelpers'
 import type { ChatRoom } from '@/types'
 
 const router = useRouter()
@@ -13,6 +14,10 @@ const chatRoomStore = useChatRoomsStore()
 const characterCount = computed(() => characterStore.characters.length)
 const chatRooms = computed(() => chatRoomStore.chatRooms)
 
+const userStore = useUserStore()
+
+// 使用者資訊
+const userName = computed(() => userStore.userName)
 // 新增聊天室 Modal
 const showNewChatModal = ref(false)
 const chatType = ref<'single' | 'group'>('single') // 聊天類型
@@ -32,6 +37,7 @@ const availableCharacters = computed(() => {
 })
 
 const allCharacters = computed(() => characterStore.characters)
+
 
 const handleCreateSingleChat = () => {
   if (!selectedCharacterId.value) {
@@ -112,7 +118,9 @@ const getLastMessagePreview = (roomId: string) => {
   const lastMessage = messages[messages.length - 1]
   if (!lastMessage) return '開始對話吧！'
 
-  return `${lastMessage.senderName}: ${lastMessage.content}`
+  let contentPreview = formatMessageForDisplay(lastMessage.content, allCharacters.value, userName.value);
+
+  return `${lastMessage.senderName}: ${contentPreview}`
 }
 
 const getLastMessageTime = (room: ChatRoom) => {
@@ -160,7 +168,7 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
             <h3 class="chat-name">{{ room.name }}</h3>
             <span class="chat-time">{{ getLastMessageTime(room) }}</span>
           </div>
-          <p class="last-message">{{ getLastMessagePreview(room.id) }}</p>
+          <p class="last-message" v-html="getLastMessagePreview(room.id)"></p>
         </div>
       </div>
     </div>
@@ -497,6 +505,14 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
   justify-content: center;
   font-size: 14px;
   font-weight: bold;
+}
+
+:deep(i) {
+  font-style: italic;
+}
+
+:deep(.tag-text) {
+  color: var(--color-info)!important;
 }
 
 @media (max-width: 768px) {
