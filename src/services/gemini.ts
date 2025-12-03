@@ -127,11 +127,12 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
       _userMsg = convertToShortIds(_userMsg, context.otherCharactersInRoom)
     }
 
-    const history = processedMessages.slice(-20).map(msg => {
+    // 取最後 20 條訊息並轉換格式
+    let history = processedMessages.slice(-20).map(msg => {
       const isUser = msg.senderId === 'user'
 
       // 群聊時需要標註發言者，單人聊天則不需要
-      
+
       let content = msg.content
 
       if (isGroupChat) {
@@ -144,6 +145,19 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
         parts: [{ text: content }]
       }
     })
+
+    // 確保第一條訊息是 user，否則 Gemini API 會報錯
+    // 如果第一條不是 user，往前找到第一個 user 訊息
+    if (history.length > 0 && history[0]?.role !== 'user') {
+      const firstUserIndex = history.findIndex(msg => msg.role === 'user')
+      if (firstUserIndex > 0) {
+        // 從第一個 user 訊息開始
+        history = history.slice(firstUserIndex)
+      } else {
+        // 如果完全沒有 user 訊息，清空歷史（極端情況）
+        history = []
+      }
+    }
 
     // 建立聊天會話
     const chat = model.startChat({

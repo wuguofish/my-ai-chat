@@ -83,6 +83,9 @@ function parseChangelog(markdown: string): VersionInfo[] {
       // 移除 Markdown 加粗語法 **text**
       const cleanFeature = feature.replace(/\*\*(.+?)\*\*/g, '$1')
       currentVersion.features.push(cleanFeature)
+      if (currentVersion.features.length > 5) { 
+        break;
+      }
     }
   }
 
