@@ -17,6 +17,9 @@ export async function embedDataInPNG(
 ): Promise<string> {
   // 將 Data URL 轉換為 ArrayBuffer
   const base64Data = imageDataUrl.split(',')[1]
+  if (!base64Data) {
+    throw new Error('無效的 Data URL 格式')
+  }
   const binaryString = atob(base64Data)
   const bytes = new Uint8Array(binaryString.length)
   for (let i = 0; i < binaryString.length; i++) {
@@ -80,6 +83,9 @@ export async function extractDataFromPNG<T = object>(
 ): Promise<T | null> {
   // 將 Data URL 轉換為 ArrayBuffer
   const base64Data = imageDataUrl.split(',')[1]
+  if (!base64Data) {
+    throw new Error('無效的 Data URL 格式')
+  }
   const binaryString = atob(base64Data)
   const bytes = new Uint8Array(binaryString.length)
   for (let i = 0; i < binaryString.length; i++) {
@@ -95,10 +101,18 @@ export async function extractDataFromPNG<T = object>(
   let index = 8 // 跳過 PNG 簽名
   while (index < bytes.length) {
     // 讀取 chunk 長度
-    const length = (bytes[index] << 24) | (bytes[index + 1] << 16) | (bytes[index + 2] << 8) | bytes[index + 3]
+    const b0 = bytes[index] ?? 0
+    const b1 = bytes[index + 1] ?? 0
+    const b2 = bytes[index + 2] ?? 0
+    const b3 = bytes[index + 3] ?? 0
+    const length = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 
     // 讀取 chunk 類型
-    const type = String.fromCharCode(bytes[index + 4], bytes[index + 5], bytes[index + 6], bytes[index + 7])
+    const t0 = bytes[index + 4] ?? 0
+    const t1 = bytes[index + 5] ?? 0
+    const t2 = bytes[index + 6] ?? 0
+    const t3 = bytes[index + 7] ?? 0
+    const type = String.fromCharCode(t0, t1, t2, t3)
 
     // 如果是 IEND，表示已經到檔案結尾
     if (type === 'IEND') {
@@ -199,7 +213,9 @@ function calculateCRC(data: Uint8Array): number {
   let crc = 0xFFFFFFFF
 
   for (let i = 0; i < data.length; i++) {
-    crc = (crc >>> 8) ^ crcTable[(crc ^ data[i]) & 0xFF]
+    const byte = data[i] ?? 0
+    const tableValue = crcTable[(crc ^ byte) & 0xFF] ?? 0
+    crc = (crc >>> 8) ^ tableValue
   }
 
   return (crc ^ 0xFFFFFFFF) >>> 0

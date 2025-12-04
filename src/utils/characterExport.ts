@@ -342,7 +342,7 @@ async function createCharacterCardImage(character: Character, affection: number 
   try {
     const logoImg = new Image()
     logoImg.crossOrigin = 'anonymous'
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve) => {
       logoImg.onload = resolve
       logoImg.onerror = () => resolve(null) // logo 載入失敗就跳過
       logoImg.src = '/my-ai-chat/logo.svg'
@@ -369,8 +369,8 @@ async function createCharacterCardImage(character: Character, affection: number 
   // 繪製角色頭像（圓形，帶邊框，往上移且加大）
   const avatarImg = new Image()
   await new Promise((resolve, reject) => {
-    avatarImg.onload = resolve
-    avatarImg.onerror = reject
+    avatarImg.onload = () => resolve(null)
+    avatarImg.onerror = () => reject(new Error('頭像載入失敗'))
     avatarImg.src = avatarDataUrl
   })
 
