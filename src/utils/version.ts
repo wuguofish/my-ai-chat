@@ -173,35 +173,66 @@ export async function getVersionInfo(version: string): Promise<VersionInfo | und
 
 /**
  * 清除應用快取並重新載入
+ * 採用多重策略確保真正繞過瀏覽器快取
  */
 export async function clearCacheAndReload(): Promise<void> {
+  console.log('[清除快取] 開始清除應用快取...')
+
   try {
-    // 清除 Service Worker 快取
+    // 1. 清除 Service Worker 快取
     if ('serviceWorker' in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations()
+      console.log(`[清除快取] 找到 ${registrations.length} 個 Service Worker`)
       for (const registration of registrations) {
         await registration.unregister()
+        console.log('[清除快取] Service Worker 已解除註冊')
       }
     }
 
-    // 清除快取 API
+    // 2. 清除 Cache API
     if ('caches' in window) {
       const cacheNames = await caches.keys()
+      console.log(`[清除快取] 找到 ${cacheNames.length} 個快取`)
       await Promise.all(
-        cacheNames.map(cacheName => caches.delete(cacheName))
+        cacheNames.map(async cacheName => {
+          await caches.delete(cacheName)
+          console.log(`[清除快取] 已刪除快取: ${cacheName}`)
+        })
       )
     }
 
-    // 強制重新載入頁面，繞過快取
-    // 使用時間戳參數強制瀏覽器重新請求
-    const url = new URL(window.location.href)
-    url.searchParams.set('_refresh', Date.now().toString())
-    window.location.href = url.toString()
+    // 3. 清除 localStorage 中的版本資訊
+    try {
+      localStorage.removeItem('app-last-checked-version')
+      console.log('[清除快取] localStorage 版本資訊已清除')
+    } catch (e) {
+      console.warn('[清除快取] 無法清除 localStorage:', e)
+    }
+
+    // 4. 延遲確保清除完成
+    await new Promise(resolve => setTimeout(resolve, 200))
+    console.log('[清除快取] 快取清除完成，準備重新載入...')
+
+    // 5. 使用 hard reload 的方式重新載入
+    // 清除當前 URL 的查詢參數，然後加上新的時間戳
+    const baseUrl = window.location.origin + window.location.pathname
+    const newUrl = `${baseUrl}?_reload=${Date.now()}`
+
+    console.log(`[清除快取] 重新導向至: ${newUrl}`)
+
+    // 使用 location.replace() 不會留下歷史記錄
+    window.location.replace(newUrl)
   } catch (error) {
-    console.error('清除快取失敗:', error)
-    // 即使清除快取失敗，還是嘗試重新載入
-    const url = new URL(window.location.href)
-    url.searchParams.set('_refresh', Date.now().toString())
-    window.location.href = url.toString()
+    console.error('[清除快取] 清除快取時發生錯誤:', error)
+
+    // 最後手段：直接嘗試 hard reload
+    try {
+      // @ts-ignore - 某些瀏覽器支援 reload(true)
+      window.location.reload(true)
+    } catch {
+      // 如果 reload(true) 不支援，使用 replace 加時間戳
+      const baseUrl = window.location.origin + window.location.pathname
+      window.location.replace(`${baseUrl}?_reload=${Date.now()}`)
+    }
   }
 }

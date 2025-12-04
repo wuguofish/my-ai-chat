@@ -74,7 +74,15 @@ const handleLater = () => {
           </li>
         </ul>
       </div>
-      <p class="update-note">建議立即更新以獲得最佳體驗</p>
+      <div class="update-instructions">
+        <p class="update-note"><strong>更新說明：</strong></p>
+        <p class="update-note">點擊「立即更新」會自動清除快取並重新載入。</p>
+        <p class="update-note secondary">如果更新後仍看到舊版本，請：</p>
+        <ul class="update-tips">
+          <li>🖥️ 電腦：按 <strong>Ctrl+Shift+R</strong> (Windows) 或 <strong>Cmd+Shift+R</strong> (Mac)</li>
+          <li>📱 手機：完全關閉瀏覽器後重新開啟</li>
+        </ul>
+      </div>
       <div class="dialog-actions">
         <button @click="handleUpdate" class="btn-primary">立即更新</button>
         <button @click="handleLater" class="btn-secondary">稍後再說</button>
@@ -167,9 +175,45 @@ html, body, #app {
 }
 
 .update-note {
-  color: #999;
+  color: #666;
   font-size: 13px;
-  margin-bottom: 20px;
+  margin-bottom: 8px;
+}
+
+.update-note.secondary {
+  color: #999;
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.update-instructions {
+  background: #fff3cd;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border: 1px solid #ffc107;
+}
+
+.update-tips {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  list-style: none;
+}
+
+.update-tips li {
+  color: #666;
+  font-size: 13px;
+  margin-bottom: 6px;
+  padding-left: 4px;
+}
+
+.update-tips strong {
+  color: #333;
+  background: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
 }
 
 .dialog-actions {
