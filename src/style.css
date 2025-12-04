@@ -675,6 +675,10 @@ textarea {
   color: var(--color-primary);
 }
 
+.text-primary-dark {
+  color: var(--color-primary-dark);
+}
+
 .text-secondary {
   color: var(--color-text-secondary);
 }

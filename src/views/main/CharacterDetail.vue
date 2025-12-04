@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useUserStore } from '@/stores/user'
 import { useCharacterStore } from '@/stores/characters'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { useChatRoomsStore } from '@/stores/chatRooms'
@@ -10,10 +11,12 @@ import { Plus, ArrowLeft, MessageCircle, Edit, Bubbles, Trash2, X, Heart } from 
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
 const characterStore = useCharacterStore()
 const relationshipsStore = useRelationshipsStore()
 const chatRoomStore = useChatRoomsStore()
 
+const userName = computed(() => userStore.userName as string)
 const characterId = computed(() => route.params.id as string)
 const character = ref<Character | null>(null)
 
@@ -21,6 +24,21 @@ const character = ref<Character | null>(null)
 const userRelationship = computed(() =>
   relationshipsStore.getUserCharacterRelationship(characterId.value)
 )
+
+// 顯示的貢獻者列表（包含當前使用者）
+const displayContributors = computed(() => {
+  if (!character.value) return []
+
+  const author = character.value.importedMetadata?.author
+  const contributors = character.value.importedMetadata?.contributors || []
+
+  // 如果當前使用者不是作者，且不在貢獻者名單中，就加到最後
+  if (userName.value && userName.value !== author && !contributors.includes(userName.value)) {
+    return [...contributors, userName.value]
+  }
+
+  return contributors
+})
 
 // 取得角色與其他人的關係
 const characterRelationships = computed(() =>
@@ -455,6 +473,24 @@ const getRelationshipTypeText = (type: string) => {
         </div>
       </div>
 
+      <!-- 認識的人類朋友（作者與經手人） -->
+      <div class="human-friends-section">
+        <div class="human-friends-label">認識的人類朋友</div>
+        <div class="human-friends-content">
+          <span>
+            <b>{{ new Date(character.createdAt).toLocaleDateString() }}</b>
+            在<b class="text-primary-dark">{{ character?.importedMetadata?.author || userName }}</b>介紹下，加入「愛茶的」
+          </span>
+          <template v-if="displayContributors.length > 0 && character?.importedMetadata?.author">
+            <br />
+            <span>之後依序和以下的朋友們相遇：</span>
+            <span v-for="(contributor, index) in displayContributors" :key="index">
+              <b>{{ contributor }}</b><span v-if="index < displayContributors.length - 1">, </span>
+            </span>
+          </template>
+        </div>
+      </div>
+
       <!-- 調整關係 Modal -->
       <div v-if="showAdjustModal" class="modal-overlay" @click="showAdjustModal = false">
         <div class="modal-content" @click.stop>
@@ -632,8 +668,6 @@ const getRelationshipTypeText = (type: string) => {
 .header .btn-ghost {
   visibility: hidden;
 }
-
-
 
 /* 角色資訊卡片 */
 .profile-card {
@@ -903,6 +937,27 @@ const getRelationshipTypeText = (type: string) => {
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
   font-style: italic;
+}
+
+/* 認識的人類朋友 */
+.human-friends-section {
+  text-align: center;
+  padding: var(--spacing-xl) var(--spacing-lg) var(--spacing-2xl);
+  margin-top: var(--spacing-2xl);
+  border-top: 1px solid var(--color-border);
+}
+
+.human-friends-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--spacing-xs);
+  font-weight: 500;
+}
+
+.human-friends-content {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 
 /* Modal 專屬樣式 */

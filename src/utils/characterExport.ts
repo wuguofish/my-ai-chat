@@ -5,14 +5,45 @@
 
 import type { Character } from '@/types'
 import { embedDataInPNG, extractDataFromPNG } from './pngSteganography'
+import { CURRENT_VERSION } from './version'
 
 /**
  * 匯出角色卡為 PNG 圖片
  * @param character 角色資料
  * @param affection 好感度（可選，用於決定稀有度）
+ * @param authorName 作者名稱（可選，用於署名）
+ * @param existingMetadata 現有的 metadata（匯入時保留的）
  * @returns PNG 圖片的 Data URL
  */
-export async function exportCharacterCard(character: Character, affection: number = 0): Promise<string> {
+export async function exportCharacterCard(
+  character: Character,
+  affection: number = 0,
+  authorName?: string,
+  existingMetadata?: {
+    author?: string
+    contributors?: string[]
+    exportVersion?: string
+  }
+): Promise<string> {
+  // 準備作者資訊
+  let author: string | undefined
+  let contributors: string[] = []
+
+  if (existingMetadata?.author) {
+    // 已有原作者，保留
+    author = existingMetadata.author
+    contributors = existingMetadata.contributors || []
+
+    // 如果當前使用者不是原作者，且不在貢獻者名單中，加入貢獻者
+    if (authorName && authorName !== author && !contributors.includes(authorName)) {
+      contributors = [...contributors, authorName]
+    }
+  } else {
+    // 首次匯出，設定原作者
+    author = authorName
+    contributors = []
+  }
+
   // 準備要匯出的角色資料（移除好感度和記憶相關欄位）
   const exportData = {
     name: character.name,
@@ -30,16 +61,19 @@ export async function exportCharacterCard(character: Character, affection: numbe
     maxOutputTokens: character.maxOutputTokens,
     activeHours: character.activeHours,
     activePeriods: character.activePeriods,
+    createdAt: character.createdAt,
     // 添加元資料
     _metadata: {
-      exportVersion: '1.0.0',
+      exportVersion: CURRENT_VERSION, // 使用當前 app 版本
       exportTime: new Date().toISOString(),
-      appName: '愛茶的 AI Chat'
+      appName: '愛茶的 AI Chat',
+      author, // 原始創作者
+      contributors: contributors.length > 0 ? contributors : undefined // 貢獻者列表（如果有的話）
     }
   }
 
-  // 創建角色卡片（傳入好感度用於抽卡）
-  const cardImage = await createCharacterCardImage(character, affection)
+  // 創建角色卡片（傳入好感度用於抽卡，以及作者資訊）
+  const cardImage = await createCharacterCardImage(character, affection, author)
 
   // 將角色資料嵌入 PNG 圖片
   const pngWithData = await embedDataInPNG(cardImage, exportData, 'CharacterCard')
@@ -71,10 +105,13 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
       maxOutputTokens?: number
       activeHours?: Character['activeHours']
       activePeriods?: Character['activePeriods']
+      createdAt?: string
       _metadata?: {
         exportVersion: string
         exportTime: string
         appName: string
+        author?: string
+        contributors?: string[]
       }
     }>(imageDataUrl, 'CharacterCard')
 
@@ -103,7 +140,16 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
       systemPrompt: data.systemPrompt,
       maxOutputTokens: data.maxOutputTokens,
       activeHours: data.activeHours,
-      activePeriods: data.activePeriods
+      activePeriods: data.activePeriods,
+      createdAt: data.createdAt,
+      // 保留原始 metadata（作者資訊）
+      importedMetadata: data._metadata ? {
+        author: data._metadata.author,
+        contributors: data._metadata.contributors,
+        exportVersion: data._metadata.exportVersion,
+        exportTime: data._metadata.exportTime,
+        appName: data._metadata.appName
+      } : undefined
     }
   } catch (error) {
     console.error('匯入角色卡失敗:', error)
@@ -115,11 +161,22 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
  * 下載角色卡為 PNG 檔案
  * @param character 角色資料
  * @param affection 好感度（用於決定稀有度）
+ * @param authorName 作者名稱（可選，用於署名）
+ * @param existingMetadata 現有的 metadata（如果角色是匯入的，保留原作者資訊）
  */
-export async function downloadCharacterCard(character: Character, affection: number = 0): Promise<void> {
+export async function downloadCharacterCard(
+  character: Character,
+  affection: number = 0,
+  authorName?: string,
+  existingMetadata?: {
+    author?: string
+    contributors?: string[]
+    exportVersion?: string
+  }
+): Promise<void> {
   try {
-    // 匯出角色卡（傳入好感度）
-    const pngDataUrl = await exportCharacterCard(character, affection)
+    // 匯出角色卡（傳入好感度、作者名稱和現有 metadata）
+    const pngDataUrl = await exportCharacterCard(character, affection, authorName, existingMetadata)
 
     // 創建下載連結
     const link = document.createElement('a')
@@ -269,9 +326,10 @@ function getRarityStyle(rarity: RarityType): { color: string; gradient: string; 
  * 創建角色卡片圖片（CharacterDetail 風格）
  * @param character 角色資料
  * @param affection 好感度（用於決定稀有度）
+ * @param author 作者名稱（可選，用於顯示推薦人）
  * @returns PNG Data URL
  */
-async function createCharacterCardImage(character: Character, affection: number = 0): Promise<string> {
+async function createCharacterCardImage(character: Character, affection: number = 0, author?: string): Promise<string> {
   // 抽取稀有度
   const rarity = drawRarity(affection)
   const rarityStyle = getRarityStyle(rarity)
@@ -411,45 +469,61 @@ async function createCharacterCardImage(character: Character, affection: number 
   ctx.textAlign = 'center'
   ctx.shadowColor = 'rgba(0, 0, 0, 0.3)'
   ctx.shadowBlur = 8
-  ctx.fillText(character.name, 200, 370)
+  ctx.fillText(character.name, 200, 350)
   ctx.shadowBlur = 0
 
-  // 繪製性別/年齡/職業標籤
+  // 繪製性別/年齡/職業標籤（分兩列）
   const genderText = character.gender === 'male' ? '男' : character.gender === 'female' ? '女' : '未設定'
   const ageText = character.age ? `${character.age}歲` : ''
   const professionText = character.profession || ''
 
-  const tags = [genderText, ageText, professionText].filter(t => t)
-
   // 先設定字體以便測量文字寬度
   ctx.font = 'bold 16px "Iansui", sans-serif'
 
-  // 計算每個標籤的寬度
-  const tagWidths = tags.map(tag => {
-    const textWidth = ctx.measureText(tag).width
-    return Math.max(textWidth + 20, 60)  // 最小寬度 60px，左右各留 10px padding
-  })
+  // 第一列：性別 + 年齡
+  const firstRowTags = [genderText, ageText].filter(t => t)
+  if (firstRowTags.length > 0) {
+    const firstRowWidths = firstRowTags.map(tag => {
+      const textWidth = ctx.measureText(tag).width
+      return Math.max(textWidth + 20, 60)
+    })
+    const firstRowTotalWidth = firstRowWidths.reduce((sum, w) => sum + w + 10, -10)
+    let tagX = 200 - firstRowTotalWidth / 2
 
-  // 計算總寬度並置中
-  const totalWidth = tagWidths.reduce((sum, w) => sum + w + 10, -10)  // 10px 為標籤間距
-  let tagX = 200 - totalWidth / 2
+    firstRowTags.forEach((tag, index) => {
+      const tagWidth = firstRowWidths[index] || 60
 
-  tags.forEach((tag, index) => {
-    const tagWidth = tagWidths[index] || 60  // 預設寬度 60px
+      // 繪製標籤背景（半透明白色）
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
+      ctx.beginPath()
+      ctx.roundRect(tagX, 370, tagWidth, 32, 16)
+      ctx.fill()
+
+      // 繪製標籤文字（白色）
+      ctx.fillStyle = '#ffffff'
+      ctx.textAlign = 'center'
+      ctx.fillText(tag, tagX + tagWidth / 2, 390)
+
+      tagX += tagWidth + 10
+    })
+  }
+
+  // 第二列：職業
+  if (professionText) {
+    const professionWidth = Math.max(ctx.measureText(professionText).width + 20, 80)
+    const professionX = 200 - professionWidth / 2
 
     // 繪製標籤背景（半透明白色）
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
     ctx.beginPath()
-    ctx.roundRect(tagX, 400, tagWidth, 32, 16)
+    ctx.roundRect(professionX, 410, professionWidth, 32, 16)
     ctx.fill()
 
     // 繪製標籤文字（白色）
     ctx.fillStyle = '#ffffff'
     ctx.textAlign = 'center'
-    ctx.fillText(tag, tagX + tagWidth / 2, 420)
-
-    tagX += tagWidth + 10  // 移動到下一個標籤位置
-  })
+    ctx.fillText(professionText, 200, 430)
+  }
 
   // 繪製稀有度 Badge（右上角）
   const badgeX = 330
@@ -477,6 +551,16 @@ async function createCharacterCardImage(character: Character, affection: number 
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(rarity, badgeX, badgeY + 4)
+
+  // 繪製推薦人資訊（底部）
+  if (author) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+    ctx.font = '12px "Iansui", sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    const recommenderText = `推薦人：${author}`
+    ctx.fillText(recommenderText, 50, 485)
+  }
 
   // 轉換為 PNG Data URL
   return canvas.toDataURL('image/png')

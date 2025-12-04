@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
 import { useRelationshipsStore } from '@/stores/relationships'
+import { useUserStore } from '@/stores/user'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import { downloadCharacterCard, readCharacterCardFromFile } from '@/utils/characterExport'
 import PageHeader from '@/components/common/PageHeader.vue'
@@ -13,6 +14,7 @@ import { UserPlus, Download, X, ImageUp } from 'lucide-vue-next'
 const router = useRouter()
 const characterStore = useCharacterStore()
 const relationshipsStore = useRelationshipsStore()
+const userStore = useUserStore()
 
 const characters = computed(() => characterStore.characters)
 const characterCount = computed(() => characters.value.length)
@@ -42,7 +44,13 @@ const handleExportCharacter = async (character: Character, event: Event) => {
     const relationship = relationshipsStore.getUserCharacterRelationship(character.id)
     const affection = relationship?.affection || 0
 
-    await downloadCharacterCard(character, affection)
+    // 取得使用者名稱作為作者
+    const authorName = userStore.profile?.nickname || userStore.profile?.realName || undefined
+
+    // 如果角色是匯入的，保留原始 metadata
+    const existingMetadata = character.importedMetadata
+
+    await downloadCharacterCard(character, affection, authorName, existingMetadata)
   } catch (error) {
     console.error('匯出失敗:', error)
     alert('匯出好友名片失敗，請稍後再試')
@@ -72,23 +80,25 @@ const handleImportCharacter = async (event: Event) => {
       return
     }
 
-    // 創建新角色
+    // 創建新角色（保留所有匯入的資料，包括 metadata）
     const newCharacter: Character = {
+      ...characterData as Character,
       id: uuidv4(),
-      name: characterData.name!,
-      avatar: characterData.avatar!,
-      personality: characterData.personality!,
-      speakingStyle: characterData.speakingStyle,
-      background: characterData.background || '',
-      events: (characterData as any).importantEvents || [],
-      createdAt: new Date().toISOString(),
+      events: characterData.events || [],
+      createdAt: characterData.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }
 
     // 添加到 store
     characterStore.addCharacter(newCharacter)
 
-    showMessage(`成功匯入好友${newCharacter.name}`, 'success')
+    // 根據是否有作者資訊，顯示不同的訊息
+    const author = characterData.importedMetadata?.author
+    const message = author
+      ? `經由 ${author} 的介紹，認識了 ${newCharacter.name}`
+      : `成功匯入好友 ${newCharacter.name}`
+
+    showMessage(message, 'success')
   } catch (error) {
     console.error('匯入失敗:', error)
     showMessage('匯入好友名片失敗，請確認檔案格式正確', 'error')

@@ -2,8 +2,8 @@
  * 版本管理工具
  */
 
-// 當前版本號（每次更新時記得更新這個值）
-export const CURRENT_VERSION = '1.3.0'
+// 當前版本號（會在 build 時從 CHANGELOG.md 自動同步到 version.json）
+export const CURRENT_VERSION = '1.4.0'
 
 /**
  * 版本資訊介面

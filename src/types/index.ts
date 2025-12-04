@@ -89,6 +89,15 @@ export interface Character {
   }
   activePeriods?: ActivePeriod[]  // 新格式：支援多時段
 
+  // 匯入的角色卡 metadata（保留原作者資訊）
+  importedMetadata?: {
+    author?: string
+    contributors?: string[]
+    exportVersion?: string
+    exportTime?: string
+    appName?: string
+  }
+
   createdAt: string
   updatedAt: string
 }
