@@ -119,29 +119,37 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
       return null
     }
 
-    // 驗證必要欄位
-    if (!data.name || !data.personality || !data.speakingStyle) {
-      throw new Error('角色卡資料不完整')
+    // Debug: 顯示解析出的資料
+    console.log('[Character Import Debug] 解析出的資料 keys:', Object.keys(data))
+    console.log('[Character Import Debug] name:', data.name)
+    console.log('[Character Import Debug] personality:', data.personality ? '有' : '無')
+    console.log('[Character Import Debug] speakingStyle:', data.speakingStyle ? '有' : '無')
+
+    // 驗證必要欄位（只有 name 和 personality 是真正必須的）
+    if (!data.name || !data.personality) {
+      console.error('[Character Import Debug] 缺少必要欄位（name 或 personality）！')
+      throw new Error('角色卡資料不完整：缺少角色名稱或性格描述')
     }
 
     // 返回角色資料（使用原始頭像，而非角色卡圖片）
+    // 所有欄位都允許為空，匯入時保留原值或使用空值
     return {
       name: data.name,
-      avatar: data.avatar, // 使用 JSON 中儲存的原始頭像
-      age: data.age,
-      gender: data.gender,
-      profession: data.profession,
+      avatar: data.avatar || '', // 使用 JSON 中儲存的原始頭像，或留空
+      age: data.age || undefined,
+      gender: data.gender || undefined,
+      profession: data.profession || undefined,
       personality: data.personality,
-      speakingStyle: data.speakingStyle,
+      speakingStyle: data.speakingStyle || '', // 允許為空
       background: data.background || '',
-      likes: data.likes,
-      dislikes: data.dislikes,
+      likes: data.likes || undefined,
+      dislikes: data.dislikes || undefined,
       events: data.events || [],
-      systemPrompt: data.systemPrompt,
-      maxOutputTokens: data.maxOutputTokens,
-      activeHours: data.activeHours,
-      activePeriods: data.activePeriods,
-      createdAt: data.createdAt,
+      systemPrompt: data.systemPrompt || undefined,
+      maxOutputTokens: data.maxOutputTokens || undefined,
+      activeHours: data.activeHours || undefined,
+      activePeriods: data.activePeriods || undefined,
+      createdAt: data.createdAt || undefined,
       // 保留原始 metadata（作者資訊）
       importedMetadata: data._metadata ? {
         author: data._metadata.author,

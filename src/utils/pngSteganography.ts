@@ -33,9 +33,11 @@ export async function embedDataInPNG(
 
   // 序列化 JSON 資料
   const jsonString = JSON.stringify(data)
+  console.log('[PNG Debug] 嵌入資料，JSON 長度:', jsonString.length, 'characters')
 
   // 創建 tEXt chunk
   const textChunk = createTextChunk(keyword, jsonString)
+  console.log('[PNG Debug] tEXt chunk 大小:', textChunk.length, 'bytes')
 
   // 找到 IEND chunk 的位置（PNG 的結束標記）
   let iendIndex = -1
@@ -55,17 +57,24 @@ export async function embedDataInPNG(
     throw new Error('找不到 PNG 的 IEND chunk')
   }
 
+  console.log('[PNG Debug] IEND 位置:', iendIndex, '原始檔案大小:', bytes.length)
+
   // 在 IEND 之前插入 tEXt chunk
   const newBytes = new Uint8Array(bytes.length + textChunk.length)
   newBytes.set(bytes.slice(0, iendIndex))
   newBytes.set(textChunk, iendIndex)
   newBytes.set(bytes.slice(iendIndex), iendIndex + textChunk.length)
 
+  console.log('[PNG Debug] 新檔案大小:', newBytes.length, 'bytes')
+
   // 轉換回 Data URL
   const blob = new Blob([newBytes], { type: 'image/png' })
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onloadend = () => resolve(reader.result as string)
+    reader.onloadend = () => {
+      console.log('[PNG Debug] 資料嵌入完成！')
+      resolve(reader.result as string)
+    }
     reader.onerror = reject
     reader.readAsDataURL(blob)
   })
@@ -99,6 +108,10 @@ export async function extractDataFromPNG<T = object>(
 
   // 尋找 tEXt chunk
   let index = 8 // 跳過 PNG 簽名
+  const foundChunks: string[] = [] // Debug: 記錄找到的 chunk 類型
+
+  console.log('[PNG Debug] 開始尋找 tEXt chunk，檔案大小:', bytes.length, 'bytes')
+
   while (index < bytes.length) {
     // 讀取 chunk 長度
     const b0 = bytes[index] ?? 0
@@ -114,13 +127,17 @@ export async function extractDataFromPNG<T = object>(
     const t3 = bytes[index + 7] ?? 0
     const type = String.fromCharCode(t0, t1, t2, t3)
 
+    foundChunks.push(type)
+
     // 如果是 IEND，表示已經到檔案結尾
     if (type === 'IEND') {
+      console.log('[PNG Debug] 到達 IEND，找到的 chunks:', foundChunks.join(', '))
       break
     }
 
     // 如果是 tEXt chunk
     if (type === 'tEXt') {
+      console.log('[PNG Debug] 找到 tEXt chunk，長度:', length)
       const dataStart = index + 8
       const dataEnd = dataStart + length
       const chunkData = bytes.slice(dataStart, dataEnd)
@@ -137,15 +154,20 @@ export async function extractDataFromPNG<T = object>(
       if (nullIndex !== -1) {
         // 讀取關鍵字
         const chunkKeyword = new TextDecoder().decode(chunkData.slice(0, nullIndex))
+        console.log('[PNG Debug] tEXt chunk keyword:', chunkKeyword)
 
         // 如果關鍵字匹配
         if (chunkKeyword === keyword) {
+          console.log('[PNG Debug] 關鍵字匹配！開始解析 JSON')
           // 讀取資料
           const jsonString = new TextDecoder().decode(chunkData.slice(nullIndex + 1))
+          console.log('[PNG Debug] JSON 長度:', jsonString.length, 'characters')
           try {
-            return JSON.parse(jsonString) as T
+            const result = JSON.parse(jsonString) as T
+            console.log('[PNG Debug] JSON 解析成功！')
+            return result
           } catch (error) {
-            console.error('解析 JSON 失敗:', error)
+            console.error('[PNG Debug] 解析 JSON 失敗:', error)
             return null
           }
         }
@@ -156,6 +178,7 @@ export async function extractDataFromPNG<T = object>(
     index += 4 + 4 + length + 4
   }
 
+  console.log('[PNG Debug] 未找到匹配的 tEXt chunk，找到的 chunks:', foundChunks.join(', '))
   return null
 }
 

@@ -433,16 +433,34 @@ export function isCharacterOnline(character: Character, currentTime?: Date): boo
 }
 
 /**
+ * 無法回應的角色資訊
+ */
+export interface UnableToRespondInfo {
+  characterId: string
+  characterName: string
+  reason: 'away' | 'offline'
+}
+
+/**
+ * 決定回應角色的結果
+ */
+export interface RespondingCharactersResult {
+  respondingIds: string[]
+  unableToRespond: UnableToRespondInfo[]
+}
+
+/**
  * 決定群聊中哪些角色應該回應
  * @param message 訊息內容（已轉換為 ID 格式）
  * @param allCharacters 聊天室中的所有角色
- * @returns 應該回應的角色 ID 陣列
+ * @returns 應該回應的角色 ID 陣列與無法回應的角色資訊
  */
 export function determineRespondingCharacters(
   message: string,
   allCharacters: Character[]
-): string[] {
+): RespondingCharactersResult {
   const respondingIds: string[] = []
+  const unableToRespond: UnableToRespondInfo[] = []
 
   // 檢查是否有 @all
   const hasAtAll = /@all/i.test(message)
@@ -463,10 +481,25 @@ export function determineRespondingCharacters(
 
       if (Math.random() < probability) {
         respondingIds.push(char.id)
+      } else {
+        // 未回應的角色記錄原因
+        if (status === 'away') {
+          unableToRespond.push({
+            characterId: char.id,
+            characterName: char.name,
+            reason: 'away'
+          })
+        } else if (status === 'offline') {
+          unableToRespond.push({
+            characterId: char.id,
+            characterName: char.name,
+            reason: 'offline'
+          })
+        }
       }
     })
 
-    return respondingIds
+    return { respondingIds, unableToRespond }
   }
 
   // 1. 先找出所有被 @ 的角色
@@ -493,6 +526,21 @@ export function determineRespondingCharacters(
 
     if (Math.random() < probability) {
       respondingIds.push(charId)
+    } else {
+      // 被 @ 但未回應的角色記錄原因
+      if (status === 'away') {
+        unableToRespond.push({
+          characterId: char.id,
+          characterName: char.name,
+          reason: 'away'
+        })
+      } else if (status === 'offline') {
+        unableToRespond.push({
+          characterId: char.id,
+          characterName: char.name,
+          reason: 'offline'
+        })
+      }
     }
   })
 
@@ -504,7 +552,7 @@ export function determineRespondingCharacters(
   // 3. 在線的角色全部加入回應列表
   respondingIds.push(...onlineCharacters.map(c => c.id))
 
-  return respondingIds
+  return { respondingIds, unableToRespond }
 }
 
 /**

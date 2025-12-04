@@ -726,7 +726,24 @@ const handleGroupChatMessage = async (userMessage: string) => {
 
       if (currentRound === 1) {
         // 第一輪：在線角色 + 被 @ 的角色
-        respondingCharacterIds = determineRespondingCharacters(messageForAI, allCharacters)
+        const result = determineRespondingCharacters(messageForAI, allCharacters)
+        respondingCharacterIds = result.respondingIds
+
+        // 顯示無法回應的角色系統訊息
+        if (result.unableToRespond.length > 0) {
+          result.unableToRespond.forEach(info => {
+            const reasonText = info.reason === 'away' ? '忙碌中' : '離線'
+            const systemMessage = {
+              id: `system-${Date.now()}-${Math.random()}`,
+              roomId: currentRoomId,
+              senderId: 'system',
+              senderName: '系統',
+              content: `${info.characterName} 因${reasonText}無法回覆`,
+              timestamp: new Date().toISOString()
+            }
+            chatRoomStore.addMessage(currentRoomId, systemMessage)
+          })
+        }
       } else {
         // 後續輪：只有被上一輪訊息 @ 的角色
         const lastRoundMessages = conversationHistory.slice(-(conversationHistory.length - (currentRound - 2)))
@@ -1393,28 +1410,36 @@ onMounted(() => {
         <p v-else-if="room.type === 'group'">開始群組聊天吧！</p>
       </div>
 
-      <div v-for="message in messages" :key="message.id" :class="[
-          'message',
-          message.senderId === 'user' ? 'user-message' : 'character-message',
-          { 'multi-select-mode': isMultiSelectMode, 'selected': selectedMessagesForDelete.has(message.id) }
-        ]" @click="isMultiSelectMode ? toggleMessageSelection(message.id) : null"
-        @contextmenu.prevent="handleMessageLongPress(message.id, $event)"
-        @touchstart="handleTouchStart(message.id, $event)" @touchend="handleTouchEnd" @touchmove="handleTouchMove">
-        <!-- 多選模式的 checkbox -->
-        <div v-if="isMultiSelectMode" class="message-checkbox">
-          <input type="checkbox" :checked="selectedMessagesForDelete.has(message.id)"
-            @change="toggleMessageSelection(message.id)">
+      <!-- 系統訊息 -->
+      <div v-for="message in messages" :key="message.id">
+        <div v-if="message.senderId === 'system'" class="system-message">
+          <span class="system-message-text">{{ message.content }}</span>
         </div>
 
-        <div class="message-avatar">
-          <img :src="getSenderAvatar(message.senderId, message.senderName)" :alt="message.senderName">
-        </div>
-        <div class="message-content">
-          <div class="message-header">
-            <span class="sender-name">{{ message.senderName }}</span>
-            <span class="message-time">{{ formatMessageTime(message.timestamp) }}</span>
+        <!-- 一般訊息 -->
+        <div v-else :class="[
+            'message',
+            message.senderId === 'user' ? 'user-message' : 'character-message',
+            { 'multi-select-mode': isMultiSelectMode, 'selected': selectedMessagesForDelete.has(message.id) }
+          ]" @click="isMultiSelectMode ? toggleMessageSelection(message.id) : null"
+          @contextmenu.prevent="handleMessageLongPress(message.id, $event)"
+          @touchstart="handleTouchStart(message.id, $event)" @touchend="handleTouchEnd" @touchmove="handleTouchMove">
+          <!-- 多選模式的 checkbox -->
+          <div v-if="isMultiSelectMode" class="message-checkbox">
+            <input type="checkbox" :checked="selectedMessagesForDelete.has(message.id)"
+              @change="toggleMessageSelection(message.id)">
           </div>
-          <div class="message-text" v-html="formatMessageContent(message.content)"></div>
+
+          <div class="message-avatar">
+            <img :src="getSenderAvatar(message.senderId, message.senderName)" :alt="message.senderName">
+          </div>
+          <div class="message-content">
+            <div class="message-header">
+              <span class="sender-name">{{ message.senderName }}</span>
+              <span class="message-time">{{ formatMessageTime(message.timestamp) }}</span>
+            </div>
+            <div class="message-text" v-html="formatMessageContent(message.content)"></div>
+          </div>
         </div>
       </div>
 
@@ -1701,6 +1726,24 @@ onMounted(() => {
   margin-bottom: var(--spacing-lg);
   opacity: 0.3;
   color: var(--color-text-tertiary);
+}
+
+/* 系統訊息 */
+.system-message {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--spacing-sm) 0;
+  margin: var(--spacing-xs) 0;
+}
+
+.system-message-text {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  background: var(--color-bg-secondary);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-full);
+  text-align: center;
 }
 
 .message {
