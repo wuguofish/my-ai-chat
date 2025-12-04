@@ -192,11 +192,16 @@ export async function clearCacheAndReload(): Promise<void> {
       )
     }
 
-    // 重新載入頁面（強制從伺服器取得）
-    window.location.reload()
+    // 強制重新載入頁面，繞過快取
+    // 使用時間戳參數強制瀏覽器重新請求
+    const url = new URL(window.location.href)
+    url.searchParams.set('_refresh', Date.now().toString())
+    window.location.href = url.toString()
   } catch (error) {
     console.error('清除快取失敗:', error)
     // 即使清除快取失敗，還是嘗試重新載入
-    window.location.reload()
+    const url = new URL(window.location.href)
+    url.searchParams.set('_refresh', Date.now().toString())
+    window.location.href = url.toString()
   }
 }
