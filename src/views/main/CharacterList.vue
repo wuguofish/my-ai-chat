@@ -99,7 +99,7 @@ const handleImportCharacter = async (event: Event) => {
 }
 
 // 顯示訊息
-const showMessage = (message: string, type: 'success' | 'error') => {
+const showMessage = (message: string, _type: 'success' | 'error') => {
   importMessage.value = message
   showImportMessage.value = true
 
