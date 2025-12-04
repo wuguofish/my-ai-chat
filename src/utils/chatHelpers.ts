@@ -28,7 +28,8 @@ export interface SystemPromptContext {
  * 包含時間、使用者資料、關係、記憶等完整資訊
  */
 export function generateSystemPrompt(context: SystemPromptContext): string {
-  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary, otherCharactersInRoom, allCharacters, isOfflineButMentioned, useShortIds } = context
+  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary,
+    otherCharactersInRoom, allCharacters, isOfflineButMentioned, useShortIds } = context
 
   const parts: string[] = [generateDefaultCharacterPrompt(character)]
   
@@ -102,8 +103,15 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
 
   // 5. 群聊參與者與ID對照表（群聊時必須提供）
   if (otherCharactersInRoom && otherCharactersInRoom.length > 0) {
+  
     const otherCharNames = otherCharactersInRoom.map(c => c.name).join('、')
-    parts.push(`\n\n## 群聊參與者\n除了 ${user.nickname} 之外，還有以下角色參與對話：${otherCharNames}`)
+    parts.push(`\n\n## 群聊參與者\n`)
+    
+    if (context.room?.name) { 
+      parts.push(`### 群組名稱：${context.room?.name}\n`)
+    }
+    
+    parts.push(`除了 ${ user.nickname } 之外，還有以下角色參與對話：${ otherCharNames }`)
 
     //ID對照表 + 在線狀態（無論是否有關係，都要提供ID對照表）
     parts.push(`\n\n## 參與者ID對照表與在線狀態`)
@@ -116,6 +124,7 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
       const charId = useShortIds ? `${index + 1}` : char.id
       parts.push(`\n- ${char.name}：@${charId}（${statusText}）`)
     })
+    
   }
 
   // 6. 與其他角色的關係
@@ -176,9 +185,9 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     instructions.push(`- 若提到特定對象的話，必須使用 @ID 的方式標註（參考上方的ID對照表）`)
     instructions.push(`- 例如提到「小美」，要寫：「@char_xxx 小美你覺得呢？」（用 ID，不是用名字）`)
     instructions.push(`- 可以在對話中自由使用暱稱或稱呼，但第一次提及時必須在對話中@ 標註該人物，且確保使用存在於ID對照表內的正確ID`)
-    instructions.push(`- 同一則對話內，即使提到多次也禁止重複使用@標註同一個人`)
     instructions.push(`- 你也可以 @ 使用者（${user.nickname}），方式為：@user`)
     instructions.push(`- 若要呼叫所有人，使用：@all`)
+    instructions.push(`- 同一則對話內禁止重複使用@標註同一個人，請在回覆前檢查此次回覆內容是否有重複的ID，若有，請保留第一次呼叫。`)
   }
 
   // 離線被 @all 吵醒的特殊指示
@@ -592,4 +601,28 @@ export function convertToLongIds(message: string, characters: Character[]): stri
   })
 
   return result
+}
+
+/**
+ * 洗牌
+ */
+export function shuffle<T>(array: T[]): T[] {
+  const result = [...array];
+  let currentIndex: number = result.length;
+  let randomIndex: number;
+
+  while (currentIndex !== 0) {
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+
+    if (result[currentIndex] && result[randomIndex]) {
+      [result[currentIndex], result[randomIndex]] = [
+        result[randomIndex]!,
+        result[currentIndex]!
+      ];
+    }
+    
+  }
+
+  return result;
 }

@@ -14,7 +14,8 @@ import {
   determineRespondingCharacters,
   parseMentionedCharacterIds,
   isCharacterOnline,
-  getCharacterStatus
+  getCharacterStatus,
+  shuffle
 } from '@/utils/chatHelpers'
 import { getCharacterResponse } from '@/services/gemini'
 import { generateMemorySummary, extractLongTermMemories } from '@/services/memoryService'
@@ -783,6 +784,9 @@ const handleGroupChatMessage = async (userMessage: string) => {
       // 記錄這一輪是否為第一個角色（只有第一輪的第一個角色需要傳入 userMessage）
       let isFirstCharacterInThisRound = true
 
+      // 打亂responding的順序
+      respondingCharacterIds = shuffle(respondingCharacterIds)
+
       // 依序讓角色回應
       for (const charId of respondingCharacterIds) {
         const currentCharacter = characterStore.getCharacterById(charId)
@@ -1411,7 +1415,7 @@ onMounted(() => {
       </div>
 
       <!-- 系統訊息 -->
-      <div v-for="message in messages" :key="message.id">
+      <div v-for="message in messages" :key="message.id" class="messages-wrapper">
         <div v-if="message.senderId === 'system'" class="system-message">
           <span class="system-message-text">{{ message.content }}</span>
         </div>
@@ -1473,13 +1477,9 @@ onMounted(() => {
     </div>
 
     <!-- @ 選單 -->
-    <div v-if="showMentionMenu" class="mention-menu" :style="{ top: mentionMenuPosition.top + 'px', left: mentionMenuPosition.left + 'px' }">
-      <div
-        v-for="option in mentionOptions"
-        :key="option.id"
-        class="mention-option"
-        @click="selectMention(option)"
-      >
+    <div v-if="showMentionMenu" class="mention-menu"
+      :style="{ top: mentionMenuPosition.top + 'px', left: mentionMenuPosition.left + 'px' }">
+      <div v-for="option in mentionOptions" :key="option.id" class="mention-option" @click="selectMention(option)">
         <!-- 頭像 -->
         <div class="mention-avatar">
           <template v-if="option.type === 'all'">
@@ -1496,16 +1496,9 @@ onMounted(() => {
 
     <!-- Input -->
     <div class="input-container">
-      <textarea
-        ref="messageInputRef"
-        v-model="messageInput"
-        class="message-input"
-        :placeholder="isTouchDevice() ? '輸入訊息...' : '輸入訊息... (Enter 送出，Shift+Enter 換行)'"
-        rows="1"
-        :disabled="isLoading"
-        @input="handleInputChange"
-        @keydown="handleKeydown"
-      ></textarea>
+      <textarea ref="messageInputRef" v-model="messageInput" class="message-input"
+        :placeholder="isTouchDevice() ? '輸入訊息...' : '輸入訊息... (Enter 送出，Shift+Enter 換行)'" rows="1" :disabled="isLoading"
+        @input="handleInputChange" @keydown="handleKeydown"></textarea>
       <button class="send-btn" :disabled="!messageInput.trim() || isLoading" @click="handleSendMessage">
         <Send :size="20" />
       </button>
@@ -1711,6 +1704,13 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg);
+  width: 100%;
+}
+
+.messages-wrapper {
+
+  display: contents;
+
 }
 
 .empty-messages {
@@ -1984,7 +1984,6 @@ onMounted(() => {
   padding: var(--spacing-md) var(--spacing-lg);
   cursor: pointer;
   border-radius: var(--radius);
-  transition: background var(--transition-fast);
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
@@ -2727,11 +2726,19 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .chat-header {
-    padding: var(--spacing-md) var(--spacing-lg);
+    padding: var(--spacing-md) var(--spacing-xs);
+  }
+
+  .group-avatars {
+    gap: 0;    
+  }
+
+  .avatar-small {  
+    margin-left: -12px;
   }
 
   .messages-container {
-    padding: var(--spacing-md);
+    padding: var(--spacing-md) var(--spacing-xs) !important;
   }
 
   .message {
