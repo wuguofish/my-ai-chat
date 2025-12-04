@@ -153,7 +153,7 @@ const handleAddRelation = () => {
 
 const handleSaveNewRelation = () => {
   if (!newRelation.value.targetCharacterId || !newRelation.value.description.trim()) {
-    alert('請選擇角色並填寫關係描述')
+    alert('請選擇好友並填寫關係描述')
     return
   }
 
@@ -392,10 +392,10 @@ const getRelationshipTypeText = (type: string) => {
         </div>
       </div>
 
-      <!-- 角色對其他人的關係 -->
+      <!-- 好友對其他人的關係 -->
       <div class="section">
         <div class="section-header">
-          <h2 class="section-title">{{ character?.name }} 對其他人的關係</h2>
+          <h2 class="section-title">{{ character?.name }} 對其他好友的關係</h2>
           <button v-if="availableCharacters.length > 0" class="btn btn-primary btn-sm" @click="handleAddRelation">
             <Plus :size="14" /> 新增
           </button>
@@ -430,10 +430,10 @@ const getRelationshipTypeText = (type: string) => {
         </div>
       </div>
 
-      <!-- 其他人對此角色的關係 -->
+      <!-- 其他人對此好友的關係 -->
       <div class="section">
         <div class="section-header">
-          <h2 class="section-title">其他人對 {{ character?.name }} 的關係</h2>
+          <h2 class="section-title">其他好友對 {{ character?.name }} 的關係</h2>
         </div>
         <div v-if="relationshipsTo.length > 0" class="character-relationships">
           <div v-for="rel in relationshipsTo" :key="`${rel.fromCharacterId}-${rel.toCharacterId}`"
@@ -494,20 +494,20 @@ const getRelationshipTypeText = (type: string) => {
         </div>
       </div>
 
-      <!-- 新增角色關係 Modal -->
+      <!-- 新增好友關係 Modal -->
       <div v-if="showAddRelationModal" class="modal-overlay" @click="showAddRelationModal = false">
         <div class="modal-content" @click.stop>
           <div class="modal-header">
-            <h3>新增角色關係</h3>
+            <h3>新增好友關係</h3>
             <button class="modal-close" @click="showAddRelationModal = false">
               <X :size="24" />
             </button>
           </div>
           <div class="modal-body">
             <div class="form-group">
-              <label>選擇角色</label>
+              <label>選擇好友</label>
               <select v-model="newRelation.targetCharacterId" class="input-field">
-                <option value="">請選擇角色</option>
+                <option value="">請選擇好友</option>
                 <option v-for="char in availableCharacters" :key="char.id" :value="char.id">
                   {{ char.name }}
                 </option>
@@ -547,18 +547,18 @@ const getRelationshipTypeText = (type: string) => {
         </div>
       </div>
 
-      <!-- 編輯角色關係 Modal -->
+      <!-- 編輯好友關係 Modal -->
       <div v-if="showEditRelationModal" class="modal-overlay" @click="showEditRelationModal = false">
         <div class="modal-content" @click.stop>
           <div class="modal-header">
-            <h3>編輯角色關係</h3>
+            <h3>編輯好友關係</h3>
             <button class="modal-close" @click="showEditRelationModal = false">
               <X :size="24" />
             </button>
           </div>
           <div class="modal-body">
             <div v-if="editingRelation" class="form-group">
-              <label>對象角色</label>
+              <label>對象好友</label>
               <div class="input-field" style="background: var(--color-bg-secondary); cursor: not-allowed">
                 {{ getCharacterName(editingRelation.targetCharacterId) }}
               </div>

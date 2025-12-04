@@ -116,8 +116,10 @@ defineProps<{
 
 .header-right {
   display: flex;
-  gap: var(--spacing-sm);
-  min-width: 100px;
+  flex-direction: column;
+  justify-items: center;
+  align-items: end;
+  min-width: 150px;
 }
 
 /* 響應式 */

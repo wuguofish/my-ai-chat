@@ -19,13 +19,13 @@ const handleComplete = () => {
 
     <div class="content-box">
       <div class="icon">👥</div>
-      <h4>新增 AI 角色</h4>
-      <p>進入主畫面後，你可以在「角色管理」中新增你的 AI 聊天夥伴。</p>
+      <h4>新增 AI 好友</h4>
+      <p>進入主畫面後，你可以在「好友管理」中新增你的 AI 聊天夥伴。</p>
 
       <div class="features">
         <div class="feature-item">
           <span class="feature-icon">✏️</span>
-          <span>自訂角色性格與說話風格</span>
+          <span>自訂好友性格與說話風格</span>
         </div>
         <div class="feature-item">
           <span class="feature-icon">💬</span>
@@ -33,7 +33,7 @@ const handleComplete = () => {
         </div>
         <div class="feature-item">
           <span class="feature-icon">❤️</span>
-          <span>發展角色關係</span>
+          <span>發展好友關係</span>
         </div>
       </div>
     </div>

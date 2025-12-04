@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
+import { downloadCharacterCard, readCharacterCardFromFile } from '@/utils/characterExport'
 import PageHeader from '@/components/common/PageHeader.vue'
 import type { Character } from '@/types'
+import { v4 as uuidv4 } from 'uuid'
+import { UserPlus, Download, X, ImageUp } from 'lucide-vue-next'
 
 const router = useRouter()
 const characterStore = useCharacterStore()
@@ -16,11 +19,93 @@ const characterCount = computed(() => characters.value.length)
 const canAddMore = computed(() => characterCount.value < 15)
 
 const handleAddCharacter = () => {
+  showFabMenu.value = false  // 關閉選單
   router.push('/main/characters/new')
 }
 
 const handleViewCharacter = (character: Character) => {
   router.push(`/main/characters/${character.id}`)
+}
+
+// 匯出/匯入相關
+const importMessage = ref('')
+const showImportMessage = ref(false)
+
+// FAB 選單
+const showFabMenu = ref(false)
+
+// 匯出角色卡
+const handleExportCharacter = async (character: Character, event: Event) => {
+  event.stopPropagation() // 防止觸發卡片點擊
+  try {
+    // 取得角色的好感度
+    const relationship = relationshipsStore.getUserCharacterRelationship(character.id)
+    const affection = relationship?.affection || 0
+
+    await downloadCharacterCard(character, affection)
+  } catch (error) {
+    console.error('匯出失敗:', error)
+    alert('匯出好友名片失敗，請稍後再試')
+  }
+}
+
+// 匯入角色卡
+const handleImportCharacter = async (event: Event) => {
+  showFabMenu.value = false  // 關閉選單
+
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+
+  if (!file) return
+
+  try {
+    const characterData = await readCharacterCardFromFile(file)
+
+    if (!characterData) {
+      showMessage('這張圖片不包含好友名片資料', 'error')
+      return
+    }
+
+    // 檢查是否超過好友數量限制
+    if (characterCount.value >= 15) {
+      showMessage('已達到好友數量上限（15 位）', 'error')
+      return
+    }
+
+    // 創建新角色
+    const newCharacter: Character = {
+      id: uuidv4(),
+      name: characterData.name!,
+      avatar: characterData.avatar!,
+      personality: characterData.personality!,
+      speakingStyle: characterData.speakingStyle,
+      background: characterData.background || '',
+      events: (characterData as any).importantEvents || [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+
+    // 添加到 store
+    characterStore.addCharacter(newCharacter)
+
+    showMessage(`成功匯入好友${newCharacter.name}`, 'success')
+  } catch (error) {
+    console.error('匯入失敗:', error)
+    showMessage('匯入好友名片失敗，請確認檔案格式正確', 'error')
+  }
+
+  // 清空 input，允許重複選擇同一個檔案
+  input.value = ''
+}
+
+// 顯示訊息
+const showMessage = (message: string, type: 'success' | 'error') => {
+  importMessage.value = message
+  showImportMessage.value = true
+
+  setTimeout(() => {
+    showImportMessage.value = false
+  }, 3000)
 }
 
 const getGenderText = (gender?: string) => {
@@ -84,20 +169,37 @@ const getDefaultAvatar = (name: string) => {
       </template>
     </PageHeader>
 
+    <!-- 匯入訊息提示 -->
+    <div v-if="showImportMessage" class="import-message" :class="importMessage.includes('成功') ? 'success' : 'error'">
+      {{ importMessage }}
+    </div>
+
     <!-- 空狀態 -->
     <div v-if="characterCount === 0" class="empty-state">
       <div class="empty-icon">👥</div>
       <h3>還沒有 AI 好友</h3>
-      <p>建立你的第一個 AI 好友，開始有趣的對話吧！</p>
-      <button class="btn-primary" @click="handleAddCharacter">
-        新增好友
-      </button>
+      <p>建立你的第一個 AI 好友，或匯入好友名片開始對話吧！</p>
+      <div class="button-group" style="justify-content: center; margin-top: var(--spacing-xl);">
+        <button class="btn-primary empty-btn" @click="handleAddCharacter">
+          <UserPlus :size="20" />
+          <span>新增好友</span>
+        </button>
+        <label class="btn-secondary empty-btn" for="empty-import-input">
+          <Download :size="20" />
+          <span>匯入名片</span>
+          <input id="empty-import-input" type="file" accept="image/*" style="display: none"
+            @change="handleImportCharacter" />
+        </label>
+      </div>
     </div>
 
     <!-- 好友列表 -->
     <div v-else class="character-grid">
       <div v-for="character in characters" :key="character.id" class="character-card"
         @click="handleViewCharacter(character)">
+        <button class="export-btn btn btn-sm btn-info-outline" @click="handleExportCharacter(character, $event)">
+          <ImageUp /> 抽名片
+        </button>
         <div class="character-avatar">
           <img :src="character.avatar || getDefaultAvatar(character.name)" :alt="character.name">
         </div>
@@ -116,10 +218,28 @@ const getDefaultAvatar = (name: string) => {
       </div>
     </div>
 
-    <!-- 新增按鈕（當已有好友時） -->
-    <button v-if="characterCount > 0 && canAddMore" class="fab-add" @click="handleAddCharacter">
-      ＋
-    </button>
+    <!-- 新增按鈕與選單（當已有好友時） -->
+    <div v-if="characterCount > 0 && canAddMore" class="fab-container">
+      <!-- FAB 選單 -->
+      <div v-if="showFabMenu" class="fab-menu">
+        <button class="fab-menu-item" @click="handleAddCharacter">
+          <UserPlus :size="20" />
+          <span>新增好友</span>
+        </button>
+        <label class="fab-menu-item" for="fab-import-input">
+          <Download :size="20" />
+          <span>匯入名片</span>
+          <input id="fab-import-input" type="file" accept="image/*" style="display: none"
+            @change="handleImportCharacter" />
+        </label>
+      </div>
+
+      <!-- FAB 主按鈕 -->
+      <button class="fab-add" @click="showFabMenu = !showFabMenu">
+        <X v-if="showFabMenu" :size="28" />
+        <span v-else style="font-size: 30px; font-weight: bold;">＋</span>
+      </button>
+    </div>
 
     <!-- 已達上限提示 -->
     <div v-if="!canAddMore" class="limit-notice">
@@ -254,30 +374,88 @@ const getDefaultAvatar = (name: string) => {
   transform: scale(1.1);
 }
 
-/* 浮動新增按鈕 */
-.fab-add {
+/* FAB 容器 */
+.fab-container {
   position: fixed;
   bottom: 102px;
   right: var(--spacing-3xl);
+  z-index: var(--z-dropdown);
+}
+
+/* FAB 選單 */
+.fab-menu {
+  position: absolute;
+  bottom: 80px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  animation: fadeInUp 0.2s ease-out;
+}
+
+.fab-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: white;
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+}
+
+.fab-menu-item:hover {
+  background: var(--color-primary);
+  color: white;
+  transform: translateX(-4px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 浮動新增按鈕 */
+.fab-add {
   width: 64px;
   height: 64px;
   border-radius: var(--radius-full);
   background: var(--color-primary);
   color: var(--color-text-white);
   border: none;
-  font-size: 30px;
-  font-weight: bold;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
   transition: all var(--transition);
-  z-index: var(--z-dropdown);
   padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .fab-add:hover {
   background: var(--color-primary-dark);
   transform: scale(1.1);
   box-shadow: 0 6px 16px rgba(102, 126, 234, 0.5);
+}
+
+/* 空狀態按鈕 - 支援圖示 */
+.empty-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
 }
 
 /* 主要按鈕 */
@@ -299,6 +477,80 @@ const getDefaultAvatar = (name: string) => {
 }
 
 /* 上限提示 */
+/* 匯入按鈕 */
+.import-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.import-btn:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+/* 匯出按鈕 */
+.export-btn {
+  position: absolute;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
+  margin: var(--spacing-xs);
+  padding:var(--spacing-xs);
+  z-index: 1;
+}
+
+.export-btn:hover {
+  transform: scale(1.1);
+}
+
+.export-btn:hover::after {
+  content: ' 匯出好友名片';
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: 12px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* 匯入訊息提示 */
+.import-message {
+  margin: var(--spacing-md) var(--spacing-xl);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius);
+  font-size: var(--text-base);
+  text-align: center;
+  animation: slideDown 0.3s ease-out;
+}
+
+.import-message.success {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.import-message.error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .limit-notice {
   position: fixed;
   bottom: var(--spacing-3xl);

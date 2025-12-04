@@ -1,6 +1,111 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
 # 愛聊天 AI Chat - 開發者文件
 
-此文件提供專案的開發指南，包括設計系統使用原則、樣式規範、程式碼慣例等。
+此文件提供專案的開發指南，包括架構說明、設計系統使用原則、樣式規範、程式碼慣例等。
+
+## 開發命令
+
+```bash
+npm install    # 安裝依賴
+npm run dev    # 啟動開發伺服器
+npm run build  # 建置生產版本（會自動執行 prebuild 更新版本資訊）
+npm run preview # 預覽生產版本
+```
+
+## 專案架構
+
+### 技術棧
+- **Vue 3 Composition API + TypeScript**
+- **Pinia** 狀態管理（使用 pinia-plugin-persistedstate 持久化）
+- **Vue Router** 路由管理
+- **Google Gemini API** AI 對話服務
+- **Vite** 建置工具
+- **GitHub Pages** 部署（base path: `/my-ai-chat/`）
+
+### 核心架構模式
+
+#### 1. 資料持久化架構
+- 所有應用資料存儲在 **LocalStorage**，無後端伺服器
+- Pinia stores 自動持久化，刷新頁面不會遺失資料
+- LocalStorage Keys:
+  - `ai-chat-user-profile` - 使用者資料
+  - `ai-chat-app-data` - 應用程式主要資料（Pinia persist）
+  - `ai-chat-settings` - 應用程式設定
+
+#### 2. 狀態管理結構（Pinia Stores）
+```
+stores/
+├── user.ts           # 使用者個人資料、API Key
+├── characters.ts     # 好友（角色）管理
+├── chatRooms.ts      # 聊天室與訊息管理
+├── relationships.ts  # 好感度與關係系統
+├── memories.ts       # 記憶系統（長期/短期）
+└── settings.ts       # 應用程式設定
+```
+
+**重要：記憶系統採用「角色綁定」架構**
+- 短期記憶：每個角色最多 6 筆，跨所有聊天室共用
+- 長期記憶：每個角色最多 10 筆，全域共用
+- 情境記憶：綁定特定聊天室，用於群聊摘要
+
+#### 3. AI 對話流程
+**單人聊天**：
+1. 使用者發送訊息 → ChatRoom 組件
+2. 組裝 System Prompt（包含角色資料、記憶、關係等）
+3. 呼叫 Gemini API → 回應包含好感度變化
+4. 解析回應，更新好感度，儲存訊息
+5. 每 15 則訊息自動生成短期記憶
+
+**群組聊天**（複雜）：
+1. 使用者發送訊息
+2. 判斷哪些角色需要回應（在線狀態 + @提及）
+3. **多輪對話機制**：角色輪流回應，可互相 @
+4. 偵測無限循環（連續兩輪相同角色組合 → 強制結束）
+5. 每個角色獨立維護記憶
+6. 每 30 則訊息生成情境摘要
+
+#### 4. 角色作息系統
+- 支援每週時間表（`activePeriods`）
+- 三種狀態：`online` / `away` / `offline`
+- 影響群聊回應機率和顯示狀態
+- 工具函數：`src/utils/chatHelpers.ts` 的 `isCharacterOnline()`
+
+#### 5. 好友名片系統（PNG 隱寫術）
+- 使用 Canvas API 繪製精美名片
+- PNG tEXt chunk 嵌入完整好友資料（不含好感度與記憶）
+- 稀有度機制：根據好感度決定 R/SR/SSR/UR 機率
+- 工具：`src/utils/pngSteganography.ts`、`src/utils/characterExport.ts`
+
+### 重要工具模組
+
+- **`src/utils/constants.ts`** - 所有限制常數（MAX_CHARACTERS, 記憶上限等）
+- **`src/utils/chatHelpers.ts`** - 聊天相關輔助函數（在線判斷、@ 解析等）
+- **`src/utils/relationshipHelpers.ts`** - 關係等級計算與顯示
+- **`src/utils/characterExport.ts`** - 名片匯出/匯入功能
+- **`src/utils/pngSteganography.ts`** - PNG tEXt chunk 讀寫與 CRC32 校驗
+- **`src/utils/version.ts`** - 版本檢查與更新通知
+
+### 版本管理機制
+- 版本號統一寫在 `public/CHANGELOG.md` 的第一個 `## [版本號]`
+- `scripts/update-version-time.js` 在 build 前自動更新 `public/version.json`
+- 應用程式啟動時從 `/version.json` 讀取版本資訊
+- 路由切換時檢查版本更新
+
+### 用詞規範
+**前端顯示文字統一使用：**
+- 「好友」（而非「角色」）
+- 「名片」（而非「角色卡」）
+
+**程式碼變數名稱保持：**
+- `character`、`characterStore`（技術層面）
+- 註解可用「角色」或「好友」
+
+---
 
 ## 設計系統核心原則
 
@@ -17,6 +122,8 @@
 3. **遵循 8px 間距系統**
    - 使用 `--spacing-*` 變數
    - 保持間距一致性
+
+4. **重要！！！創建新的樣式前，應先檢查全域樣式是否已有定義！！！！！**
 
 ### ❌ 應該避免的做法
 

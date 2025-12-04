@@ -581,7 +581,7 @@ const handleGoogleRestore = async () => {
             </svg>
             GitHub Repository
           </a>
-          <a href="https://github.com/wuguofish/my-ai-chat/blob/main/CHANGELOG.md" target="_blank" class="link-btn">
+          <a href="https://wuguofish.github.io/my-ai-chat/CHANGELOG.md" target="_blank" class="link-btn">
             <span>📝</span> 完整更新履歷
           </a>
           <button @click="clearCacheAndReload" class="link-btn">

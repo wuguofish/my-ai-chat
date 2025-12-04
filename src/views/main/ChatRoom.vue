@@ -1166,7 +1166,7 @@ onMounted(() => {
 
         <div class="panel-content">
           <div class="info-hint">
-            <p>💡 聊天室情境會提供給 AI，幫助角色理解目前的對話背景</p>
+            <p>💡 聊天室情境會提供給 AI，幫助好友理解目前的對話背景</p>
           </div>
 
           <div v-if="!editingContext" class="context-view">
@@ -1220,7 +1220,7 @@ onMounted(() => {
         <template v-if="room.type === 'single' && memoryTab === 'short'">
           <div class="panel-content">
             <div class="info-hint">
-              <p>💡 記憶僅供檢視，如需管理請前往角色詳情頁</p>
+              <p>💡 記憶僅供檢視，如需管理請前往好友詳情頁</p>
             </div>
 
             <div v-if="shortTermMemories.length === 0" class="empty-memory">
@@ -1252,7 +1252,7 @@ onMounted(() => {
         <!-- 私聊：長期記憶列表（唯讀） -->
         <div v-if="room.type === 'single' && memoryTab === 'long'" class="panel-content">
           <div class="info-hint">
-            <p>💡 記憶僅供檢視，如需管理請前往角色詳情頁</p>
+            <p>💡 記憶僅供檢視，如需管理請前往好友詳情頁</p>
           </div>
 
           <div v-if="longTermMemories.length === 0" class="empty-memory">
@@ -1323,7 +1323,7 @@ onMounted(() => {
         <!-- 短期記憶列表（唯讀） -->
         <div v-if="memoryTab === 'short'" class="panel-content">
           <div class="info-hint">
-            <p>💡 記憶僅供檢視，如需管理請前往角色詳情頁</p>
+            <p>💡 記憶僅供檢視，如需管理請前往好友詳情頁</p>
           </div>
 
           <div v-if="memoriesStore.getCharacterShortTermMemories(selectedMemberForMemory.id).length === 0"
@@ -1350,7 +1350,7 @@ onMounted(() => {
         <!-- 長期記憶列表（唯讀） -->
         <div v-if="memoryTab === 'long'" class="panel-content">
           <div class="info-hint">
-            <p>💡 記憶僅供檢視，如需管理請前往角色詳情頁</p>
+            <p>💡 記憶僅供檢視，如需管理請前往好友詳情頁</p>
           </div>
 
           <div v-if="memoriesStore.getCharacterMemories(selectedMemberForMemory.id).length === 0" class="empty-memory">

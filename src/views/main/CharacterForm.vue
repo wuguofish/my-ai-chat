@@ -337,7 +337,7 @@ const getDefaultAvatar = (name: string) => {
       <!-- 作息時間設定 -->
       <div class="form-section">
         <h3>作息時間設定（選填）</h3>
-        <p class="section-desc">設定角色的作息習慣，影響群組聊天時的回應機率</p>
+        <p class="section-desc">設定好友的作息習慣，影響群組聊天時的回應機率</p>
 
         <div class="form-group">
           <label>選擇模式</label>
@@ -410,16 +410,16 @@ const getDefaultAvatar = (name: string) => {
           <div class="help-text">
             <p style="margin-top: 8px;">
               <strong>💡
-                提示：</strong>系統提示詞可用於<span class="text-info">補充特殊設定、禁忌話題或角色獨有的表達模式</span>，會附加在自動生成內容之後。
+                提示：</strong>系統提示詞可用於<span class="text-info">補充特殊設定、禁忌話題或好友獨有的表達模式</span>，會附加在自動生成內容之後。
               <br />因此<span class="text-info">無須重複自動生成的內容</span>。
             </p>
             <p><strong>📝 自動生成的內容包含：</strong></p>
             <ul style="margin: 8px 0; padding-left: 20px; line-height: 1.6;">
-              <li>角色基本資料（姓名、背景、性格、說話風格、喜好等）</li>
+              <li>好友基本資料（姓名、背景、性格、說話風格、喜好等）</li>
               <li>目前時間與情境</li>
               <li>使用者資料與關係</li>
               <li>好感度系統規則（含回應格式要求）</li>
-              <li>角色記憶（長期與短期）</li>
+              <li>好友記憶（長期與短期）</li>
               <li>結尾指示（避免書信體、強制口語化、動作描述規則等）</li>
             </ul>
           </div>
