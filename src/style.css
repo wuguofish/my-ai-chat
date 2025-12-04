@@ -171,8 +171,21 @@ body {
 i {
   font-style: normal;          /* 防止瀏覽器自帶 italic */
   display: inline-block;       /* 讓 transform 生效 */
-  transform: skew(-20deg);     /* 偽斜角度 */
+  transform: skew(-10deg);     /* 偽斜角度 */
   transform-origin: left center;
+}
+
+/* 全站統一粗體效果 */
+b, strong {
+  font-weight: 800;               /* 提升字重讓中文夠粗 */
+  font-synthesis: weight;         /* 允許瀏覽器 fake 對等粗體 */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 避免變太粗的英文可以個別調整 */
+b strong:lang(en),
+strong:lang(en) {
+  font-weight: 700;
 }
 
 
@@ -201,7 +214,6 @@ p {
   line-height: 1.6;
   color: var(--color-text-secondary);
 }
-
 
 
 /* ==========================================
@@ -283,6 +295,19 @@ button:disabled {
   color: var(--color-text-primary);
 }
 
+.btn-primary-outline {
+  background: var(--color-text-white);
+  border: 1px solid var(--color-primary-dark)!important;
+  color: var(--color-primary-dark);  
+}
+
+.btn-primary-outline:hover:not(:disabled) {
+  color: var(--color-primary-dark)!important;
+  background: var(--color-primary-light)!important;
+  border: var(--color-light)!important;
+}
+
+
 .btn-info-outline {
   background: var(--color-text-white);
   border: 1px solid var(--color-info)!important;
@@ -290,7 +315,6 @@ button:disabled {
 }
 
 .btn-info-outline:hover:not(:disabled) {
-  background: #2fd3d3;
   background: #2fd3d3;
   border: 1px solid var(#2fd3d3)!important;
   color: var(--color-text-primary);
@@ -415,29 +439,6 @@ textarea {
 .page {
   min-height: 100%;
 }
-
-
-.page-header {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-sticky);
-  background: var(--color-bg-primary);
-  padding: var(--spacing-xl);
-  border-bottom: 2px solid var(--color-border);
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-
-}
-
-.page-header h1,
-.page-header h2 {
-  font-size: var(--text-4xl);
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
 
 
 /* 內容區塊 */

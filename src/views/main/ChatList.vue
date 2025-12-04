@@ -5,6 +5,7 @@ import { useUserStore } from '@/stores/user'
 import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { formatMessageTime, getCharacterStatus, formatMessageForDisplay } from '@/utils/chatHelpers'
+import PageHeader from '@/components/common/PageHeader.vue'
 import type { ChatRoom } from '@/types'
 
 const router = useRouter()
@@ -143,12 +144,13 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
 
 <template>
   <div class="page">
-    <div class="page-header">
-      <h2>聊天</h2>
-      <button class="btn btn-primary btn-sm" @click="showNewChatModal = true">
-        + 新增聊天
-      </button>
-    </div>
+    <PageHeader title="聊天">
+      <template #actions>
+        <button class="btn btn-primary-outline btn-sm" @click="showNewChatModal = true">
+          + 新增聊天
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- 聊天室列表 -->
     <div v-if="chatRooms.length > 0" class="chat-rooms-container">
@@ -158,10 +160,7 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
             <img :src="getChatRoomAvatar(room)" :alt="room.name">
           </div>
           <!-- 狀態指示器（僅單人聊天） -->
-          <div
-            v-if="getCharacterStatusForRoom(room)"
-            :class="['status-indicator', getCharacterStatusForRoom(room)]"
-          />
+          <div v-if="getCharacterStatusForRoom(room)" :class="['status-indicator', getCharacterStatusForRoom(room)]" />
         </div>
         <div class="chat-info">
           <div class="chat-header">
@@ -193,16 +192,10 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
           <div class="form-group">
             <label>聊天類型</label>
             <div class="chat-type-tabs">
-              <button
-                :class="['chat-type-tab', { active: chatType === 'single' }]"
-                @click="chatType = 'single'"
-              >
+              <button :class="['chat-type-tab', { active: chatType === 'single' }]" @click="chatType = 'single'">
                 單人聊天
               </button>
-              <button
-                :class="['chat-type-tab', { active: chatType === 'group' }]"
-                @click="chatType = 'group'"
-              >
+              <button :class="['chat-type-tab', { active: chatType === 'group' }]" @click="chatType = 'group'">
                 群組聊天
               </button>
             </div>
@@ -230,26 +223,20 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
           <div v-else-if="chatType === 'group'">
             <div v-if="allCharacters.length > 0" class="form-group">
               <label>群組名稱（選填）</label>
-              <input
-                v-model="groupChatName"
-                type="text"
-                class="input-field"
-                placeholder="例如：愛聊天群組"
-              >
+              <input v-model="groupChatName" type="text" class="input-field" placeholder="例如：愛聊天群組">
               <p class="form-hint">留空將自動使用成員名稱</p>
             </div>
 
             <div v-if="allCharacters.length > 0" class="form-group">
               <label>選擇成員（{{ selectedGroupCharacterIds.length }} / {{ allCharacters.length }}）</label>
               <div class="character-grid">
-                <div
-                  v-for="char in allCharacters"
-                  :key="char.id"
+                <div v-for="char in allCharacters" :key="char.id"
                   :class="['character-card', { selected: selectedGroupCharacterIds.includes(char.id) }]"
-                  @click="toggleGroupMember(char.id)"
-                >
+                  @click="toggleGroupMember(char.id)">
                   <div class="character-avatar">
-                    <img :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`" :alt="char.name">
+                    <img
+                      :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`"
+                      :alt="char.name">
                   </div>
                   <div class="character-name">{{ char.name }}</div>
                   <div v-if="selectedGroupCharacterIds.includes(char.id)" class="selected-badge">✓</div>
@@ -266,20 +253,12 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" @click="showNewChatModal = false">取消</button>
-          <button
-            v-if="chatType === 'single' && availableCharacters.length > 0"
-            class="btn btn-primary"
-            :disabled="!selectedCharacterId"
-            @click="handleCreateSingleChat"
-          >
+          <button v-if="chatType === 'single' && availableCharacters.length > 0" class="btn btn-primary"
+            :disabled="!selectedCharacterId" @click="handleCreateSingleChat">
             開始聊天
           </button>
-          <button
-            v-else-if="chatType === 'group' && allCharacters.length > 0"
-            class="btn btn-primary"
-            :disabled="selectedGroupCharacterIds.length === 0"
-            @click="handleCreateGroupChat"
-          >
+          <button v-else-if="chatType === 'group' && allCharacters.length > 0" class="btn btn-primary"
+            :disabled="selectedGroupCharacterIds.length === 0" @click="handleCreateGroupChat">
             建立群組
           </button>
         </div>

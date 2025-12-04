@@ -313,6 +313,27 @@ const getDefaultAvatar = (name: string) => {
         </div>
       </div>
 
+      <!-- 事件記憶 -->
+      <div class="form-section">
+        <h3>重要事件（選填）</h3>
+        <p class="section-desc">記錄與這位好友相關的重要事件或記憶（最多 {{ LIMITS.MAX_CHARACTER_EVENTS }} 筆）</p>
+        <div class="form-group">
+          <textarea v-model="newEvent" type="text" placeholder='輸入事件描述' class="textarea-field"
+            :maxlength="LIMITS.MAX_CHARACTER_EVENT_LENGTH" rows="6" />
+          <div class="char-count">{{ newEvent.length }}/{{ LIMITS.MAX_CHARACTER_EVENT_LENGTH }}</div>
+          <button class="btn-add" :disabled="events.length >= LIMITS.MAX_CHARACTER_EVENTS" @click="addEvent">
+            新增
+          </button>
+        </div>
+        <div v-if="events.length > 0" class="event-list">
+          <h4>重要事件列表</h4>
+          <div v-for="(event, index) in events" :key="index" class="event-item">
+            <span class="event-text">{{ event }}</span>
+            <button class="event-delete" @click="removeEvent(index)">✕</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 作息時間設定 -->
       <div class="form-section">
         <h3>作息時間設定（選填）</h3>
@@ -328,18 +349,12 @@ const getDefaultAvatar = (name: string) => {
             >
               停用
             </button> -->
-            <button
-              type="button"
-              :class="['mode-tab', { active: scheduleMode === 'template' }]"
-              @click="scheduleMode = 'template'"
-            >
+            <button type="button" :class="['mode-tab', { active: scheduleMode === 'template' }]"
+              @click="scheduleMode = 'template'">
               快速模板
             </button>
-            <button
-              type="button"
-              :class="['mode-tab', { active: scheduleMode === 'custom' }]"
-              @click="scheduleMode = 'custom'"
-            >
+            <button type="button" :class="['mode-tab', { active: scheduleMode === 'custom' }]"
+              @click="scheduleMode = 'custom'">
               自訂時段
             </button>
           </div>
@@ -355,7 +370,8 @@ const getDefaultAvatar = (name: string) => {
           </select>
           <div class="template-preview">
             <h4>時段說明：</h4>
-            <div v-for="(period, index) in SCHEDULE_TEMPLATES.find(t => t.id === selectedTemplateId)?.periods || []" :key="index" class="period-item">
+            <div v-for="(period, index) in SCHEDULE_TEMPLATES.find(t => t.id === selectedTemplateId)?.periods || []"
+              :key="index" class="period-item">
               <span class="period-time">
                 {{ String(period.start).padStart(2, '0') }}:00 - {{ String(period.end).padStart(2, '0') }}:00
               </span>
@@ -419,26 +435,7 @@ const getDefaultAvatar = (name: string) => {
         </div>
       </div>
 
-      <!-- 事件記憶 -->
-      <div class="form-section">
-        <h3>重要事件（選填）</h3>
-        <p class="section-desc">記錄與這位好友相關的重要事件或記憶（最多 {{ LIMITS.MAX_CHARACTER_EVENTS }} 筆）</p>
 
-        <div class="event-input-group">
-          <input v-model="newEvent" type="text" placeholder='輸入事件描述' class="input-field" maxlength="200"
-            @keyup.enter="addEvent">
-          <button class="btn-add" :disabled="events.length >= LIMITS.MAX_CHARACTER_EVENTS" @click="addEvent">
-            新增
-          </button>
-        </div>
-
-        <div v-if="events.length > 0" class="event-list">
-          <div v-for="(event, index) in events" :key="index" class="event-item">
-            <span class="event-text">{{ event }}</span>
-            <button class="event-delete" @click="removeEvent(index)">✕</button>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div v-if="error" class="error-message">{{ error }}</div>
@@ -720,6 +717,7 @@ const getDefaultAvatar = (name: string) => {
   flex: 1;
   font-size: var(--text-base);
   color: var(--color-text-primary);
+  white-space: pre-line;
 }
 
 .event-delete {

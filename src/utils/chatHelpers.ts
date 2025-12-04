@@ -329,6 +329,9 @@ export function formatMessageForDisplay(message: string, characters: Character[]
     formatted = formatted.replace(regex, `<span class="tag-text">@${char.name}</span>`)
   })
 
+  // 處理粗體標記：**粗體** → <b>粗體</b>（必須先處理，避免被單星號規則誤判）
+  formatted = formatted.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+
   // 處理動作標記：*動作* → <i>動作</i>
   formatted = formatted.replace(/\*([^*]+)\*/g, '<i>$1</i>')
 

@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
 import { useMemoriesStore } from '@/stores/memories'
+import PageHeader from '@/components/common/PageHeader.vue'
 import type { Character, Memory } from '@/types'
 
 const router = useRouter()
@@ -144,14 +145,13 @@ const formatDate = (dateString: string) => {
 <template>
   <div v-if="character" class="memory-manager">
     <!-- 標題列 -->
-    <div class="page-header">
-      <div class="header-content">
+    <PageHeader :title="`${character.name} 的記憶`">
+      <template #back-button>
         <button class="back-btn" @click="handleBack">
           ← 返回
         </button>
-        <h1>{{ character.name }} 的記憶</h1>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <div class="content-section centered">
       <!-- 說明 -->

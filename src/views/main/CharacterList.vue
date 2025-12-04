@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
+import PageHeader from '@/components/common/PageHeader.vue'
 import type { Character } from '@/types'
 
 const router = useRouter()
@@ -77,10 +78,11 @@ const getDefaultAvatar = (name: string) => {
 
 <template>
   <div class="page">
-    <div class="page-header">
-      <h2>好友</h2>
-      <div class="count-info">{{ characterCount }}/15 位好友</div>
-    </div>
+    <PageHeader title="好友">
+      <template #extra-info>
+        <div class="count-info">{{ characterCount }}/15 位好友</div>
+      </template>
+    </PageHeader>
 
     <!-- 空狀態 -->
     <div v-if="characterCount === 0" class="empty-state">
@@ -130,7 +132,7 @@ const getDefaultAvatar = (name: string) => {
 
 .count-info {
   font-size: var(--text-base);
-  color: var(--color-text-tertiary);
+  color: #eee;
 }
 
 
