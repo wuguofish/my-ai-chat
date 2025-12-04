@@ -90,6 +90,14 @@ const characterStatusText = computed(() => {
   return '離線'
 })
 
+// 根據上線狀態決定文字顏色
+const statusColorClass = computed(() => {
+  const status = characterStatus.value
+  if (!status || status === 'online') return 'text-success'
+  if (status === 'away') return 'text-warning'
+  return 'text-error'
+})
+
 // 取得訊息發送者的頭像
 const getSenderAvatar = (senderId: string, senderName: string) => {
   if (senderId === 'user') {
@@ -1108,7 +1116,7 @@ onMounted(() => {
         </div>
         <div class="info">
           <h2 class="name">{{ character.name }}</h2>
-          <p class="status">{{ characterStatusText }}</p>
+          <p class="status" :class="statusColorClass">{{ characterStatusText }}</p>
         </div>
       </div>
 
