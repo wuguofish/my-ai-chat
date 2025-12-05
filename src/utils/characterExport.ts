@@ -13,6 +13,7 @@ import { CURRENT_VERSION } from './version'
  * @param affection 好感度（可選，用於決定稀有度）
  * @param authorName 作者名稱（可選，用於署名）
  * @param existingMetadata 現有的 metadata（匯入時保留的）
+ * @param hidePrivateSettings 是否隱藏詳細設定（預設 false）
  * @returns PNG 圖片的 Data URL
  */
 export async function exportCharacterCard(
@@ -23,7 +24,8 @@ export async function exportCharacterCard(
     author?: string
     contributors?: string[]
     exportVersion?: string
-  }
+  },
+  hidePrivateSettings: boolean = false
 ): Promise<string> {
   // 準備作者資訊
   let author: string | undefined
@@ -51,12 +53,13 @@ export async function exportCharacterCard(
     age: character.age,
     gender: character.gender,
     profession: character.profession,
-    personality: character.personality,
-    speakingStyle: character.speakingStyle,
-    background: character.background,
-    likes: character.likes,
-    dislikes: character.dislikes,
-    events: (character as any).events || [],
+    // 如果隱藏設定，這些欄位設為空字串或省略
+    personality: hidePrivateSettings ? '' : character.personality,
+    speakingStyle: hidePrivateSettings ? '' : character.speakingStyle,
+    background: hidePrivateSettings ? '' : character.background,
+    likes: hidePrivateSettings ? '' : character.likes,
+    dislikes: hidePrivateSettings ? '' : character.dislikes,
+    events: hidePrivateSettings ? [] : ((character as any).events || []),
     systemPrompt: character.systemPrompt,
     maxOutputTokens: character.maxOutputTokens,
     activeHours: character.activeHours,
@@ -68,7 +71,8 @@ export async function exportCharacterCard(
       exportTime: new Date().toISOString(),
       appName: '愛茶的 AI Chat',
       author, // 原始創作者
-      contributors: contributors.length > 0 ? contributors : undefined // 貢獻者列表（如果有的話）
+      contributors: contributors.length > 0 ? contributors : undefined, // 貢獻者列表（如果有的話）
+      isPrivate: hidePrivateSettings // 標記是否為隱藏設定
     }
   }
 
@@ -112,6 +116,7 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
         appName: string
         author?: string
         contributors?: string[]
+        isPrivate?: boolean
       }
     }>(imageDataUrl, 'CharacterCard')
 
@@ -124,11 +129,19 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
     console.log('[Character Import Debug] name:', data.name)
     console.log('[Character Import Debug] personality:', data.personality ? '有' : '無')
     console.log('[Character Import Debug] speakingStyle:', data.speakingStyle ? '有' : '無')
+    console.log('[Character Import Debug] isPrivate:', data._metadata?.isPrivate)
 
-    // 驗證必要欄位（只有 name 和 personality 是真正必須的）
-    if (!data.name || !data.personality) {
-      console.error('[Character Import Debug] 缺少必要欄位（name 或 personality）！')
-      throw new Error('角色卡資料不完整：缺少角色名稱或性格描述')
+    // 驗證必要欄位
+    // name 是必須的，personality 只有在非隱藏設定時才是必須的
+    if (!data.name) {
+      console.error('[Character Import Debug] 缺少必要欄位（name）！')
+      throw new Error('角色卡資料不完整：缺少角色名稱')
+    }
+
+    // 如果不是隱藏設定，personality 是必須的
+    if (!data._metadata?.isPrivate && !data.personality) {
+      console.error('[Character Import Debug] 缺少必要欄位（personality）！')
+      throw new Error('角色卡資料不完整：缺少性格描述')
     }
 
     // 返回角色資料（使用原始頭像，而非角色卡圖片）
@@ -150,6 +163,8 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
       activeHours: data.activeHours || undefined,
       activePeriods: data.activePeriods || undefined,
       createdAt: data.createdAt || undefined,
+      // 標記是否為隱藏設定的名片
+      isPrivate: data._metadata?.isPrivate || false,
       // 保留原始 metadata（作者資訊）
       importedMetadata: data._metadata ? {
         author: data._metadata.author,
@@ -171,6 +186,7 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
  * @param affection 好感度（用於決定稀有度）
  * @param authorName 作者名稱（可選，用於署名）
  * @param existingMetadata 現有的 metadata（如果角色是匯入的，保留原作者資訊）
+ * @param hidePrivateSettings 是否隱藏詳細設定（預設 false）
  */
 export async function downloadCharacterCard(
   character: Character,
@@ -180,11 +196,12 @@ export async function downloadCharacterCard(
     author?: string
     contributors?: string[]
     exportVersion?: string
-  }
+  },
+  hidePrivateSettings: boolean = false
 ): Promise<void> {
   try {
-    // 匯出角色卡（傳入好感度、作者名稱和現有 metadata）
-    const pngDataUrl = await exportCharacterCard(character, affection, authorName, existingMetadata)
+    // 匯出角色卡（傳入好感度、作者名稱、現有 metadata 和隱藏設定選項）
+    const pngDataUrl = await exportCharacterCard(character, affection, authorName, existingMetadata, hidePrivateSettings)
 
     // 創建下載連結
     const link = document.createElement('a')

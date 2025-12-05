@@ -102,6 +102,9 @@ export interface Character {
   statusMessage?: string
   statusUpdatedAt?: number  // 狀態訊息更新時間戳
 
+  // 是否為隱藏設定的名片（匯入時不顯示詳細設定）
+  isPrivate?: boolean
+
   createdAt: string
   updatedAt: string
 }

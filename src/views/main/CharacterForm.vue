@@ -51,11 +51,15 @@ const originalImage = ref('')
 
 const error = ref('')
 
+// 是否為隱藏設定的名片（匯入後標記為唯讀）
+const isPrivate = ref(false)
+
 // 載入編輯資料
 onMounted(() => {
   if (isEditMode.value) {
     const character = characterStore.getCharacterById(editingCharacterId.value)
     if (character) {
+      isPrivate.value = character.isPrivate || false
       name.value = character.name
       gender.value = character.gender || 'unset'
       age.value = character.age || ''
@@ -104,10 +108,16 @@ const handleSubmit = () => {
     return
   }
 
-  if (!personality.value.trim()) {
+  // 如果不是隱藏設定的名片，性格描述是必填的
+  if (!isPrivate.value && !personality.value.trim()) {
     error.value = '請輸入性格描述'
     return
   }
+
+  // 取得原始角色資料（保留 isPrivate 和 importedMetadata）
+  const originalCharacter = isEditMode.value
+    ? characterStore.getCharacterById(editingCharacterId.value)
+    : null
 
   const characterData: Character = {
     id: isEditMode.value ? editingCharacterId.value : uuidv4(),
@@ -132,9 +142,11 @@ const handleSubmit = () => {
         ? customPeriods.value
         : undefined,
 
-    createdAt: isEditMode.value
-      ? characterStore.getCharacterById(editingCharacterId.value)?.createdAt || new Date().toISOString()
-      : new Date().toISOString(),
+    // 保留 isPrivate 和 importedMetadata（如果是編輯模式）
+    isPrivate: originalCharacter?.isPrivate,
+    importedMetadata: originalCharacter?.importedMetadata,
+
+    createdAt: originalCharacter?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }
 
@@ -280,41 +292,51 @@ const getDefaultAvatar = (name: string) => {
             maxlength="30">
         </div>
 
-        <div class="form-group">
-          <label for="personality">性格 *</label>
-          <textarea id="personality" v-model="personality" placeholder="描述這個好友的性格特質（例如：開朗活潑、善解人意）"
-            class="textarea-field" :maxlength="LIMITS.MAX_CHARACTER_PERSONALITY_LENGTH" rows="3" />
-          <div class="char-count">{{ personality.length }}/{{ LIMITS.MAX_CHARACTER_PERSONALITY_LENGTH }}</div>
+        <!-- 如果是隱藏設定的名片，顯示「等你來挖掘」區塊 -->
+        <div v-if="isPrivate" class="private-placeholder">
+          <div class="private-icon">🔒</div>
+          <p class="private-text">這些設定被原作者隱藏了</p>
+          <p class="private-hint">透過與 {{ name }} 的互動，慢慢挖掘 TA 的性格吧～</p>
         </div>
 
-        <div class="form-group">
-          <label for="speakingStyle">說話風格（選填）</label>
-          <textarea id="speakingStyle" v-model="speakingStyle" placeholder="描述說話的方式和語氣（例如：溫柔體貼、幽默風趣）"
-            class="textarea-field" :maxlength="LIMITS.MAX_CHARACTER_SPEAKING_STYLE_LENGTH" rows="3" />
-          <div class="char-count">{{ speakingStyle.length }}/{{ LIMITS.MAX_CHARACTER_SPEAKING_STYLE_LENGTH }}</div>
-        </div>
+        <!-- 一般模式：可編輯 -->
+        <template v-else>
+          <div class="form-group">
+            <label for="personality">性格 *</label>
+            <textarea id="personality" v-model="personality" placeholder="描述這個好友的性格特質（例如：開朗活潑、善解人意）"
+              class="textarea-field" :maxlength="LIMITS.MAX_CHARACTER_PERSONALITY_LENGTH" rows="3" />
+            <div class="char-count">{{ personality.length }}/{{ LIMITS.MAX_CHARACTER_PERSONALITY_LENGTH }}</div>
+          </div>
 
-        <div class="form-group">
-          <label for="background">背景故事（選填）</label>
-          <textarea id="background" v-model="background" placeholder="描述背景和經歷" class="textarea-field"
-            :maxlength="LIMITS.MAX_CHARACTER_BACKGROUND_LENGTH" rows="4" />
-          <div class="char-count">{{ background.length }}/{{ LIMITS.MAX_CHARACTER_BACKGROUND_LENGTH }}</div>
-        </div>
+          <div class="form-group">
+            <label for="speakingStyle">說話風格（選填）</label>
+            <textarea id="speakingStyle" v-model="speakingStyle" placeholder="描述說話的方式和語氣（例如：溫柔體貼、幽默風趣）"
+              class="textarea-field" :maxlength="LIMITS.MAX_CHARACTER_SPEAKING_STYLE_LENGTH" rows="3" />
+            <div class="char-count">{{ speakingStyle.length }}/{{ LIMITS.MAX_CHARACTER_SPEAKING_STYLE_LENGTH }}</div>
+          </div>
 
-        <div class="form-group">
-          <label for="likes">喜歡的事物（選填）</label>
-          <input id="likes" v-model="likes" type="text" placeholder="例如：音樂、旅行、美食" class="input-field" maxlength="100">
-        </div>
+          <div class="form-group">
+            <label for="background">背景故事（選填）</label>
+            <textarea id="background" v-model="background" placeholder="描述背景和經歷" class="textarea-field"
+              :maxlength="LIMITS.MAX_CHARACTER_BACKGROUND_LENGTH" rows="4" />
+            <div class="char-count">{{ background.length }}/{{ LIMITS.MAX_CHARACTER_BACKGROUND_LENGTH }}</div>
+          </div>
 
-        <div class="form-group">
-          <label for="dislikes">討厭的事物（選填）</label>
-          <input id="dislikes" v-model="dislikes" type="text" placeholder="例如：吵鬧、不誠實" class="input-field"
-            maxlength="100">
-        </div>
+          <div class="form-group">
+            <label for="likes">喜歡的事物（選填）</label>
+            <input id="likes" v-model="likes" type="text" placeholder="例如：音樂、旅行、美食" class="input-field" maxlength="100">
+          </div>
+
+          <div class="form-group">
+            <label for="dislikes">討厭的事物（選填）</label>
+            <input id="dislikes" v-model="dislikes" type="text" placeholder="例如：吵鬧、不誠實" class="input-field"
+              maxlength="100">
+          </div>
+        </template>
       </div>
 
       <!-- 事件記憶 -->
-      <div class="form-section">
+      <div v-if="!isPrivate" class="form-section">
         <h3>重要事件（選填）</h3>
         <p class="section-desc">記錄與這位好友相關的重要事件或記憶（最多 {{ LIMITS.MAX_CHARACTER_EVENTS }} 筆）</p>
         <div class="form-group">
@@ -944,5 +966,34 @@ const getDefaultAvatar = (name: string) => {
     align-items: flex-start;
     gap: var(--spacing-xs);
   }
+}
+
+/* 隱藏設定區塊 */
+.private-placeholder {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  border: 2px dashed var(--color-primary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-3xl) var(--spacing-xl);
+  text-align: center;
+  margin: var(--spacing-xl) 0;
+}
+
+.private-icon {
+  font-size: 48px;
+  margin-bottom: var(--spacing-md);
+}
+
+.private-text {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-sm) 0;
+}
+
+.private-hint {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  margin: 0;
+  font-style: italic;
 }
 </style>

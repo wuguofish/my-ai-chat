@@ -37,24 +37,45 @@ const handleViewCharacter = (character: Character) => {
 // FAB 選單
 const showFabMenu = ref(false)
 
-// 匯出角色卡
+// 匯出角色卡相關
+const showExportModal = ref(false)
+const exportingCharacter = ref<Character | null>(null)
+const hidePrivateSettings = ref(false)
+
 const handleExportCharacter = async (character: Character, event: Event) => {
   event.stopPropagation() // 防止觸發卡片點擊
+  exportingCharacter.value = character
+  hidePrivateSettings.value = false
+  showExportModal.value = true
+}
+
+const confirmExport = async () => {
+  if (!exportingCharacter.value) return
+
   try {
     // 取得角色的好感度
-    const relationship = relationshipsStore.getUserCharacterRelationship(character.id)
+    const relationship = relationshipsStore.getUserCharacterRelationship(exportingCharacter.value.id)
     const affection = relationship?.affection || 0
 
     // 取得使用者名稱作為作者
     const authorName = userStore.profile?.nickname || userStore.profile?.realName || undefined
 
     // 如果角色是匯入的，保留原始 metadata
-    const existingMetadata = character.importedMetadata
+    const existingMetadata = exportingCharacter.value.importedMetadata
 
-    await downloadCharacterCard(character, affection, authorName, existingMetadata)
+    await downloadCharacterCard(
+      exportingCharacter.value,
+      affection,
+      authorName,
+      existingMetadata,
+      hidePrivateSettings.value
+    )
+
+    showExportModal.value = false
+    success('成功匯出好友名片')
   } catch (error) {
     console.error('匯出失敗:', error)
-    alert('匯出好友名片失敗，請稍後再試')
+    showMessage('匯出好友名片失敗，請稍後再試', 'error')
   }
 }
 
@@ -253,6 +274,37 @@ const getDefaultAvatar = (name: string) => {
     <!-- 已達上限提示 -->
     <div v-if="!canAddMore" class="limit-notice">
       已達好友數量上限（15位）
+    </div>
+
+    <!-- 匯出設定 Modal -->
+    <div v-if="showExportModal" class="modal-overlay" @click="showExportModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>匯出好友名片</h3>
+          <button class="modal-close" @click="showExportModal = false">
+            <X :size="24" />
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-description">
+            即將匯出 <strong>{{ exportingCharacter?.name }}</strong> 的好友名片
+          </p>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input v-model="hidePrivateSettings" type="checkbox">
+              <span>隱藏詳細設定</span>
+            </label>
+            <p class="form-hint">
+              勾選後，性格、說話風格、背景故事等欄位將不會被匯出。<br>
+              匯入此名片的人將無法看到這些設定，並且這些欄位會變成唯讀狀態。
+            </p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="showExportModal = false">取消</button>
+          <button class="btn btn-primary" @click="confirmExport">確定匯出</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
