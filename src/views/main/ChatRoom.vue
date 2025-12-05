@@ -1905,6 +1905,9 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
 }
 
 .chat-header-info .avatar-wrapper {
@@ -1953,6 +1956,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .chat-header-info .name {
@@ -1960,6 +1965,9 @@ onMounted(() => {
   font-weight: 600;
   color: var(--color-text-primary);
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-header-info .status {
@@ -1973,8 +1981,11 @@ onMounted(() => {
   color: var(--color-text-secondary);
   margin: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 /* 群組頭像 */
