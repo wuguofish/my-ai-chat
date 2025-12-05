@@ -58,12 +58,12 @@ export const useRelationshipsStore = defineStore('relationships', {
       const relationship = this.userToCharacter.find(r => r.characterId === characterId)
       if (relationship) {
         const oldLevel = relationship.level
-        relationship.affection = Math.max(0, affection) // 確保不低於 0
+        relationship.affection = affection // 允許負數好感度
         const newLevel = this.calculateRelationshipLevel(relationship.affection)
         relationship.level = newLevel
         relationship.updatedAt = new Date().toISOString()
 
-        // 如果關係等級提升了，觸發狀態訊息更新
+        // 如果關係等級變化了，觸發狀態訊息更新
         if (oldLevel !== newLevel) {
           console.log(`✨ 關係等級變化: ${oldLevel} → ${newLevel}`)
           this.triggerStatusUpdateOnRelationshipChange(characterId).catch((err: unknown) => {

@@ -645,13 +645,17 @@ const getRelationshipTypeText = (type: string) => {
           <div class="modal-body">
             <div class="form-group">
               <label>好感度：{{ adjustAffection }}</label>
-              <input v-model.number="adjustAffection" type="range" min="0" max="300" step="1" class="affection-slider">
+              <input v-model.number="adjustAffection" type="range" min="-300" max="300" step="1" class="affection-slider">
               <div class="affection-hint">
-                {{ relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'stranger' ? '陌生人 (0-10)' :
-                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'acquaintance' ? '認識 (10-30)' :
-                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'friend' ? '朋友 (30-80)' :
-                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'close_friend' ? '好友/曖昧 (80-200)' :
-                '摯友/戀人 (200+)' }}
+                {{
+                  
+                  relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'enemy' ? '仇敵 (-100以下)' :
+                  relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'dislike' ? '不爽 (-100 ~ -30)' :
+                  relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'stranger' ? '陌生人 (-30 ~ 10)' :
+                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'acquaintance' ? '認識 (10 ~ 30)' :
+                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'friend' ? '朋友 (30 ~ 80)' :
+                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'close_friend' ? '好友/曖昧 (80 ~ 200)' :
+                '摯友/戀人 (200以上)' }}
               </div>
             </div>
             <div class="form-group">

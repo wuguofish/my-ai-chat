@@ -120,6 +120,18 @@ const getSenderAvatar = (senderId: string, senderName: string) => {
   return char?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=764ba2&color=fff`
 }
 
+// 處理頭像點擊（跳轉到角色詳細頁面）
+const handleAvatarClick = (senderId: string, event: Event) => {
+  // 阻止事件冒泡，避免觸發訊息的其他點擊事件
+  event.stopPropagation()
+
+  // 如果是使用者自己的頭像，不做任何處理
+  if (senderId === 'user') return
+
+  // 跳轉到角色詳細頁面
+  router.push(`/main/characters/${senderId}`)
+}
+
 // 格式化訊息內容（將 @ID 轉換為 @名字）
 const formatMessageContent = (content: string) => {
   if (!room.value) return content
@@ -632,7 +644,8 @@ const handleSingleChatMessage = async (userMessage: string) => {
     const targetRoom = chatRoomStore.getRoomById(currentRoomId)
     const currentMessages = chatRoomStore.getMessagesByRoomId(currentRoomId)
 
-    const aiResponse = await getCharacterResponse({
+    // 準備 API 請求參數
+    const requestParams = {
       apiKey,
       character: currentCharacter,
       user: userStore.profile || {
@@ -656,7 +669,38 @@ const handleSingleChatMessage = async (userMessage: string) => {
         shortTermMemories,
         roomSummary
       }
-    })
+    }
+
+    // 第一次嘗試取得回應
+    let aiResponse
+    try {
+      aiResponse = await getCharacterResponse(requestParams)
+    } catch (firstError: any) {
+      // 檢查是否為空字串錯誤
+      if (firstError.message === 'EMPTY_RESPONSE' || firstError.message === 'EMPTY_RESPONSE_WITH_AFFECTION') {
+        console.warn('⚠️ 第一次回應為空，自動重試...')
+
+        try {
+          // 第二次嘗試
+          aiResponse = await getCharacterResponse(requestParams)
+        } catch (secondError: any) {
+          // 第二次還是空字串，使用預設訊息
+          if (secondError.message === 'EMPTY_RESPONSE' || secondError.message === 'EMPTY_RESPONSE_WITH_AFFECTION') {
+            console.warn('⚠️ 第二次回應仍為空，使用預設訊息「*沉默不語*」')
+            aiResponse = {
+              text: '*沉默不語*',
+              newAffection: undefined
+            }
+          } else {
+            // 其他錯誤，直接拋出
+            throw secondError
+          }
+        }
+      } else {
+        // 不是空字串錯誤，直接拋出
+        throw firstError
+      }
+    }
 
     // 更新好感度
     if (aiResponse.newAffection !== undefined) {
@@ -829,8 +873,8 @@ const handleGroupChatMessage = async (userMessage: string) => {
         const targetRoom = chatRoomStore.getRoomById(currentRoomId)
         const currentMessages = chatRoomStore.getMessagesByRoomId(currentRoomId)
 
-        // 呼叫 AI
-        const aiResponse = await getCharacterResponse({
+        // 準備 API 請求參數（群聊）
+        const groupRequestParams = {
           apiKey,
           character: currentCharacter,
           user: userStore.profile || {
@@ -858,7 +902,38 @@ const handleGroupChatMessage = async (userMessage: string) => {
             roomSummary,
             isOfflineButMentioned
           }
-        })
+        }
+
+        // 第一次嘗試取得回應（群聊）
+        let aiResponse
+        try {
+          aiResponse = await getCharacterResponse(groupRequestParams)
+        } catch (firstError: any) {
+          // 檢查是否為空字串錯誤
+          if (firstError.message === 'EMPTY_RESPONSE' || firstError.message === 'EMPTY_RESPONSE_WITH_AFFECTION') {
+            console.warn(`⚠️ ${currentCharacter.name} 第一次回應為空，自動重試...`)
+
+            try {
+              // 第二次嘗試
+              aiResponse = await getCharacterResponse(groupRequestParams)
+            } catch (secondError: any) {
+              // 第二次還是空字串，使用預設訊息
+              if (secondError.message === 'EMPTY_RESPONSE' || secondError.message === 'EMPTY_RESPONSE_WITH_AFFECTION') {
+                console.warn(`⚠️ ${currentCharacter.name} 第二次回應仍為空，使用預設訊息「*沉默不語*」`)
+                aiResponse = {
+                  text: '*沉默不語*',
+                  newAffection: undefined
+                }
+              } else {
+                // 其他錯誤，直接拋出
+                throw secondError
+              }
+            }
+          } else {
+            // 不是空字串錯誤，直接拋出
+            throw firstError
+          }
+        }
 
         // 更新好感度
         if (aiResponse.newAffection !== undefined) {
@@ -1529,7 +1604,7 @@ onMounted(() => {
               @change="toggleMessageSelection(message.id)">
           </div>
 
-          <div class="message-avatar">
+          <div class="message-avatar" @click="handleAvatarClick(message.senderId, $event)" :class="{ 'clickable': message.senderId !== 'user' }">
             <img :src="getSenderAvatar(message.senderId, message.senderName)" :alt="message.senderName">
           </div>
           <div class="message-content">
@@ -1932,6 +2007,17 @@ onMounted(() => {
   overflow: hidden;
   background: var(--color-bg-secondary);
   flex-shrink: 0;
+  transition: all var(--transition);
+}
+
+/* 可點擊的頭像樣式 */
+.message-avatar.clickable {
+  cursor: pointer;
+}
+
+.message-avatar.clickable:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .message-avatar img {

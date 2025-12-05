@@ -175,7 +175,7 @@ export interface RoomContextMemory {
 // 關係系統
 // ==========================================
 
-export type RelationshipLevel = 'stranger' | 'acquaintance' | 'friend' | 'close_friend' | 'soulmate'
+export type RelationshipLevel = 'enemy' | 'dislike' | 'stranger' | 'acquaintance' | 'friend' | 'close_friend' | 'soulmate'
 export type CharacterRelationType = 'neutral' | 'friend' | 'rival' | 'family' | 'romantic' | 'custom'
 
 export interface UserCharacterRelationship {

@@ -28,11 +28,23 @@ export const LIMITS = {
 // ==========================================
 
 export const RELATIONSHIP_LEVELS: Record<RelationshipLevel, RelationshipLevelInfo> = {
+  enemy: {
+    name: '仇敵',
+    affectionRange: [Number.NEGATIVE_INFINITY, -100],
+    color: '#8B0000',
+    description: '關係極差，互相敵視'
+  },
+  dislike: {
+    name: '不爽',
+    affectionRange: [-100, -30],
+    color: '#D2691E',
+    description: '關係不好，但還不到仇敵'
+  },
   stranger: {
     name: '陌生人',
-    affectionRange: [0, 10],
+    affectionRange: [-30, 10],
     color: '#999999',
-    description: '剛認識的階段'
+    description: '陌生或淡淡的不滿'
   },
   acquaintance: {
     name: '點頭之交',
@@ -206,5 +218,14 @@ export const SCHEDULE_TEMPLATES: ScheduleTemplate[] = [
       { start: 7, end: 10, status: 'offline' },   // 07:00-10:00 短暫睡眠
       { start: 10, end: 24, status: 'online' }    // 10:00-00:00 全天在線
     ]
-  }
+  },
+  {
+    id: 'always-busy',
+    name: '全天候忙碌',
+    description: '整天掛網的大忙人，會不會回覆是個謎，就像是扭蛋一樣',
+    periods: [
+      { start: 0, end: 2, status: 'offline' },
+      { start: 2, end: 24, status: 'away' },
+    ]
+  },
 ]

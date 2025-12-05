@@ -13,7 +13,15 @@ const characterStore = useCharacterStore()
 const chatRoomStore = useChatRoomsStore()
 
 const characterCount = computed(() => characterStore.characters.length)
-const chatRooms = computed(() => chatRoomStore.chatRooms)
+
+// 依最後訊息時間排序（新的在最上面）
+const chatRooms = computed(() => {
+  return [...chatRoomStore.chatRooms].sort((a, b) => {
+    const timeA = new Date(a.lastMessageAt).getTime()
+    const timeB = new Date(b.lastMessageAt).getTime()
+    return timeB - timeA // 降冪排序（新的在前）
+  })
+})
 
 const userStore = useUserStore()
 

@@ -39,7 +39,7 @@ export function getRelationshipLevelInfo(level: RelationshipLevel, isRomantic: b
  * 根據親密度取得關係等級
  */
 export function getRelationshipLevelByAffection(affection: number): RelationshipLevel {
-  const levels: RelationshipLevel[] = ['stranger', 'acquaintance', 'friend', 'close_friend', 'soulmate']
+  const levels: RelationshipLevel[] = ['enemy', 'dislike', 'stranger', 'acquaintance', 'friend', 'close_friend', 'soulmate']
 
   for (const level of levels) {
     const [min, max] = RELATIONSHIP_LEVELS[level].affectionRange
@@ -48,7 +48,13 @@ export function getRelationshipLevelByAffection(affection: number): Relationship
     }
   }
 
-  return 'soulmate' // 預設最高等級
+  // 如果好感度極低，返回仇敵
+  if (affection < -100) {
+    return 'enemy'
+  }
+
+  // 如果好感度極高，返回摯友
+  return 'soulmate'
 }
 
 /**

@@ -84,13 +84,40 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     currentRoomId.value = roomId
   }
 
+  /**
+   * 清理訊息中重複的 @ 提及（同一則訊息內，同樣的 @ID 只保留第一筆）
+   */
+  function deduplicateMentions(content: string): string {
+    const mentionedIds = new Set<string>()
+
+    // 使用正則表達式找到所有 @ 提及（支援數字 ID 和 UUID 格式）
+    // 匹配 @數字 或 @UUID（包含字母、數字、連字符）
+    return content.replace(/@([a-f0-9-]+|\d+)/gi, (match, id) => {
+      const normalizedId = id.toLowerCase() // UUID 不分大小寫
+      if (mentionedIds.has(normalizedId)) {
+        // 如果已經提到過這個 ID，移除整個 @ 提及
+        return ''
+      } else {
+        // 第一次提到，保留並記錄
+        mentionedIds.add(normalizedId)
+        return match
+      }
+    }).replace(/ {2,}/g, ' ').trim() // 清理多餘空格（只清理連續空格，保留換行）
+  }
+
   function addMessage(roomId: string, message: Omit<Message, 'id' | 'timestamp'>) {
     if (!messages.value[roomId]) {
       messages.value[roomId] = []
     }
 
+    // 清理訊息內容中重複的 @ 提及（只處理角色的訊息，不處理使用者的訊息）
+    const cleanedContent = message.senderId !== 'user'
+      ? deduplicateMentions(message.content)
+      : message.content
+
     const newMessage: Message = {
       ...message,
+      content: cleanedContent,
       id: uuidv4(),
       timestamp: new Date().toISOString()
     }
