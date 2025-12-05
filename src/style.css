@@ -69,6 +69,7 @@ h1, h2, h3, h4, h5, h6,
   --color-text-primary: #333333;
   --color-text-secondary: #666666;
   --color-text-tertiary: #999999;
+  --color-text-light: #eee;
   --color-text-white: #ffffff;
 
   /* 背景顏色 */
@@ -112,6 +113,7 @@ h1, h2, h3, h4, h5, h6,
   --transition-slow: 0.5s ease;
 
   /* 字體大小 */
+  --text-xxs: 9px;
   --text-xs: 12px;
   --text-sm: 13px;
   --text-base: 14px;

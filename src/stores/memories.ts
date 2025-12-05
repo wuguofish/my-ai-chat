@@ -13,6 +13,57 @@ export const useMemoriesStore = defineStore('memories', () => {
   const roomMemories = ref<Record<string, RoomContextMemory>>({})
 
   // ==========================================
+  // 輔助函數：觸發狀態訊息更新
+  // ==========================================
+
+  /**
+   * 觸發角色狀態訊息自動生成
+   * 這是一個背景任務，不會阻塞主流程
+   */
+  async function triggerStatusUpdate(characterId: string): Promise<void> {
+    try {
+      // 動態載入相關 stores 和工具函數（避免循環依賴）
+      const { useCharacterStore } = await import('./characters')
+      const { useUserStore } = await import('./user')
+      const { generateStatusMessage } = await import('@/utils/chatHelpers')
+
+      const characterStore = useCharacterStore()
+      const userStore = useUserStore()
+
+      // 檢查 API key
+      if (!userStore.apiKey) {
+        console.warn('無法生成狀態訊息：未設定 API key')
+        return
+      }
+
+      // 取得角色資料
+      const character = characterStore.getCharacterById(characterId)
+      if (!character) {
+        console.warn('無法生成狀態訊息：找不到角色', characterId)
+        return
+      }
+
+      // 取得短期記憶作為上下文
+      const shortTermMemories = getCharacterShortTermMemories(characterId)
+
+      // 呼叫 AI 生成狀態訊息
+      const statusMessage = await generateStatusMessage(
+        character,
+        { shortTermMemories },
+        userStore.apiKey
+      )
+
+      // 更新狀態訊息
+      characterStore.updateCharacterStatus(characterId, statusMessage)
+
+      console.log(`✨ 已為 ${character.name} 自動生成狀態訊息: ${statusMessage}`)
+    } catch (error) {
+      console.error('自動生成狀態訊息時發生錯誤:', error)
+      throw error
+    }
+  }
+
+  // ==========================================
   // 角色全域記憶 (Long-term)
   // ==========================================
 
@@ -26,12 +77,12 @@ export const useMemoriesStore = defineStore('memories', () => {
   /**
    * 新增角色全域記憶
    */
-  function addCharacterMemory(
+  async function addCharacterMemory(
     characterId: string,
     content: string,
     source: MemorySource = 'manual',
     sourceRoomId?: string
-  ): Memory {
+  ): Promise<Memory> {
     const memory: Memory = {
       id: uuidv4(),
       content,
@@ -52,6 +103,14 @@ export const useMemoriesStore = defineStore('memories', () => {
 
     characterMemories.value[characterId].importantMemories.push(memory)
     characterMemories.value[characterId].updatedAt = new Date().toISOString()
+
+    // 觸發狀態訊息生成（背景執行，不阻塞）
+    if (source === 'auto') {
+      // 只有 AI 自動生成的長期記憶才觸發狀態更新
+      triggerStatusUpdate(characterId).catch((err: unknown) => {
+        console.warn('自動生成狀態訊息失敗:', err)
+      })
+    }
 
     return memory
   }

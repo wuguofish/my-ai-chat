@@ -4,17 +4,20 @@ import { useRouter } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { useUserStore } from '@/stores/user'
+import { useToast } from '@/composables/useToast'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import { downloadCharacterCard, readCharacterCardFromFile } from '@/utils/characterExport'
 import PageHeader from '@/components/common/PageHeader.vue'
 import type { Character } from '@/types'
 import { v4 as uuidv4 } from 'uuid'
 import { UserPlus, Download, X, ImageUp } from 'lucide-vue-next'
+import {getCharacterStatus} from '@/utils/chatHelpers'
 
 const router = useRouter()
 const characterStore = useCharacterStore()
 const relationshipsStore = useRelationshipsStore()
 const userStore = useUserStore()
+const { success, error } = useToast()
 
 const characters = computed(() => characterStore.characters)
 const characterCount = computed(() => characters.value.length)
@@ -29,9 +32,7 @@ const handleViewCharacter = (character: Character) => {
   router.push(`/main/characters/${character.id}`)
 }
 
-// 匯出/匯入相關
-const importMessage = ref('')
-const showImportMessage = ref(false)
+// 匯出/匯入相關（已改用 Toast 顯示訊息）
 
 // FAB 選單
 const showFabMenu = ref(false)
@@ -108,14 +109,13 @@ const handleImportCharacter = async (event: Event) => {
   input.value = ''
 }
 
-// 顯示訊息
-const showMessage = (message: string, _type: 'success' | 'error') => {
-  importMessage.value = message
-  showImportMessage.value = true
-
-  setTimeout(() => {
-    showImportMessage.value = false
-  }, 3000)
+// 顯示訊息（改用 Toast）
+const showMessage = (message: string, type: 'success' | 'error') => {
+  if (type === 'success') {
+    success(message)
+  } else {
+    error(message)
+  }
 }
 
 const getGenderText = (gender?: string) => {
@@ -179,11 +179,6 @@ const getDefaultAvatar = (name: string) => {
       </template>
     </PageHeader>
 
-    <!-- 匯入訊息提示 -->
-    <div v-if="showImportMessage" class="import-message" :class="importMessage.includes('成功') ? 'success' : 'error'">
-      {{ importMessage }}
-    </div>
-
     <!-- 空狀態 -->
     <div v-if="characterCount === 0" class="empty-state">
       <div class="empty-icon">👥</div>
@@ -210,11 +205,15 @@ const getDefaultAvatar = (name: string) => {
         <button class="export-btn btn btn-sm btn-info-outline" @click="handleExportCharacter(character, $event)">
           <ImageUp /> 抽名片
         </button>
-        <div class="character-avatar">
-          <img :src="character.avatar || getDefaultAvatar(character.name)" :alt="character.name">
+        <div class="character-avatar-wrapper">
+          <div class="character-avatar">
+            <img :src="character.avatar || getDefaultAvatar(character.name)" :alt="character.name"></img>
+          </div>
+          <div :class="['status-dot', getCharacterStatus(character)]"></div>
         </div>
         <div class="character-info">
           <h3 class="character-name">{{ character.name }}</h3>
+          <p v-if="character.statusMessage" class="status-message">{{ character.statusMessage }}</p>
           <span class="meta-item">{{ getGenderText(character.gender) }}</span>
           <span class="meta-item">{{ character.age }}歲</span>
           <div style="margin-top: 0.3rem;"><span class="meta-item">{{ character.profession }}</span></div>
@@ -269,10 +268,10 @@ const getDefaultAvatar = (name: string) => {
 /* 好友網格 */
 .character-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(680px, 1fr));
   gap: var(--spacing-xl);
   padding: var(--spacing-xl);
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
@@ -295,11 +294,16 @@ const getDefaultAvatar = (name: string) => {
   box-shadow: var(--shadow-md);
 }
 
-.character-avatar {
+.character-avatar-wrapper {
   width: 80px;
   height: 80px;
-  border-radius: var(--radius-full);
+}
+
+.character-avatar {
+  width: 100%;
+  height: 100%;
   overflow: hidden;
+  border-radius: var(--radius-full);  
   margin-bottom: var(--spacing-lg);
   border: 3px solid var(--color-border);
 }
@@ -322,6 +326,16 @@ const getDefaultAvatar = (name: string) => {
   font-weight: 600;
   color: var(--color-text-primary);
   margin: 0 0 var(--spacing-sm) 0;
+}
+
+.status-message {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  font-style: italic;
+  margin: 0 0 var(--spacing-sm) 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .meta-item {
@@ -528,27 +542,7 @@ const getDefaultAvatar = (name: string) => {
   white-space: nowrap;
 }
 
-/* 匯入訊息提示 */
-.import-message {
-  margin: var(--spacing-md) var(--spacing-xl);
-  padding: var(--spacing-md) var(--spacing-lg);
-  border-radius: var(--radius);
-  font-size: var(--text-base);
-  text-align: center;
-  animation: slideDown 0.3s ease-out;
-}
-
-.import-message.success {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
-}
-
-.import-message.error {
-  background: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
-}
+/* 匯入訊息提示已改用全域 Toast 系統 */
 
 @keyframes slideDown {
   from {
@@ -571,6 +565,30 @@ const getDefaultAvatar = (name: string) => {
   border-radius: var(--radius);
   font-size: var(--text-base);
   box-shadow: var(--shadow);
+}
+
+/* 狀態點 */
+.status-dot {
+  position: relative;
+  bottom: 30px;
+  left: 55px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-bg-primary);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+.status-dot.online {
+  background: #52c41a;
+}
+
+.status-dot.away {
+  background: #faad14;
+}
+
+.status-dot.offline {
+  background: #999;
 }
 
 @media (max-width: 768px) {

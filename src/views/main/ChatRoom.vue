@@ -6,6 +6,7 @@ import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useUserStore } from '@/stores/user'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { useMemoriesStore } from '@/stores/memories'
+import { useToast } from '@/composables/useToast'
 import type { Character } from '@/types'
 import {
   formatMessageTime,
@@ -28,6 +29,7 @@ const chatRoomStore = useChatRoomsStore()
 const userStore = useUserStore()
 const relationshipsStore = useRelationshipsStore()
 const memoriesStore = useMemoriesStore()
+const { info } = useToast()
 
 const roomId = computed(() => route.params.id as string)
 const room = computed(() => chatRoomStore.getRoomById(roomId.value))
@@ -91,13 +93,21 @@ const characterStatusText = computed(() => {
   return '離線'
 })
 
-// 根據上線狀態決定文字顏色
+// 根據上線狀態決定文字顏色（單人聊天用）
 const statusColorClass = computed(() => {
   const status = characterStatus.value
   if (!status || status === 'online') return 'text-success'
   if (status === 'away') return 'text-warning'
   return 'text-error'
 })
+
+// 根據角色狀態決定文字顏色（成員清單用）
+const getMemberStatusColorClass = (character: Character) => {
+  const status = getCharacterStatus(character)
+  if (status === 'online') return 'text-success'
+  if (status === 'away') return 'text-warning'
+  return 'text-error'
+}
 
 // 取得訊息發送者的頭像
 const getSenderAvatar = (senderId: string, senderName: string) => {
@@ -738,19 +748,11 @@ const handleGroupChatMessage = async (userMessage: string) => {
         const result = determineRespondingCharacters(messageForAI, allCharacters)
         respondingCharacterIds = result.respondingIds
 
-        // 顯示無法回應的角色系統訊息
+        // 顯示無法回應的角色 Toast 通知
         if (result.unableToRespond.length > 0) {
-          result.unableToRespond.forEach(info => {
-            const reasonText = info.reason === 'away' ? '忙碌中' : '離線'
-            const systemMessage = {
-              id: `system-${Date.now()}-${Math.random()}`,
-              roomId: currentRoomId,
-              senderId: 'system',
-              senderName: '系統',
-              content: `${info.characterName} 因${reasonText}無法回覆`,
-              timestamp: new Date().toISOString()
-            }
-            chatRoomStore.addMessage(currentRoomId, systemMessage)
+          result.unableToRespond.forEach(notifyInfo => {
+            const reasonText = notifyInfo.reason === 'away' ? '忙碌中' : '離線'
+            info(`${notifyInfo.characterName} 因${reasonText}無法回覆`, 3000)
           })
         }
       } else {
@@ -1216,6 +1218,7 @@ onMounted(() => {
         <div class="info">
           <h2 class="name">{{ character.name }}</h2>
           <p class="status" :class="statusColorClass">{{ characterStatusText }}</p>
+          <p v-if="character.statusMessage" class="statusMsg">{{ character.statusMessage }}</p>
         </div>
       </div>
 
@@ -1397,12 +1400,14 @@ onMounted(() => {
                 <img
                   :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`"
                   :alt="char.name">
-                <div :class="['status-dot', getCharacterStatus(char)]" />
+                <div :class="['status-dot', getCharacterStatus(char)]"></div>
               </div>
               <div class="member-info">
                 <h4 class="member-name">{{ char.name }}</h4>
-                <p class="member-status">{{ getCharacterStatus(char) === 'online' ? '在線' : getCharacterStatus(char) ===
+                <p class="member-status" :class="getMemberStatusColorClass(char)">{{ getCharacterStatus(char) === 'online' ? '在線' :
+                  getCharacterStatus(char) ===
                   'away' ? '忙碌中' : '離線' }}</p>
+                <p v-if="char.statusMessage" class="statusMsg">{{ char.statusMessage }}</p>
               </div>
               <button class="btn btn-info" @click="toggleMemoryPanel">
                 <Bubbles :size="20" />記憶
@@ -1737,12 +1742,13 @@ onMounted(() => {
 /* 狀態指示器 */
 .status-indicator {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
+  bottom: 0px;
+  right: 0px;
   width: 14px;
   height: 14px;
   border-radius: var(--radius-full);
   border: 2px solid var(--color-bg-primary);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
 }
 
 .status-indicator.online {
@@ -1774,6 +1780,15 @@ onMounted(() => {
   font-size: var(--text-sm);
   color: var(--color-success);
   margin: 0;
+}
+
+.statusMsg {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 群組頭像 */
@@ -2244,7 +2259,6 @@ onMounted(() => {
   width: 48px;
   height: 48px;
   border-radius: var(--radius-full);
-  overflow: hidden;
   background: var(--color-bg-primary);
 }
 
@@ -2252,6 +2266,7 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: var(--radius-full);
 }
 
 .member-info {
@@ -2737,7 +2752,7 @@ onMounted(() => {
   width: 14px;
   height: 14px;
   border-radius: var(--radius-full);
-  border: 3px solid var(--color-bg-primary);
+  border: 2px solid var(--color-bg-primary);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
 }
 

@@ -53,6 +53,28 @@ export const useCharacterStore = defineStore('characters', () => {
   }
 
   /**
+   * 更新角色狀態訊息
+   */
+  function updateCharacterStatus(characterId: string, message: string) {
+    const character = characters.value.find(c => c.id === characterId)
+    if (character) {
+      character.statusMessage = message
+      character.statusUpdatedAt = Date.now()
+    }
+  }
+
+  /**
+   * 清除角色狀態訊息
+   */
+  function clearCharacterStatus(characterId: string) {
+    const character = characters.value.find(c => c.id === characterId)
+    if (character) {
+      character.statusMessage = undefined
+      character.statusUpdatedAt = undefined
+    }
+  }
+
+  /**
    * 為沒有作息設定的舊角色加上預設作息（上班族）
    */
   function migrateCharacterSchedules() {
@@ -87,6 +109,8 @@ export const useCharacterStore = defineStore('characters', () => {
     updateCharacter,
     deleteCharacter,
     clearCharacters,
+    updateCharacterStatus,
+    clearCharacterStatus,
     // Migration
     migrateCharacterSchedules
   }

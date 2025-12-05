@@ -98,6 +98,10 @@ export interface Character {
     appName?: string
   }
 
+  // 狀態訊息（類似 LINE 的個人狀態）
+  statusMessage?: string
+  statusUpdatedAt?: number  // 狀態訊息更新時間戳
+
   createdAt: string
   updatedAt: string
 }

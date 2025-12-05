@@ -621,8 +621,297 @@ export function shuffle<T>(array: T[]): T[] {
         result[currentIndex]!
       ];
     }
-    
+
   }
 
   return result;
+}
+
+/**
+ * 生成角色狀態訊息的上下文資訊
+ */
+export interface StatusMessageContext {
+  shortTermMemories?: Array<{ content: string }>
+  mood?: string  // 心情描述（例如：開心、煩躁）
+  timeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night'
+}
+
+/**
+ * 為角色生成狀態訊息（類似 LINE 的個人狀態）
+ * @param character 角色資料
+ * @param context 生成上下文（短期記憶、心情、時間等）
+ * @param apiKey Gemini API Key
+ * @returns 生成的狀態訊息（30 字以內）
+ */
+export async function generateStatusMessage(
+  character: Character,
+  context: StatusMessageContext = {},
+  apiKey: string
+): Promise<string> {
+  const { shortTermMemories = [], mood, timeOfDay } = context
+
+  // 判斷當前時間（如果沒有提供）
+  const currentTimeOfDay = timeOfDay || (() => {
+    const hour = new Date().getHours()
+    if (hour >= 5 && hour < 12) return 'morning'
+    if (hour >= 12 && hour < 17) return 'afternoon'
+    if (hour >= 17 && hour < 21) return 'evening'
+    return 'night'
+  })()
+
+  const timeDescriptions = {
+    morning: '早上',
+    afternoon: '下午',
+    evening: '傍晚',
+    night: '晚上'
+  }
+
+  // 組裝 Prompt
+  let prompt = `你是 ${character.name}，請根據以下資訊，生成一則符合你個性的狀態訊息（類似 LINE 的個人狀態）。
+
+## 你的個性
+${character.personality}
+
+## 你的說話風格
+${character.speakingStyle || '自然隨性'}
+
+## 當前時間
+${timeDescriptions[currentTimeOfDay]}`
+
+  // 加入短期記憶
+  if (shortTermMemories.length > 0) {
+    prompt += `\n\n## 最近的經歷\n`
+    shortTermMemories.forEach((mem, index) => {
+      prompt += `${index + 1}. ${mem.content}\n`
+    })
+  }
+
+  // 加入心情
+  if (mood) {
+    prompt += `\n\n## 目前心情\n${mood}`
+  }
+
+  prompt += `\n\n請生成一則 **30 字以內** 的狀態訊息，要：
+- 符合你的個性和說話風格
+- 反映當前時間和最近經歷
+- 簡短有趣，像是你真的在更新個人狀態
+- 不要加引號或任何說明文字，直接輸出狀態訊息內容
+
+範例：
+- 「今天心情不錯，來杯咖啡 ☕」
+- 「忙碌的一天終於結束了...」
+- 「正在思考人生的意義 🤔」
+
+你的狀態訊息：`
+
+  // 呼叫 Gemini API
+  const { GoogleGenerativeAI } = await import('@google/generative-ai')
+  const genAI = new GoogleGenerativeAI(apiKey)
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash-lite',
+    generationConfig: {
+      temperature: 0.9,  // 提高創意
+      maxOutputTokens: 100,
+    }
+  })
+
+  const result = await model.generateContent(prompt)
+  const statusMessage = result.response.text().trim()
+
+  // 確保不超過 30 字
+  return statusMessage.length > 30 ? statusMessage.substring(0, 30) + '...' : statusMessage
+}
+
+/**
+ * 作息狀態監控系統
+ * 用於偵測角色的在線狀態變化，並在狀態從 offline/away → online 時觸發狀態訊息生成
+ */
+interface CharacterStatusCache {
+  [characterId: string]: 'online' | 'away' | 'offline'
+}
+
+let statusCache: CharacterStatusCache = {}
+let monitoringIntervalId: number | null = null
+
+/**
+ * 檢查並更新所有角色的狀態
+ */
+async function checkAndUpdateAllCharacterStatus() {
+  try {
+    const { useCharacterStore } = await import('@/stores/characters')
+    const characterStore = useCharacterStore()
+    const characters = characterStore.characters
+
+    for (const character of characters) {
+      const currentStatus = getCharacterStatus(character)
+      const previousStatus = statusCache[character.id]
+
+      // 第一次檢查，初始化 cache
+      if (!previousStatus) {
+        statusCache[character.id] = currentStatus
+        continue
+      }
+
+      // 檢查是否從 offline/away 變成 online
+      if (previousStatus !== 'online' && currentStatus === 'online') {
+        console.log(`✨ ${character.name} 剛上線了！(${previousStatus} → ${currentStatus})`)
+
+        // 檢查好感度是否達到「朋友」等級
+        const shouldNotify = await checkIfShouldNotify(character.id)
+
+        if (shouldNotify) {
+          // 顯示 Toast 通知
+          showCharacterOnlineNotification(character)
+        }
+
+        // 觸發狀態訊息生成
+        triggerStatusUpdateOnStatusChange(character.id).catch((err: unknown) => {
+          console.warn(`${character.name} 上線時自動生成狀態訊息失敗:`, err)
+        })
+      }
+
+      // 更新 cache
+      statusCache[character.id] = currentStatus
+    }
+  } catch (error) {
+    console.error('作息監控執行錯誤:', error)
+  }
+}
+
+/**
+ * 計算距離下一個整點還有多少毫秒
+ */
+function getMillisecondsUntilNextHour(): number {
+  const now = new Date()
+  const nextHour = new Date(now)
+  nextHour.setHours(now.getHours() + 1, 0, 0, 0)
+  return nextHour.getTime() - now.getTime()
+}
+
+/**
+ * 啟動作息狀態監控
+ * 建議在應用程式啟動時呼叫（例如：App.vue 的 onMounted）
+ *
+ * 檢查時機：
+ * 1. 應用程式載入時（立即執行）
+ * 2. 每個整點（因為作息時段精確度只到小時）
+ */
+export function startStatusMonitoring() {
+  // 避免重複啟動
+  if (monitoringIntervalId) {
+    console.warn('作息監控已在執行中')
+    return
+  }
+
+  console.log('✅ 啟動作息狀態監控系統')
+
+  // 1. 應用載入時立即檢查一次
+  checkAndUpdateAllCharacterStatus()
+
+  // 2. 設定在下一個整點執行
+  const msUntilNextHour = getMillisecondsUntilNextHour()
+  console.log(`⏰ 下次檢查時間：${Math.round(msUntilNextHour / 1000 / 60)} 分鐘後（整點）`)
+
+  setTimeout(() => {
+    // 到達整點，立即檢查
+    checkAndUpdateAllCharacterStatus()
+
+    // 然後每小時檢查一次（每個整點）
+    monitoringIntervalId = window.setInterval(() => {
+      console.log('⏰ 整點到了，檢查角色作息狀態...')
+      checkAndUpdateAllCharacterStatus()
+    }, 60 * 60 * 1000) // 每小時（3600秒）
+  }, msUntilNextHour)
+}
+
+/**
+ * 停止作息狀態監控
+ */
+export function stopStatusMonitoring() {
+  if (monitoringIntervalId) {
+    clearInterval(monitoringIntervalId)
+    monitoringIntervalId = null
+    statusCache = {}
+    console.log('⏹️ 已停止作息狀態監控系統')
+  }
+}
+
+/**
+ * 檢查是否應該顯示角色上線通知
+ * 條件：好感度達到「朋友」等級以上
+ */
+async function checkIfShouldNotify(characterId: string): Promise<boolean> {
+  try {
+    const { useRelationshipsStore } = await import('@/stores/relationships')
+    const relationshipsStore = useRelationshipsStore()
+
+    const relationship = relationshipsStore.getUserCharacterRelationship(characterId)
+
+    // 如果沒有關係資料，不通知
+    if (!relationship) return false
+
+    // 只有「朋友」等級以上才通知（friend, close_friend, soulmate）
+    return ['friend', 'close_friend', 'soulmate'].includes(relationship.level)
+  } catch (error) {
+    console.error('檢查通知條件時發生錯誤:', error)
+    return false
+  }
+}
+
+/**
+ * 顯示角色上線 Toast 通知
+ */
+function showCharacterOnlineNotification(character: Character) {
+  // 動態載入 useToast（避免在模組載入時就執行）
+  import('@/composables/useToast').then(({ useToast }) => {
+    const { characterOnline } = useToast()
+
+    characterOnline(
+      character.id,
+      character.name,
+      character.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(character.name)}&background=764ba2&color=fff`,
+      5000  // 5 秒後自動消失
+    )
+  }).catch((err: unknown) => {
+    console.error('顯示上線通知時發生錯誤:', err)
+  })
+}
+
+/**
+ * 觸發狀態訊息更新（作息變化時）
+ */
+async function triggerStatusUpdateOnStatusChange(characterId: string): Promise<void> {
+  try {
+    const { useCharacterStore } = await import('@/stores/characters')
+    const { useUserStore } = await import('@/stores/user')
+    const { useMemoriesStore } = await import('@/stores/memories')
+
+    const characterStore = useCharacterStore()
+    const userStore = useUserStore()
+    const memoriesStore = useMemoriesStore()
+
+    // 檢查 API key
+    if (!userStore.apiKey) return
+
+    // 取得角色
+    const character = characterStore.getCharacterById(characterId)
+    if (!character) return
+
+    // 取得短期記憶
+    const shortTermMemories = memoriesStore.getCharacterShortTermMemories(characterId)
+
+    // 生成狀態訊息
+    const statusMessage = await generateStatusMessage(
+      character,
+      { shortTermMemories },
+      userStore.apiKey
+    )
+
+    // 更新
+    characterStore.updateCharacterStatus(characterId, statusMessage)
+    console.log(`✨ 已為 ${character.name} 因上線生成狀態訊息: ${statusMessage}`)
+  } catch (error) {
+    console.error('作息變化時生成狀態訊息失敗:', error)
+    throw error
+  }
 }

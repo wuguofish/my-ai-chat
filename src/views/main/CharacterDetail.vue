@@ -6,6 +6,8 @@ import { useCharacterStore } from '@/stores/characters'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
+import { getCharacterStatus } from '@/utils/chatHelpers'
+import { SCHEDULE_TEMPLATES } from '@/utils/constants'
 import type { Character } from '@/types'
 import { Plus, ArrowLeft, MessageCircle, Edit, Bubbles, Trash2, X, Heart } from 'lucide-vue-next'
 
@@ -94,6 +96,106 @@ const handleEdit = () => {
 const handleManageMemories = () => {
   router.push(`/main/characters/${characterId.value}/memories`)
 }
+
+// 狀態訊息編輯
+const showStatusModal = ref(false)
+const editingStatus = ref('')
+const isGeneratingStatus = ref(false)
+
+const handleEditStatus = () => {
+  if (!character.value) return
+  editingStatus.value = character.value.statusMessage || ''
+  showStatusModal.value = true
+}
+
+const handleSaveStatus = () => {
+  if (!character.value) return
+  characterStore.updateCharacterStatus(characterId.value, editingStatus.value)
+  showStatusModal.value = false
+}
+
+const handleClearStatus = () => {
+  if (!character.value) return
+  if (confirm('確定要清除狀態訊息嗎？')) {
+    characterStore.clearCharacterStatus(characterId.value)
+    showStatusModal.value = false
+  }
+}
+
+const handleGenerateStatus = async () => {
+  if (!character.value || !userStore.apiKey) return
+
+  isGeneratingStatus.value = true
+  try {
+    // 動態導入 generateStatusMessage 函數
+    const { generateStatusMessage } = await import('@/utils/chatHelpers')
+    const { useMemoriesStore } = await import('@/stores/memories')
+    const memoriesStore = useMemoriesStore()
+
+    // 取得短期記憶
+    const shortTermMemories = memoriesStore.getCharacterShortTermMemories(characterId.value)
+
+    // 呼叫 AI 生成
+    const statusMessage = await generateStatusMessage(
+      character.value,
+      { shortTermMemories },
+      userStore.apiKey
+    )
+
+    editingStatus.value = statusMessage
+  } catch (error) {
+    console.error('生成狀態訊息失敗:', error)
+    alert('生成失敗，請稍後再試')
+  } finally {
+    isGeneratingStatus.value = false
+  }
+}
+
+// 角色狀態相關
+const characterStatus = computed(() => {
+  if (!character.value) return 'offline'
+  return getCharacterStatus(character.value)
+})
+
+const characterStatusText = computed(() => {
+  const status = characterStatus.value
+  if (status === 'online') return '在線'
+  if (status === 'away') return '忙碌中'
+  return '離線'
+})
+
+const statusColorClass = computed(() => {
+  const status = characterStatus.value
+  if (status === 'online') return 'text-success'
+  if (status === 'away') return 'text-warning'
+  return 'text-error'
+})
+
+// 作息表資訊
+const scheduleInfo = computed(() => {
+  if (!character.value?.activePeriods || character.value.activePeriods.length === 0) {
+    return { type: 'none', template: null, periods: [] }
+  }
+
+  // 檢查是否符合某個模板
+  const matchedTemplate = SCHEDULE_TEMPLATES.find(template =>
+    JSON.stringify(template.periods) === JSON.stringify(character.value!.activePeriods)
+  )
+
+  if (matchedTemplate) {
+    return {
+      type: 'template',
+      template: matchedTemplate,
+      periods: matchedTemplate.periods
+    }
+  }
+
+  return {
+    type: 'custom',
+    template: null,
+    periods: character.value.activePeriods
+  }
+})
 
 // 調整關係（包含親密關係設定）
 const showAdjustModal = ref(false)
@@ -321,11 +423,23 @@ const getRelationshipTypeText = (type: string) => {
       <!-- 角色基本資訊卡片 -->
       <div class="profile-card">
         <div class="profile-section">
-          <div class="avatar">
-            <img :src="character.avatar || getDefaultAvatar(character.name)" :alt="character.name">
+          <div class="avatar-wrapper">
+            <div class="avatar">
+              <img :src="character.avatar || getDefaultAvatar(character.name)" :alt="character.name">
+            </div>
+            <!-- 狀態指示燈 -->
+            <div :class="['status-dot', `status-${characterStatus}`]" :title="characterStatusText"></div>
           </div>
           <div class="basic-info">
             <h1 class="name">{{ character.name }}</h1>
+            <div class="status-message-container">
+              <p v-if="character.statusMessage" class="status-message">{{ character.statusMessage }}</p>
+              <p v-else class="status-message empty">尚未設定狀態訊息</p>
+              <button class="btn btn-sm btn-primary-outline edit-status-btn" @click="handleEditStatus">
+                <Edit :size="10" />
+              </button>
+            </div>
+
             <div class="meta">
               <span v-if="character.gender" class="meta-item">
                 {{ getGenderText(character.gender) }}
@@ -371,6 +485,34 @@ const getRelationshipTypeText = (type: string) => {
             </span>
             <span class="text">刪除好友</span>
           </button>
+        </div>
+      </div>
+
+      <!-- 作息表區塊 -->
+      <div class="section">
+        <div class="section-header">
+          <h2 class="section-title">作息表</h2>
+        </div>
+        <div v-if="scheduleInfo.type === 'none'" class="schedule-empty">
+          尚未設定作息表（將永久離線）
+        </div>
+        <div v-else class="schedule-display">
+          <div v-if="scheduleInfo.type === 'template'" class="schedule-template-name">
+            {{ scheduleInfo.template?.name }}
+          </div>
+          <div v-else class="schedule-template-name">
+            自訂作息
+          </div>
+          <div class="schedule-periods">
+            <div v-for="(period, index) in scheduleInfo.periods" :key="index" class="schedule-period-item">
+              <div class="period-time">              
+                {{ String(period.start).padStart(2, '0') }}:00 - {{ String(period.end).padStart(2, '0') }}:00
+              </div>
+              <div :class="['period-status', `status-${period.status}`]">
+                {{ period.status === 'online' ? '在線' : period.status === 'away' ? '忙碌中' : '離線' }}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -633,6 +775,33 @@ const getRelationshipTypeText = (type: string) => {
         </div>
       </div>
     </div>
+
+    <!-- 編輯狀態訊息 Modal -->
+    <div v-if="showStatusModal" class="modal-overlay" @click="showStatusModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>編輯狀態訊息</h3>
+          <button class="modal-close" @click="showStatusModal = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>狀態訊息（30 字以內）</label>
+            <div class="input-with-button">
+              <input v-model="editingStatus" type="text" class="input-field" maxlength="30" placeholder="例如：今天心情不錯 ☕" />
+              <button class="btn btn-success btn-sm" @click="handleGenerateStatus" :disabled="isGeneratingStatus">
+                {{ isGeneratingStatus ? '生成中...' : 'AI 生成' }}
+              </button>
+            </div>
+            <p class="hint">{{ editingStatus.length }}/30 字</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button v-if="character?.statusMessage" class="btn btn-danger" @click="handleClearStatus">清除狀態</button>
+          <button class="btn btn-secondary" @click="showStatusModal = false">取消</button>
+          <button class="btn btn-primary" @click="handleSaveStatus">儲存</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -686,6 +855,11 @@ const getRelationshipTypeText = (type: string) => {
   color: var(--color-text-white);
 }
 
+.avatar-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .avatar {
   width: 100px;
   height: 100px;
@@ -700,6 +874,30 @@ const getRelationshipTypeText = (type: string) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* 狀態指示燈 */
+.status-dot {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  border: 3px solid var(--color-text-white);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.status-dot.status-online {
+  background-color: var(--color-success);
+}
+
+.status-dot.status-away {
+  background-color: var(--color-warning);
+}
+
+.status-dot.status-offline {
+  background-color: var(--color-error);
 }
 
 .basic-info {
@@ -1110,5 +1308,116 @@ const getRelationshipTypeText = (type: string) => {
     align-items: flex-start;
     gap: var(--spacing-md);
   }
+}
+
+/* 狀態訊息樣式 */
+.status-message-container {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin: var(--spacing-sm) 0;
+}
+
+.status-message {
+  flex: 1;
+  font-size: var(--text-base);
+  color: var(--color-text-light);
+  font-style: italic;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-message.empty {
+  color: var(--color-text-tertiary);
+}
+
+.edit-status-btn {
+  padding: var(--spacing-sm);
+}
+
+.hint {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  margin-top: var(--spacing-xs);
+}
+
+.input-with-button {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+}
+
+.input-with-button .input-field {
+  flex: 1;
+}
+
+/* 作息表樣式 */
+.schedule-empty {
+  text-align: center;
+  padding: var(--spacing-2xl);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-lg);
+}
+
+.schedule-display {
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+}
+
+.schedule-template-name {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-lg);
+  font-weight: 600;
+}
+
+.schedule-periods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.schedule-period-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md);
+  background: var(--color-bg-primary);
+  border-radius: var(--radius);
+  transition: all var(--transition);
+}
+
+.schedule-period-item:hover {
+  background: var(--color-bg-hover);
+}
+
+.period-time {
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.period-status {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: white;
+}
+
+.period-status.status-online {
+  background-color: var(--color-success);
+}
+
+.period-status.status-away {
+  background-color: var(--color-warning);
+}
+
+.period-status.status-offline {
+  background-color: var(--color-error);
 }
 </style>

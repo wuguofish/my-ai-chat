@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { RouterView, useRouter } from 'vue-router'
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { checkVersion, updateStoredVersion, clearCacheAndReload, fetchServerVersion, getVersionInfo, type VersionInfo } from '@/utils/version'
+import { startStatusMonitoring, stopStatusMonitoring } from '@/utils/chatHelpers'
 import { useMemoriesStore } from '@/stores/memories'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useCharacterStore } from '@/stores/characters'
+import ToastContainer from '@/components/ToastContainer.vue'
 
 // 版本更新提示
 const showUpdateDialog = ref(false)
@@ -35,8 +37,16 @@ onMounted(async () => {
   // 為沒有作息設定的舊角色加上預設作息
   characterStore.migrateCharacterSchedules()
 
+  // 啟動作息狀態監控系統
+  startStatusMonitoring()
+
   // 初始版本檢查
   await performVersionCheck()
+})
+
+// 組件卸載時停止監控
+onUnmounted(() => {
+  stopStatusMonitoring()
 })
 
 // 監聽路由變化，每次導航時檢查版本
@@ -89,6 +99,9 @@ const handleLater = () => {
       </div>
     </div>
   </div>
+
+  <!-- Toast 通知容器 -->
+  <ToastContainer />
 
   <RouterView />
 </template>
