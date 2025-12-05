@@ -268,7 +268,7 @@ const getDefaultAvatar = (name: string) => {
 /* 好友網格 */
 .character-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(680px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(680px, 100%), 1fr));
   gap: var(--spacing-xl);
   padding: var(--spacing-xl);
   max-width: 1440px;
@@ -287,6 +287,7 @@ const getDefaultAvatar = (name: string) => {
   flex-direction: row;
   align-items: center;
   text-align: left;
+  overflow: hidden;
 }
 
 .character-card:hover {
@@ -297,6 +298,7 @@ const getDefaultAvatar = (name: string) => {
 .character-avatar-wrapper {
   width: 80px;
   height: 80px;
+  flex-shrink: 0;
 }
 
 .character-avatar {
@@ -316,7 +318,7 @@ const getDefaultAvatar = (name: string) => {
 
 .character-info {
   flex: 1;
-  width: 100%;
+  min-width: 0;
   padding-left: 2rem;
   padding-bottom: 1rem;
 }
@@ -594,6 +596,17 @@ const getDefaultAvatar = (name: string) => {
 @media (max-width: 768px) {
   .character-grid {
     grid-template-columns: 1fr;
+    padding: var(--spacing-md);
+    gap: var(--spacing-md);
+  }
+
+  .character-card {
+    padding: var(--spacing-lg);
+    overflow: hidden;
+  }
+
+  .character-info {
+    padding-left: var(--spacing-lg);
   }
 
   .fab-add {
