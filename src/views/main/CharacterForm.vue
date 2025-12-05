@@ -6,7 +6,7 @@ import type { Character, Gender, ActivePeriod } from '@/types'
 import { LIMITS, SCHEDULE_TEMPLATES } from '@/utils/constants'
 import AvatarCropper from '@/components/common/AvatarCropper.vue'
 import { v4 as uuidv4 } from 'uuid'
-import {ArrowLeft} from 'lucide-vue-next'
+import { ArrowLeft, FolderLock } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -260,22 +260,23 @@ const getDefaultAvatar = (name: string) => {
 
         <div class="form-group">
           <label for="name">名稱 *</label>
-          <input id="name" v-model="name" type="text" placeholder="輸入好友的名稱" class="input-field" maxlength="20">
+          <input id="name" v-model="name" type="text" placeholder="輸入好友的名稱" class="input-field" maxlength="20"
+            :readonly="isPrivate">
         </div>
 
         <div class="form-group">
           <label>性別（選填）</label>
           <div class="radio-group">
             <label class="radio-item">
-              <input v-model="gender" type="radio" value="male">
+              <input v-model="gender" type="radio" value="male" :disabled="isPrivate">
               <span>男</span>
             </label>
             <label class="radio-item">
-              <input v-model="gender" type="radio" value="female">
+              <input v-model="gender" type="radio" value="female" :disabled="isPrivate">
               <span>女</span>
             </label>
             <label class="radio-item">
-              <input v-model="gender" type="radio" value="unset">
+              <input v-model="gender" type="radio" value="unset" :disabled="isPrivate">
               <span>未設定</span>
             </label>
           </div>
@@ -283,20 +284,23 @@ const getDefaultAvatar = (name: string) => {
 
         <div class="form-group">
           <label for="age">年齡（選填）</label>
-          <input id="age" v-model="age" type="text" placeholder="例如：25" class="input-field" maxlength="10">
+          <input id="age" v-model="age" type="text" placeholder="例如：25" class="input-field" maxlength="10"
+            :readonly="isPrivate">
         </div>
 
         <div class="form-group">
           <label for="profession">職業（選填）</label>
           <input id="profession" v-model="profession" type="text" placeholder="例如：軟體工程師" class="input-field"
-            maxlength="30">
+            maxlength="30" :readonly="isPrivate">
         </div>
 
         <!-- 如果是隱藏設定的名片，顯示「等你來挖掘」區塊 -->
         <div v-if="isPrivate" class="private-placeholder">
-          <div class="private-icon">🔒</div>
-          <p class="private-text">這些設定被原作者隱藏了</p>
-          <p class="private-hint">透過與 {{ name }} 的互動，慢慢挖掘 TA 的性格吧～</p>
+          <div class="private-icon">
+            <FolderLock :size="48" :stroke-width="1.5" />
+          </div>
+          <p class="private-text">這些內容是他的小秘密</p>
+          <p class="private-hint">透過與 {{ name }} 的互動，慢慢挖掘他的性格吧～</p>
         </div>
 
         <!-- 一般模式：可編輯 -->
@@ -336,10 +340,10 @@ const getDefaultAvatar = (name: string) => {
       </div>
 
       <!-- 事件記憶 -->
-      <div v-if="!isPrivate" class="form-section">
+      <div class="form-section">
         <h3>重要事件（選填）</h3>
         <p class="section-desc">記錄與這位好友相關的重要事件或記憶（最多 {{ LIMITS.MAX_CHARACTER_EVENTS }} 筆）</p>
-        <div class="form-group">
+        <div v-if="!isPrivate" class="form-group">
           <textarea v-model="newEvent" type="text" placeholder='輸入事件描述' class="textarea-field"
             :maxlength="LIMITS.MAX_CHARACTER_EVENT_LENGTH" rows="6" />
           <div class="char-count">{{ newEvent.length }}/{{ LIMITS.MAX_CHARACTER_EVENT_LENGTH }}</div>
@@ -351,8 +355,11 @@ const getDefaultAvatar = (name: string) => {
           <h4>重要事件列表</h4>
           <div v-for="(event, index) in events" :key="index" class="event-item">
             <span class="event-text">{{ event }}</span>
-            <button class="event-delete" @click="removeEvent(index)">✕</button>
+            <button v-if="!isPrivate" class="event-delete" @click="removeEvent(index)">✕</button>
           </div>
+        </div>
+        <div v-else-if="isPrivate" class="empty-hint">
+          這個好友沒有記錄重要事件
         </div>
       </div>
 
@@ -372,11 +379,11 @@ const getDefaultAvatar = (name: string) => {
               停用
             </button> -->
             <button type="button" :class="['mode-tab', { active: scheduleMode === 'template' }]"
-              @click="scheduleMode = 'template'">
+              @click="scheduleMode = 'template'" :disabled="isPrivate">
               快速模板
             </button>
             <button type="button" :class="['mode-tab', { active: scheduleMode === 'custom' }]"
-              @click="scheduleMode = 'custom'">
+              @click="scheduleMode = 'custom'" :disabled="isPrivate">
               自訂時段
             </button>
           </div>
@@ -385,7 +392,7 @@ const getDefaultAvatar = (name: string) => {
         <!-- 模板選擇 -->
         <div v-if="scheduleMode === 'template'" class="form-group">
           <label for="scheduleTemplate">選擇作息模板</label>
-          <select id="scheduleTemplate" v-model="selectedTemplateId" class="input-field">
+          <select id="scheduleTemplate" v-model="selectedTemplateId" class="input-field" :disabled="isPrivate">
             <option v-for="template in SCHEDULE_TEMPLATES" :key="template.id" :value="template.id">
               {{ template.name }} - {{ template.description }}
             </option>
@@ -655,23 +662,50 @@ const getDefaultAvatar = (name: string) => {
 
 .radio-group {
   display: flex;
-  gap: var(--spacing-lg);
+  gap: var(--spacing-md);
 }
 
 .radio-item {
-  display: flex;
-  align-items: center;
+  position: relative;
+  flex: 1;
   cursor: pointer;
 }
 
 .radio-item input[type="radio"] {
-  margin-right: var(--spacing-sm);
+  position: absolute;
+  opacity: 0;
   cursor: pointer;
 }
 
 .radio-item span {
+  display: block;
+  padding: var(--spacing-md) var(--spacing-lg);
   font-size: var(--text-base);
   color: var(--color-text-secondary);
+  text-align: center;
+  background: var(--color-bg-secondary);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius);
+  transition: all var(--transition);
+  user-select: none;
+}
+
+.radio-item input[type="radio"]:checked + span {
+  color: var(--color-text-white);
+  background: var(--color-primary);
+  border-color: rgba(102, 126, 234, 0.08);
+  font-weight: 500;
+}
+
+.radio-item:not(:has(input:disabled)):hover span {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: rgba(102, 126, 234, 0.04);
+}
+
+.radio-item input[type="radio"]:disabled + span {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .char-count {
@@ -994,6 +1028,14 @@ const getDefaultAvatar = (name: string) => {
   font-size: var(--text-base);
   color: var(--color-text-secondary);
   margin: 0;
+  font-style: italic;
+}
+
+.empty-hint {
+  text-align: center;
+  padding: var(--spacing-2xl);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-base);
   font-style: italic;
 }
 </style>

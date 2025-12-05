@@ -76,8 +76,8 @@ export async function exportCharacterCard(
     }
   }
 
-  // 創建角色卡片（傳入好感度用於抽卡，以及作者資訊）
-  const cardImage = await createCharacterCardImage(character, affection, author)
+  // 創建角色卡片（傳入好感度用於抽卡，以及作者資訊和隱藏設定選項）
+  const cardImage = await createCharacterCardImage(character, affection, author, hidePrivateSettings)
 
   // 將角色資料嵌入 PNG 圖片
   const pngWithData = await embedDataInPNG(cardImage, exportData, 'CharacterCard')
@@ -354,7 +354,7 @@ function getRarityStyle(rarity: RarityType): { color: string; gradient: string; 
  * @param author 作者名稱（可選，用於顯示推薦人）
  * @returns PNG Data URL
  */
-async function createCharacterCardImage(character: Character, affection: number = 0, author?: string): Promise<string> {
+async function createCharacterCardImage(character: Character, affection: number = 0, author?: string, hidePrivateSettings: boolean = false): Promise<string> {
   // 抽取稀有度
   const rarity = drawRarity(affection)
   const rarityStyle = getRarityStyle(rarity)
@@ -585,6 +585,16 @@ async function createCharacterCardImage(character: Character, affection: number 
     ctx.textBaseline = 'alphabetic'
     const recommenderText = `推薦人：${author}`
     ctx.fillText(recommenderText, 50, 485)
+  }
+
+  // 如果這次匯出是隱藏設定，或者角色本身就是隱藏設定的名片
+  if (hidePrivateSettings || character.isPrivate) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+    ctx.font = '12px "Iansui", sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'alphabetic'
+    const privacyText = `-機密-`
+    ctx.fillText(privacyText, 370, 485)
   }
 
   // 轉換為 PNG Data URL

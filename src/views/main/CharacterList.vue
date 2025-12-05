@@ -45,7 +45,8 @@ const hidePrivateSettings = ref(false)
 const handleExportCharacter = async (character: Character, event: Event) => {
   event.stopPropagation() // 防止觸發卡片點擊
   exportingCharacter.value = character
-  hidePrivateSettings.value = false
+  // 如果角色本身就是隱藏設定的，預設勾選且不可關閉
+  hidePrivateSettings.value = character.isPrivate || false
   showExportModal.value = true
 }
 
@@ -290,14 +291,23 @@ const getDefaultAvatar = (name: string) => {
             即將匯出 <strong>{{ exportingCharacter?.name }}</strong> 的好友名片
           </p>
           <div class="form-group">
-            <label class="checkbox-label">
-              <input v-model="hidePrivateSettings" type="checkbox">
-              <span>隱藏詳細設定</span>
-            </label>
-            <p class="form-hint">
-              勾選後，性格、說話風格、背景故事等欄位將不會被匯出。<br>
-              匯入此名片的人將無法看到這些設定，並且這些欄位會變成唯讀狀態。
-            </p>
+            <div class="switch-group">
+
+              <label class="toggle-switch" :class="{ disabled: exportingCharacter?.isPrivate }">
+                <input v-model="hidePrivateSettings" type="checkbox" :disabled="exportingCharacter?.isPrivate">
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="switch-info">
+                <span class="switch-label">隱藏詳細設定</span>
+                <p v-if="exportingCharacter?.isPrivate" class="switch-hint locked">
+                  此角色的詳細設定已經是秘密，我們必須繼續保密。
+                </p>
+                <p v-else class="switch-hint">
+                  勾選後，性格、說話風格、背景故事等欄位將不會被匯出。<br>
+                  匯入此名片的人將無法看到這些設定，並且這些欄位會變成唯讀狀態。
+                </p>
+              </div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -667,5 +677,107 @@ const getDefaultAvatar = (name: string) => {
     height: 56px;
     font-size: 30px;
   }
+}
+
+/* Modal 相關樣式 */
+.modal-description {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-xl) 0;
+}
+
+.switch-group {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+}
+
+.switch-info {
+  flex: 1;
+}
+
+.switch-label {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  display: block;
+  margin-bottom: var(--spacing-sm);
+}
+
+.switch-hint {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+  margin-top: var(--spacing-xs);
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--color-border);
+  transition: var(--transition);
+  border-radius: 34px;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: var(--transition);
+  border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: var(--color-primary);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(24px);
+}
+
+.toggle-switch input:focus + .toggle-slider {
+  box-shadow: 0 0 1px var(--color-primary);
+}
+
+.toggle-switch.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.toggle-switch.disabled .toggle-slider {
+  cursor: not-allowed;
+}
+
+.toggle-switch.disabled input:checked+.toggle-slider {
+  background-color: var(--color-text-secondary);
+}
+
+.switch-hint.locked {
+  color: var(--color-warning);
+  font-weight: 500;
 }
 </style>
