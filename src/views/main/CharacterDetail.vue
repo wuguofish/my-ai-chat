@@ -164,13 +164,6 @@ const characterStatusText = computed(() => {
   return '離線'
 })
 
-const statusColorClass = computed(() => {
-  const status = characterStatus.value
-  if (status === 'online') return 'text-success'
-  if (status === 'away') return 'text-warning'
-  return 'text-error'
-})
-
 // 作息表資訊
 const scheduleInfo = computed(() => {
   if (!character.value?.activePeriods || character.value.activePeriods.length === 0) {
