@@ -90,10 +90,10 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
   function deduplicateMentions(content: string): string {
     const mentionedIds = new Set<string>()
 
-    // 使用正則表達式找到所有 @ 提及（支援數字 ID 和 UUID 格式）
-    // 匹配 @數字 或 @UUID（包含字母、數字、連字符）
-    return content.replace(/@([a-f0-9-]+|\d+)/gi, (match, id) => {
-      const normalizedId = id.toLowerCase() // UUID 不分大小寫
+    // 使用正則表達式找到所有 @ 提及
+    // 匹配 @user, @all, @數字, @UUID（包含所有字母、數字、連字符）
+    return content.replace(/@([a-zA-Z0-9-]+)/g, (match, id) => {
+      const normalizedId = id.toLowerCase() // ID 不分大小寫
       if (mentionedIds.has(normalizedId)) {
         // 如果已經提到過這個 ID，移除整個 @ 提及
         return ''
