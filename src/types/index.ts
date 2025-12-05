@@ -128,13 +128,16 @@ export interface ChatRoom {
   lastMessageAt: string
 }
 
+export type MessageType = 'user' | 'character' | 'system'
+
 export interface Message {
   id: string
   roomId: string
-  senderId: string  // 'user' or characterId
+  senderId: string  // 'user' or characterId or 'system'
   senderName: string
   content: string
   timestamp: string
+  type?: MessageType  // 訊息類型，預設為 user/character，系統訊息為 system
 
   mentionedCharacterIds?: string[]
   replyToMessageId?: string

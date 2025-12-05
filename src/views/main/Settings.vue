@@ -606,6 +606,10 @@ const handleGoogleRestore = async () => {
             <span class="tech-tag">Pinia</span>
             <span class="tech-tag">Gemini 2.5</span>
           </div>
+          <p><strong>AI協作者</strong></p>
+          <div class="tech-tags">
+            <span class="tech-tag">Claude Code</span>
+          </div>
         </div>
       </div>
     </div>

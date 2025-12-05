@@ -156,10 +156,73 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     }
   }
 
-  function addMemberToRoom(roomId: string, characterId: string) {
+  /**
+   * 更新訊息內容
+   */
+  function updateMessage(roomId: string, messageId: string, newContent: string) {
+    if (!messages.value[roomId]) return
+
+    const message = messages.value[roomId].find(m => m.id === messageId)
+    if (message) {
+      message.content = newContent
+    }
+  }
+
+  /**
+   * 新增系統訊息
+   */
+  function addSystemMessage(roomId: string, content: string) {
+    if (!messages.value[roomId]) {
+      messages.value[roomId] = []
+    }
+
+    const systemMessage = {
+      id: uuidv4(),
+      roomId,
+      senderId: 'system',
+      senderName: '系統',
+      content,
+      timestamp: new Date().toISOString(),
+      type: 'system' as const
+    }
+
+    messages.value[roomId].push(systemMessage)
+
+    // 更新聊天室的最後訊息時間
+    const room = chatRooms.value.find(r => r.id === roomId)
+    if (room) {
+      room.lastMessageAt = systemMessage.timestamp
+    }
+  }
+
+  /**
+   * 新增成員到群組（會產生系統訊息）
+   */
+  function addMemberToRoom(roomId: string, characterId: string, characterName: string) {
     const room = chatRooms.value.find(r => r.id === roomId)
     if (room && !room.characterIds.includes(characterId)) {
       room.characterIds.push(characterId)
+
+      // 只在群組聊天室產生系統訊息
+      if (room.type === 'group') {
+        addSystemMessage(roomId, `${characterName} 加入了群組`)
+      }
+    }
+  }
+
+  /**
+   * 更新聊天室名稱（會產生系統訊息）
+   */
+  function updateRoomName(roomId: string, newName: string) {
+    const room = chatRooms.value.find(r => r.id === roomId)
+    if (room) {
+      const oldName = room.name
+      room.name = newName
+
+      // 只在群組聊天室產生系統訊息
+      if (room.type === 'group') {
+        addSystemMessage(roomId, `群組名稱從「${oldName}」變更為「${newName}」`)
+      }
     }
   }
 
@@ -187,10 +250,13 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     deleteChatRoom,
     setCurrentRoom,
     addMessage,
+    updateMessage,
+    addSystemMessage,
     deleteMessage,
     deleteMessages,
     clearMessages,
     addMemberToRoom,
+    updateRoomName,
     clearAllData
   }
 }, {

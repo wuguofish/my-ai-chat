@@ -568,6 +568,39 @@ export function determineRespondingCharacters(
   // 3. 在線的角色全部加入回應列表
   respondingIds.push(...onlineCharacters.map(c => c.id))
 
+  // 4. 處理未被 @ 的 away 和 offline 角色
+  const notMentionedCharacters = allCharacters.filter(char => !mentionedIds.includes(char.id))
+
+  notMentionedCharacters.forEach(char => {
+    const status = getCharacterStatus(char)
+
+    // 已經是 online 的角色已經在上面處理過了，跳過
+    if (status === 'online') return
+
+    // away 角色：20% 機率回應
+    if (status === 'away') {
+      const probability = 0.2
+      if (Math.random() < probability) {
+        respondingIds.push(char.id)
+      }
+      // 無論是否回應，都要加入 unableToRespond 清單
+      unableToRespond.push({
+        characterId: char.id,
+        characterName: char.name,
+        reason: 'away'
+      })
+    }
+
+    // offline 角色：加入 unableToRespond 清單（不會回應）
+    if (status === 'offline') {
+      unableToRespond.push({
+        characterId: char.id,
+        characterName: char.name,
+        reason: 'offline'
+      })
+    }
+  })
+
   return { respondingIds, unableToRespond }
 }
 

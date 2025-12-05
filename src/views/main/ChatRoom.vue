@@ -20,7 +20,7 @@ import {
 } from '@/utils/chatHelpers'
 import { getCharacterResponse } from '@/services/gemini'
 import { generateMemorySummary, extractLongTermMemories } from '@/services/memoryService'
-import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users } from 'lucide-vue-next'
+import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users, Pencil } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -161,6 +161,14 @@ const selectedMessageForMenu = ref<string | null>(null)
 const menuPosition = ref({ x: 0, y: 0 })
 const isMultiSelectMode = ref(false)
 const selectedMessagesForDelete = ref<Set<string>>(new Set())
+
+// 訊息編輯
+const editingMessageId = ref<string | null>(null)
+const editingMessageContent = ref('')
+
+// 群組名稱編輯
+const editingGroupName = ref(false)
+const editingGroupNameContent = ref('')
 
 // 群組成員 Modal
 const showMembersModal = ref(false)
@@ -1055,7 +1063,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 // 訊息長按/點擊事件
 const handleMessageLongPress = (messageId: string, event: MouseEvent | TouchEvent) => {
-  if (isMultiSelectMode.value) return
+  if (isMultiSelectMode.value || editingMessageId.value) return
 
   selectedMessageForMenu.value = messageId
 
@@ -1071,7 +1079,7 @@ const handleMessageLongPress = (messageId: string, event: MouseEvent | TouchEven
 
 // Touch 事件處理（iOS 支援）
 const handleTouchStart = (messageId: string, event: TouchEvent) => {
-  if (isMultiSelectMode.value) return
+  if (isMultiSelectMode.value || editingMessageId.value) return
 
   longPressTriggered.value = false
 
@@ -1125,6 +1133,40 @@ const handleCopyMessage = () => {
   }
 
   closeMessageMenu()
+}
+
+// 開始編輯訊息
+const handleEditMessage = () => {
+  if (!selectedMessageForMenu.value) return
+
+  const message = messages.value.find(m => m.id === selectedMessageForMenu.value)
+  if (message) {
+    editingMessageId.value = message.id
+    editingMessageContent.value = message.content
+  }
+
+  closeMessageMenu()
+}
+
+// 儲存編輯的訊息
+const handleSaveEdit = () => {
+  if (!editingMessageId.value) return
+
+  const trimmedContent = editingMessageContent.value.trim()
+  if (trimmedContent.length === 0) {
+    // 如果內容為空，取消編輯
+    handleCancelEdit()
+    return
+  }
+
+  chatRoomStore.updateMessage(roomId.value, editingMessageId.value, trimmedContent)
+  handleCancelEdit()
+}
+
+// 取消編輯
+const handleCancelEdit = () => {
+  editingMessageId.value = null
+  editingMessageContent.value = ''
 }
 
 // 進入多選刪除模式
@@ -1217,8 +1259,12 @@ const handleAddMember = (characterId: string) => {
     return
   }
 
-  // 加入成員
-  chatRoomStore.addMemberToRoom(roomId.value, characterId)
+  // 取得角色資訊
+  const addedChar = characterStore.getCharacterById(characterId)
+  if (!addedChar) return
+
+  // 加入成員（會自動產生系統訊息）
+  chatRoomStore.addMemberToRoom(roomId.value, characterId, addedChar.name)
 
   // 初始化該角色的關係
   relationshipsStore.initUserCharacterRelationship(characterId)
@@ -1227,7 +1273,6 @@ const handleAddMember = (characterId: string) => {
   showAddMemberModal.value = false
 
   // 顯示提示
-  const addedChar = characterStore.getCharacterById(characterId)
   if (addedChar) {
     // 可選：加入系統訊息通知
     // chatRoomStore.addMessage(roomId.value, {
@@ -1236,6 +1281,40 @@ const handleAddMember = (characterId: string) => {
     //   type: 'system'
     // })
   }
+}
+
+// 開始編輯群組名稱
+const handleEditGroupName = () => {
+  if (!room.value) return
+  editingGroupName.value = true
+  editingGroupNameContent.value = room.value.name
+}
+
+// 儲存群組名稱
+const handleSaveGroupName = () => {
+  if (!room.value) return
+
+  const newName = editingGroupNameContent.value.trim()
+  if (newName.length === 0) {
+    alert('群組名稱不能為空')
+    return
+  }
+
+  if (newName === room.value.name) {
+    // 名稱沒有改變，直接取消編輯
+    editingGroupName.value = false
+    return
+  }
+
+  // 更新群組名稱（會自動產生系統訊息）
+  chatRoomStore.updateRoomName(roomId.value, newName)
+  editingGroupName.value = false
+}
+
+// 取消編輯群組名稱
+const handleCancelEditGroupName = () => {
+  editingGroupName.value = false
+  editingGroupNameContent.value = ''
 }
 
 // 返回列表
@@ -1307,7 +1386,28 @@ onMounted(() => {
           <span v-if="groupCharacters.length > 3" class="more-count">+{{ groupCharacters.length - 3 }}</span>
         </div>
         <div class="info">
-          <h2 class="name">{{ room.name }}</h2>
+          <!-- 編輯模式 -->
+          <div v-if="editingGroupName" class="group-name-edit">
+            <input
+              v-model="editingGroupNameContent"
+              type="text"
+              class="group-name-input"
+              placeholder="輸入群組名稱"
+              @keydown.enter="handleSaveGroupName"
+              @keydown.esc="handleCancelEditGroupName"
+            >
+            <div class="group-name-actions">
+              <button class="btn-sm btn-secondary" @click="handleCancelEditGroupName">取消</button>
+              <button class="btn-sm btn-primary" @click="handleSaveGroupName">儲存</button>
+            </div>
+          </div>
+          <!-- 一般顯示模式 -->
+          <div v-else class="group-name-display">
+            <h2 class="name">{{ room.name }}</h2>
+            <button class="btn-ghost btn-sm edit-name-btn" @click="handleEditGroupName">
+              <Pencil :size="14" />
+            </button>
+          </div>
           <p class="status">{{ groupCharacters.length }} 位成員</p>
         </div>
       </div>
@@ -1610,7 +1710,16 @@ onMounted(() => {
               <span class="sender-name">{{ message.senderName }}</span>
               <span class="message-time">{{ formatMessageTime(message.timestamp) }}</span>
             </div>
-            <div class="message-text" v-html="formatMessageContent(message.content)"></div>
+            <!-- 編輯模式 -->
+            <div v-if="editingMessageId === message.id" class="message-edit-container">
+              <textarea v-model="editingMessageContent" class="message-edit-input" rows="3" @keydown.ctrl.enter="handleSaveEdit" @keydown.esc="handleCancelEdit"></textarea>
+              <div class="message-edit-actions">
+                <button class="btn-sm btn-secondary" @click="handleCancelEdit">取消</button>
+                <button class="btn-sm btn-primary" @click="handleSaveEdit">儲存</button>
+              </div>
+            </div>
+            <!-- 一般顯示模式 -->
+            <div v-else class="message-text" v-html="formatMessageContent(message.content)"></div>
           </div>
         </div>
       </div>
@@ -1636,6 +1745,10 @@ onMounted(() => {
         <button class="menu-item" @click="handleCopyMessage">
           <Copy :size="18" />
           <span>複製</span>
+        </button>
+        <button class="menu-item" @click="handleEditMessage">
+          <Pencil :size="18" />
+          <span>編輯</span>
         </button>
         <button class="menu-item delete" @click="handleEnterDeleteMode">
           <Trash2 :size="18" />
@@ -1898,6 +2011,51 @@ onMounted(() => {
   margin-left: var(--spacing-xs);
 }
 
+/* 群組名稱編輯 */
+.group-name-display {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.edit-name-btn {
+  padding: var(--spacing-xs);
+  opacity: 0.6;
+  transition: opacity var(--transition);
+}
+
+.edit-name-btn:hover {
+  opacity: 1;
+}
+
+.group-name-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  width: 100%;
+}
+
+.group-name-input {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: var(--text-base);
+  font-weight: 600;
+  width: 100%;
+  max-width: 300px;
+}
+
+.group-name-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.group-name-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
 /* Loading 佔位頭像 */
 .typing-placeholder-avatar {
   width: 40px;
@@ -2067,6 +2225,38 @@ onMounted(() => {
   background: var(--color-bg-primary);
   color: var(--color-text-primary);
   box-shadow: var(--shadow-sm);
+}
+
+/* Message editing */
+.message-edit-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  width: 100%;
+}
+
+.message-edit-input {
+  width: 100%;
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: var(--text-base);
+  font-family: inherit;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 60px;
+}
+
+.message-edit-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.message-edit-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
 }
 
 /* Typing indicator */
