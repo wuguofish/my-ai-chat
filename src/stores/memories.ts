@@ -116,6 +116,53 @@ export const useMemoriesStore = defineStore('memories', () => {
   }
 
   /**
+   * 批次新增角色全域記憶（避免重複觸發狀態更新）
+   * @param contents - 記憶內容陣列
+   */
+  async function addCharacterMemories(
+    characterId: string,
+    contents: string[],
+    source: MemorySource = 'manual',
+    sourceRoomId?: string
+  ): Promise<Memory[]> {
+    const memories: Memory[] = []
+
+    if (!characterMemories.value[characterId]) {
+      characterMemories.value[characterId] = {
+        characterId,
+        importantMemories: [],
+        shortTermMemories: [],
+        updatedAt: new Date().toISOString()
+      }
+    }
+
+    // 批次新增記憶
+    for (const content of contents) {
+      const memory: Memory = {
+        id: uuidv4(),
+        content,
+        type: 'global',
+        source,
+        createdAt: new Date().toISOString(),
+        sourceRoomId
+      }
+      characterMemories.value[characterId].importantMemories.push(memory)
+      memories.push(memory)
+    }
+
+    characterMemories.value[characterId].updatedAt = new Date().toISOString()
+
+    // 批次新增完畢後，只觸發一次狀態更新
+    if (source === 'auto' && contents.length > 0) {
+      triggerStatusUpdate(characterId).catch((err: unknown) => {
+        console.warn('自動生成狀態訊息失敗:', err)
+      })
+    }
+
+    return memories
+  }
+
+  /**
    * 取得角色的短期記憶
    */
   function getCharacterShortTermMemories(characterId: string): Memory[] {
@@ -537,6 +584,7 @@ export const useMemoriesStore = defineStore('memories', () => {
     // Character Memories (Long-term)
     getCharacterMemories,
     addCharacterMemory,
+    addCharacterMemories,
     updateCharacterMemory,
     deleteCharacterMemory,
     clearCharacterMemories,

@@ -558,15 +558,13 @@ const processShortTermMemoriesForCharacter = async (characterId: string) => {
     // 呼叫 AI 提取長期記憶
     const longTermMemoryContents = await extractLongTermMemories(apiKey, shortTermMemories)
 
-    // 將提取的長期記憶存入角色記憶
-    for (const content of longTermMemoryContents) {
-      memoriesStore.addCharacterMemory(
-        characterId,
-        content,
-        'auto',
-        roomId.value
-      )
-    }
+    // 批次新增長期記憶（只會觸發一次狀態更新）
+    await memoriesStore.addCharacterMemories(
+      characterId,
+      longTermMemoryContents,
+      'auto',
+      roomId.value
+    )
 
     // 標記角色的所有短期記憶為已處理
     memoriesStore.markCharacterShortTermMemoriesAsProcessed(characterId)
