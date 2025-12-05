@@ -142,7 +142,7 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
       relevantRelationships.forEach(rel => {
         const otherChar = allCharacters.find(c => c.id === rel.toCharacterId)
         if (otherChar) {
-          parts.push(`\n- 與 ${otherChar.name}：${rel.description}${rel.note ? `（${rel.note}）` : ''}`)
+          parts.push(`\n- 與 ${otherChar.name}：${rel.description}；${rel.note ? `（${rel.note}）` : ''}`)
         }
       })
     }

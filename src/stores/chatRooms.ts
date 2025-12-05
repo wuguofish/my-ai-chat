@@ -129,6 +129,13 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     }
   }
 
+  function addMemberToRoom(roomId: string, characterId: string) {
+    const room = chatRooms.value.find(r => r.id === roomId)
+    if (room && !room.characterIds.includes(characterId)) {
+      room.characterIds.push(characterId)
+    }
+  }
+
   function clearAllData() {
     chatRooms.value = []
     messages.value = {}
@@ -156,6 +163,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     deleteMessage,
     deleteMessages,
     clearMessages,
+    addMemberToRoom,
     clearAllData
   }
 }, {

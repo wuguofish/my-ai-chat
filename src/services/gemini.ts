@@ -103,7 +103,7 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
         }
       ],
       generationConfig: {
-        temperature: 0.9,
+        temperature: 0.7,
         topP: 0.8,
         topK: 40,
         maxOutputTokens: character.maxOutputTokens || 2048

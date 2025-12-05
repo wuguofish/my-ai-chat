@@ -126,9 +126,11 @@ h1, h2, h3, h4, h5, h6,
   /* Z-index 層級 */
   --z-dropdown: 100;
   --z-sticky: 200;
-  --z-modal-backdrop: 900;
-  --z-modal: 1000;
-  --z-toast: 1100;
+  --z-panel-backdrop: 1000;  /* 面板遮罩 (情境、記憶等側邊面板) */
+  --z-panel: 1001;           /* 面板內容 */
+  --z-modal-backdrop: 1100;  /* Modal 遮罩 (在面板之上) */
+  --z-modal: 1101;           /* Modal 內容 */
+  --z-toast: 1200;           /* 提示訊息 (最上層) */
 
   /* 字體渲染優化 */
   font-synthesis: none;
@@ -574,7 +576,22 @@ textarea {
   background: var(--color-bg-hover);
 }
 
-/* Modal 彈窗 */
+/* Panel 面板遮罩（側邊面板、情境面板等） */
+.panel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-panel-backdrop);
+  padding: var(--spacing-xl);
+}
+
+/* Modal 彈窗（在 Panel 之上） */
 .modal-overlay {
   position: fixed;
   top: 0;

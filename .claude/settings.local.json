@@ -9,7 +9,9 @@
       "Bash(npm run build:*)",
       "Bash(npm run type-check:*)",
       "Bash(npm run:*)",
-      "Bash(npx vue-tsc:*)"
+      "Bash(npx vue-tsc:*)",
+      "Bash(findstr:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

@@ -246,6 +246,14 @@ const saveTrackingData = (key: string, data: Record<string, number>) => {
   }
 }
 
+const getGenderText = (gender?: string) => {
+  switch (gender) {
+    case 'male': return '男'
+    case 'female': return '女'
+    default: return '未設定'
+  }
+}
+
 const lastMemoryProcessedCount = ref<Record<string, number>>(loadTrackingData(MEMORY_TRACKING_KEY))
 const lastContextProcessedCount = ref<Record<string, number>>(loadTrackingData(CONTEXT_TRACKING_KEY))
 
@@ -1085,6 +1093,76 @@ const handleBatchDelete = () => {
   selectedMessagesForDelete.value.clear()
 }
 
+// 刪除聊天室
+const showDeleteRoomConfirm = ref(false)
+
+const handleDeleteRoom = () => {
+  showDeleteRoomConfirm.value = true
+}
+
+const confirmDeleteRoom = () => {
+  if (!room.value) return
+
+  // 清除情境記憶
+  memoriesStore.clearRoomData(roomId.value)
+
+  // 刪除聊天室（會自動刪除訊息）
+  chatRoomStore.deleteChatRoom(roomId.value)
+
+  // 關閉對話框並返回列表
+  showDeleteRoomConfirm.value = false
+  router.push('/main/chats')
+}
+
+const cancelDeleteRoom = () => {
+  showDeleteRoomConfirm.value = false
+}
+
+// 新增成員（僅群組）
+const showAddMemberModal = ref(false)
+
+const availableCharactersToAdd = computed(() => {
+  if (!room.value || room.value.type !== 'group') return []
+
+  const currentMemberIds = new Set(room.value.characterIds)
+  return characterStore.characters.filter(char => !currentMemberIds.has(char.id))
+})
+
+const handleShowAddMember = () => {
+  showAddMemberModal.value = true
+}
+
+const handleAddMember = (characterId: string) => {
+  if (!room.value) return
+
+  // 檢查人數限制
+  const MAX_GROUP_MEMBERS = 15
+  if (room.value.characterIds.length >= MAX_GROUP_MEMBERS) {
+    alert(`群組成員已達上限（${MAX_GROUP_MEMBERS} 人）`)
+    return
+  }
+
+  // 加入成員
+  chatRoomStore.addMemberToRoom(roomId.value, characterId)
+
+  // 初始化該角色的關係
+  relationshipsStore.initUserCharacterRelationship(characterId)
+
+  // 關閉對話框
+  showAddMemberModal.value = false
+
+  // 顯示提示
+  const addedChar = characterStore.getCharacterById(characterId)
+  if (addedChar) {
+    // 可選：加入系統訊息通知
+    // chatRoomStore.addMessage(roomId.value, {
+    //   senderId: 'system',
+    //   content: `${addedChar.name} 加入了聊天室`,
+    //   type: 'system'
+    // })
+  }
+}
+
 // 返回列表
 const handleBack = () => {
   router.push('/main/chats')
@@ -1198,6 +1276,17 @@ onMounted(() => {
             <p>💡 聊天室情境會提供給 AI，幫助好友理解目前的對話背景</p>
           </div>
 
+          <div v-if="!editingContext" class="panel-actions">
+            <button class="btn btn-success" @click="handleGenerateContext" :disabled="isGeneratingContext">
+              {{ isGeneratingContext ? '生成中...' : '自動生成情境' }}
+            </button>
+            <button class="btn btn-primary" @click="editingContext = true">編輯情境</button>
+          </div>
+          <div v-else class="panel-actions">
+            <button class="btn btn-success" @click="handleSaveContext">儲存</button>
+            <button class="btn btn-secondary" @click="editingContext = false">取消</button>
+          </div>
+
           <div v-if="!editingContext" class="context-view">
             <div v-if="editingContextContent.trim()" class="context-display">
               {{ editingContextContent }}
@@ -1211,15 +1300,11 @@ onMounted(() => {
               placeholder="輸入聊天室情境...（例如：大家正在討論週末的旅遊計畫）"></textarea>
           </div>
         </div>
-        <div v-if="!editingContext" class="panel-actions">
-          <button class="btn btn-success" @click="handleGenerateContext" :disabled="isGeneratingContext">
-            {{ isGeneratingContext ? '生成中...' : '自動生成情境' }}
-          </button>
-          <button class="btn btn-primary" @click="editingContext = true">編輯情境</button>
-        </div>
-        <div v-else class="panel-actions">
-          <button class="btn btn-success" @click="handleSaveContext">儲存</button>
-          <button class="btn btn-secondary" @click="editingContext = false">取消</button>
+
+
+        <!-- 刪除聊天室按鈕 -->
+        <div class="panel-footer">
+          <button class="btn btn-danger" @click="handleDeleteRoom">刪除聊天室</button>
         </div>
       </div>
     </div>
@@ -1324,6 +1409,11 @@ onMounted(() => {
               </button>
             </div>
           </div>
+        </div>
+
+        <!-- 群聊：新增成員按鈕 -->
+        <div v-if="room.type === 'group'" class="panel-actions">
+          <button class="btn btn-primary" @click="handleShowAddMember">新增成員</button>
         </div>
       </div>
     </div>
@@ -1528,6 +1618,53 @@ onMounted(() => {
                   {{ getCharacterStatus(char) === 'online' ? '在線' : getCharacterStatus(char) === 'away' ? '忙碌中' : '離線'
                   }}
                 </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 刪除聊天室確認對話框 -->
+    <div v-if="showDeleteRoomConfirm" class="modal-overlay" @click="cancelDeleteRoom">
+      <div class="modal-content confirm-modal" @click.stop>
+        <div class="modal-header">
+          <h3>刪除聊天室</h3>
+        </div>
+        <div class="modal-body">
+          <p>確定要刪除此聊天室嗎？</p>
+          <p class="warning-text">此操作將會刪除所有訊息和情境記憶，且無法復原！</p>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-danger" @click="confirmDeleteRoom">確定刪除</button>
+          <button class="btn btn-secondary" @click="cancelDeleteRoom">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新增成員 Modal -->
+    <div v-if="showAddMemberModal" class="modal-overlay" @click="showAddMemberModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>新增成員</h3>
+          <button class="modal-close" @click="showAddMemberModal = false">✕</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="availableCharactersToAdd.length === 0" class="empty-state">
+            <p>沒有可加入的好友</p>
+            <p class="hint">所有好友都已經在這個聊天室中了</p>
+          </div>
+          <div v-else class="members-list">
+            <div v-for="char in availableCharactersToAdd" :key="char.id" class="member-item clickable"
+              @click="handleAddMember(char.id)">
+              <div class="member-avatar">
+                <img
+                  :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`"
+                  :alt="char.name">
+              </div>
+              <div class="member-info">
+                <h4 class="member-name">{{ char.name }}</h4>
+                <p class="member-desc">{{ char.age}}, {{ getGenderText(char.gender)}}, {{char.profession}}</p>
               </div>
             </div>
           </div>
@@ -2383,16 +2520,8 @@ onMounted(() => {
 
 /* 面板遮罩 */
 .panel-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  z-index: 1000;
+  /* 基本樣式繼承自全域 style.css，這裡只覆蓋特定屬性 */
+  align-items: flex-end;  /* 面板從底部滑出 */
   animation: fadeIn 0.2s ease-out;
 }
 
@@ -2795,5 +2924,53 @@ onMounted(() => {
   }
 }
 
+/* 面板底部 */
+.panel-footer {
+  padding: var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+  margin-top: auto;
+}
+
+.panel-footer .btn {
+  width: 100%;
+}
+
+/* 確認對話框樣式 */
+.confirm-modal {
+  max-width: 400px;
+}
+
+.warning-text {
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.modal-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+}
+
+.modal-actions .btn {
+  flex: 1;
+}
+
+/* 成員列表可點擊樣式 */
+.member-item.clickable {
+  cursor: pointer;
+  transition: background-color var(--transition);
+}
+
+.member-item.clickable:hover {
+  background-color: var(--color-bg-secondary);
+}
+
+.member-desc {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin-top: var(--spacing-xs);
+}
 
 </style>
