@@ -146,8 +146,8 @@ const formatDate = (dateString: string) => {
   <div v-if="character" class="memory-manager">
     <!-- 標題列 -->
     <PageHeader :title="`${character.name} 的記憶`">
-      <template #back-button>
-        <button class="back-btn" @click="handleBack">
+      <template #actions>
+        <button class="btn btn-primary-outline btn-sm" @click="handleBack">
           ← 返回
         </button>
       </template>
@@ -277,17 +277,6 @@ const formatDate = (dateString: string) => {
 .memory-manager {
   min-height: 100vh;
   background: var(--color-bg-secondary);
-}
-
-/* 覆寫 PageHeader 內的返回按鈕樣式 */
-.memory-manager :deep(.back-btn) {
-  background: rgba(255, 255, 255, 0.2);
-  color: var(--color-text-white);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.memory-manager :deep(.back-btn:hover) {
-  background: rgba(255, 255, 255, 0.3);
 }
 
 .info-box {
