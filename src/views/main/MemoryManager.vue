@@ -46,7 +46,7 @@ onMounted(() => {
 })
 
 const handleBack = () => {
-  router.push(`/main/characters/${characterId.value}`)
+  router.back()
 }
 
 // 新增記憶
@@ -279,14 +279,15 @@ const formatDate = (dateString: string) => {
   background: var(--color-bg-secondary);
 }
 
-.header-content {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-lg);
+/* 覆寫 PageHeader 內的返回按鈕樣式 */
+.memory-manager :deep(.back-btn) {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--color-text-white);
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
-.header-content h1 {
-  margin: 0;
+.memory-manager :deep(.back-btn:hover) {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .info-box {
