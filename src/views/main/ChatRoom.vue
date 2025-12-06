@@ -1907,7 +1907,6 @@ onMounted(() => {
   gap: var(--spacing-md);
   min-width: 0;
   overflow: hidden;
-  flex: 1;
 }
 
 .chat-header-info .avatar-wrapper {
@@ -1957,7 +1956,7 @@ onMounted(() => {
   flex-direction: column;
   gap: var(--spacing-xs);
   min-width: 0;
-  overflow: hidden;
+  max-width: 50vw;
 }
 
 .chat-header-info .name {
@@ -1965,9 +1964,6 @@ onMounted(() => {
   font-weight: 600;
   color: var(--color-text-primary);
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .chat-header-info .status {
