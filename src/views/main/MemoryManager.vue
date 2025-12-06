@@ -46,7 +46,7 @@ onMounted(() => {
 })
 
 const handleBack = () => {
-  router.push(`/main/characters/${characterId.value}`)
+  router.back()
 }
 
 // 新增記憶
@@ -146,8 +146,8 @@ const formatDate = (dateString: string) => {
   <div v-if="character" class="memory-manager">
     <!-- 標題列 -->
     <PageHeader :title="`${character.name} 的記憶`">
-      <template #back-button>
-        <button class="back-btn" @click="handleBack">
+      <template #actions>
+        <button class="btn btn-primary-outline btn-sm" @click="handleBack">
           ← 返回
         </button>
       </template>
@@ -277,16 +277,6 @@ const formatDate = (dateString: string) => {
 .memory-manager {
   min-height: 100vh;
   background: var(--color-bg-secondary);
-}
-
-.header-content {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-lg);
-}
-
-.header-content h1 {
-  margin: 0;
 }
 
 .info-box {

@@ -346,7 +346,7 @@ const handleDelete = () => {
 }
 
 const handleBack = () => {
-  router.back()
+  router.push('/main/characters')
 }
 
 const getGenderText = (gender?: string) => {
