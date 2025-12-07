@@ -582,13 +582,14 @@ export function determineRespondingCharacters(
       const probability = 0.2
       if (Math.random() < probability) {
         respondingIds.push(char.id)
+      } else {
+        // 只有當角色確定不回應時，才加入 unableToRespond 清單
+        unableToRespond.push({
+          characterId: char.id,
+          characterName: char.name,
+          reason: 'away'
+        })
       }
-      // 無論是否回應，都要加入 unableToRespond 清單
-      unableToRespond.push({
-        characterId: char.id,
-        characterName: char.name,
-        reason: 'away'
-      })
     }
 
     // offline 角色：加入 unableToRespond 清單（不會回應）
