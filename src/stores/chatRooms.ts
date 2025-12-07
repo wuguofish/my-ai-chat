@@ -12,6 +12,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
   const chatRooms = ref<ChatRoom[]>([])
   const messages = ref<Record<string, Message[]>>({})
   const currentRoomId = ref<string | null>(null)
+  const drafts = ref<Record<string, string>>({}) // 草稿訊息，key 為 roomId
 
   // Getters
   const currentRoom = computed(() => {
@@ -230,6 +231,24 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     chatRooms.value = []
     messages.value = {}
     currentRoomId.value = null
+    drafts.value = {}
+  }
+
+  // 草稿相關函數
+  function getDraft(roomId: string): string {
+    return drafts.value[roomId] || ''
+  }
+
+  function setDraft(roomId: string, content: string) {
+    if (content.trim()) {
+      drafts.value[roomId] = content
+    } else {
+      delete drafts.value[roomId]
+    }
+  }
+
+  function clearDraft(roomId: string) {
+    delete drafts.value[roomId]
   }
 
   return {
@@ -237,6 +256,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     chatRooms,
     messages,
     currentRoomId,
+    drafts,
     // Getters
     currentRoom,
     currentMessages,
@@ -257,7 +277,11 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     clearMessages,
     addMemberToRoom,
     updateRoomName,
-    clearAllData
+    clearAllData,
+    // 草稿相關
+    getDraft,
+    setDraft,
+    clearDraft
   }
 }, {
   persist: {

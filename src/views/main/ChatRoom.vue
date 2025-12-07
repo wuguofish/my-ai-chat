@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
@@ -590,6 +590,9 @@ const handleSendMessage = async () => {
 
   const userMessage = messageInput.value.trim()
   messageInput.value = ''
+
+  // 清除草稿（訊息已發送）
+  chatRoomStore.clearDraft(roomId.value)
 
   // 判斷是單人還是群組聊天
   if (room.value.type === 'single') {
@@ -1342,6 +1345,22 @@ onMounted(() => {
 
   chatRoomStore.setCurrentRoom(roomId.value)
   scrollToBottom()
+
+  // 載入草稿訊息
+  const draft = chatRoomStore.getDraft(roomId.value)
+  if (draft) {
+    messageInput.value = draft
+  }
+})
+
+// 監聽輸入框變化，即時保存草稿
+watch(messageInput, (newValue) => {
+  chatRoomStore.setDraft(roomId.value, newValue)
+})
+
+// 離開頁面前保存草稿
+onBeforeUnmount(() => {
+  chatRoomStore.setDraft(roomId.value, messageInput.value)
 })
 </script>
 
