@@ -669,6 +669,30 @@ export function shuffle<T>(array: T[]): T[] {
 }
 
 /**
+ * 洗牌並避免指定元素成為首發
+ * 用於群聊中避免本輪首發者與前一輪最後發言人相同，防止 AI 詞窮重複輸出
+ * @param array 要洗牌的陣列
+ * @param avoidFirst 要避免成為首發的元素
+ * @returns 洗牌後的陣列
+ */
+export function shuffleAvoidFirst<T>(array: T[], avoidFirst: T | undefined): T[] {
+  const result = shuffle(array);
+
+  // 如果陣列長度小於 2，無法調整順序
+  if (result.length < 2 || avoidFirst === undefined) {
+    return result;
+  }
+
+  // 如果首發者與要避免的元素相同，將其移到陣列末尾
+  if (result[0] === avoidFirst) {
+    const first = result.shift()!;
+    result.push(first);
+  }
+
+  return result;
+}
+
+/**
  * 生成角色狀態訊息的上下文資訊
  */
 export interface StatusMessageContext {
