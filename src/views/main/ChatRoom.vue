@@ -16,7 +16,7 @@ import {
   parseMentionedCharacterIds,
   isCharacterOnline,
   getCharacterStatus,
-  shuffle
+  shuffleAvoidFirst
 } from '@/utils/chatHelpers'
 import { getCharacterResponse } from '@/services/gemini'
 import { generateMemorySummary, extractLongTermMemories } from '@/services/memoryService'
@@ -847,8 +847,14 @@ const handleGroupChatMessage = async (userMessage: string) => {
       // 記錄這一輪是否為第一個角色（只有第一輪的第一個角色需要傳入 userMessage）
       let isFirstCharacterInThisRound = true
 
-      // 打亂responding的順序
-      respondingCharacterIds = shuffle(respondingCharacterIds)
+      // 取得前一輪最後一個發言人的 ID（用於避免本輪首發者與其相同，防止 AI 詞窮重複輸出）
+      const lastEntry = conversationHistory[conversationHistory.length - 1]
+      const lastSpeakerId = lastEntry?.senderId
+      // 只有當最後發言人不是 user 時才需要避免（因為 user 不會回應）
+      const avoidFirstId = lastSpeakerId !== 'user' ? lastSpeakerId : undefined
+
+      // 打亂 responding 的順序，並避免本輪首發者與前一輪最後發言人相同
+      respondingCharacterIds = shuffleAvoidFirst(respondingCharacterIds, avoidFirstId)
 
       // 依序讓角色回應
       for (const charId of respondingCharacterIds) {
