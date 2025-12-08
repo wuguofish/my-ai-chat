@@ -146,6 +146,10 @@ const handleSubmit = () => {
     isPrivate: originalCharacter?.isPrivate,
     importedMetadata: originalCharacter?.importedMetadata,
 
+    // 保留狀態訊息（如果是編輯模式）
+    statusMessage: originalCharacter?.statusMessage,
+    statusUpdatedAt: originalCharacter?.statusUpdatedAt,
+
     createdAt: originalCharacter?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }

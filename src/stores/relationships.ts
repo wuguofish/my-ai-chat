@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import type {
   UserCharacterRelationship,
   CharacterRelationship,
+  CharacterRelationType,
   RelationshipLevel
 } from '@/types'
 import { getRelationshipLevelByAffection } from '@/utils/relationshipHelpers'
@@ -29,6 +30,24 @@ export const useRelationshipsStore = defineStore('relationships', {
       return state.characterToCharacter.filter(
         r => r.fromCharacterId === characterId || r.toCharacterId === characterId
       )
+    },
+
+    // 取得兩個角色之間的關係（單向：from → to）
+    getRelationshipBetween: (state) => (fromId: string, toId: string) => {
+      return state.characterToCharacter.find(
+        r => r.fromCharacterId === fromId && r.toCharacterId === toId
+      )
+    },
+
+    // 取得兩個角色對彼此的關係（雙向查詢）
+    getRelationshipPair: (state) => (char1Id: string, char2Id: string) => {
+      const fromChar1 = state.characterToCharacter.find(
+        r => r.fromCharacterId === char1Id && r.toCharacterId === char2Id
+      )
+      const fromChar2 = state.characterToCharacter.find(
+        r => r.fromCharacterId === char2Id && r.toCharacterId === char1Id
+      )
+      return { fromChar1, fromChar2 }
     },
 
     // 根據好感度計算關係等級（使用統一的 helper 函數）
@@ -221,6 +240,73 @@ export const useRelationshipsStore = defineStore('relationships', {
       this.characterToCharacter = this.characterToCharacter.filter(
         r => r.fromCharacterId !== characterId && r.toCharacterId !== characterId
       )
+    },
+
+    // 更新角色關係的 LLM 狀態（如果關係不存在會自動建立）
+    updateRelationshipState(
+      fromId: string,
+      toId: string,
+      type: CharacterRelationType,
+      state?: string
+    ) {
+      const existing = this.characterToCharacter.find(
+        r => r.fromCharacterId === fromId && r.toCharacterId === toId
+      )
+
+      if (existing) {
+        const oldType = existing.relationshipType
+        // 更新現有關係
+        existing.relationshipType = type
+        if (state !== undefined) {
+          existing.state = state
+        }
+        existing.updatedAt = Date.now()
+
+        // 如果關係類型改變了，觸發雙方的狀態訊息更新
+        if (oldType !== type) {
+          console.log(`✨ 角色間關係類型變化: ${oldType} → ${type} (${fromId} → ${toId})`)
+          // 觸發 fromId 角色的狀態訊息更新
+          this.triggerStatusUpdateOnRelationshipChange(fromId).catch((err: unknown) => {
+            console.warn('角色間關係變化時自動生成狀態訊息失敗:', err)
+          })
+          // 也觸發 toId 角色的狀態訊息更新（被影響的一方）
+          this.triggerStatusUpdateOnRelationshipChange(toId).catch((err: unknown) => {
+            console.warn('角色間關係變化時自動生成狀態訊息失敗:', err)
+          })
+        }
+      } else {
+        // 建立新關係
+        this.characterToCharacter.push({
+          fromCharacterId: fromId,
+          toCharacterId: toId,
+          relationshipType: type,
+          description: '',
+          state,
+          updatedAt: Date.now()
+        })
+
+        // 新建立的關係也觸發狀態訊息更新（如果不是 neutral）
+        if (type !== 'neutral') {
+          console.log(`✨ 角色間新關係建立: ${type} (${fromId} → ${toId})`)
+          this.triggerStatusUpdateOnRelationshipChange(fromId).catch((err: unknown) => {
+            console.warn('新關係建立時自動生成狀態訊息失敗:', err)
+          })
+          this.triggerStatusUpdateOnRelationshipChange(toId).catch((err: unknown) => {
+            console.warn('新關係建立時自動生成狀態訊息失敗:', err)
+          })
+        }
+      }
+    },
+
+    // 刪除角色關係的 LLM 狀態（只刪除 state，保留關係本身）
+    deleteRelationshipState(fromId: string, toId: string) {
+      const existing = this.characterToCharacter.find(
+        r => r.fromCharacterId === fromId && r.toCharacterId === toId
+      )
+      if (existing) {
+        delete existing.state
+        existing.updatedAt = Date.now()
+      }
     },
 
     // 清空所有關係資料

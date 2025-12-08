@@ -18,8 +18,9 @@ import {
   getCharacterStatus,
   shuffleAvoidFirst
 } from '@/utils/chatHelpers'
+import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import { getCharacterResponse } from '@/services/gemini'
-import { generateMemorySummary, extractLongTermMemories } from '@/services/memoryService'
+import { generateMemorySummary, extractLongTermMemories, evaluateCharacterRelationships } from '@/services/memoryService'
 import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users, Pencil } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -107,6 +108,43 @@ const getMemberStatusColorClass = (character: Character) => {
   if (status === 'online') return 'text-success'
   if (status === 'away') return 'text-warning'
   return 'text-error'
+}
+
+// 取得單人聊天角色的好感度和關係資訊（用於 header 顯示）
+const characterRelationshipDisplay = computed(() => {
+  if (!character.value) return null
+  const relationship = relationshipsStore.getUserCharacterRelationship(character.value.id)
+  if (!relationship) {
+    return {
+      name: '陌生人',
+      affection: 0,
+      color: '#999999'
+    }
+  }
+  const levelInfo = getRelationshipLevelInfo(relationship.level, relationship.isRomantic)
+  return {
+    name: levelInfo.name,
+    affection: relationship.affection,
+    color: levelInfo.color
+  }
+})
+
+// 取得群聊成員的好感度和關係資訊
+const getMemberRelationship = (characterId: string) => {
+  const relationship = relationshipsStore.getUserCharacterRelationship(characterId)
+  if (!relationship) {
+    return {
+      name: '陌生人',
+      affection: 0,
+      color: '#999999'
+    }
+  }
+  const levelInfo = getRelationshipLevelInfo(relationship.level, relationship.isRomantic)
+  return {
+    name: levelInfo.name,
+    affection: relationship.affection,
+    color: levelInfo.color
+  }
 }
 
 // 取得訊息發送者的頭像
@@ -395,15 +433,16 @@ const scrollToBottom = async () => {
 
 // 記憶處理：每 15 則訊息生成短期記憶
 // targetRoomId: 可選參數，指定要處理的聊天室 ID（背景執行時使用）
-const handleMemoryGeneration = async (targetRoomId?: string) => {
+// 回傳值：true 表示成功處理或不需要處理，false 表示處理失敗
+const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> => {
   const processRoomId = targetRoomId || roomId.value
   const targetRoom = chatRoomStore.getRoomById(processRoomId)
   const currentMessages = chatRoomStore.getMessagesByRoomId(processRoomId)
 
   const messageCount = currentMessages.length
 
-  // 如果訊息數量不足 15 則，就不處理
-  if (messageCount < 15) return
+  // 如果訊息數量不足 15 則，就不處理（視為成功，不需要處理）
+  if (messageCount < 15) return true
 
   // 取得這個聊天室上次處理的訊息數量
   const lastProcessed = lastMemoryProcessedCount.value[processRoomId] || 0
@@ -411,14 +450,14 @@ const handleMemoryGeneration = async (targetRoomId?: string) => {
   // 計算應該在哪個訊息數量觸發（每 15 則一次）
   const nextThreshold = Math.floor(lastProcessed / 15 + 1) * 15
 
-  // 如果還沒達到下個門檻，就不處理
-  if (messageCount < nextThreshold) return
-
   console.log(`[記憶] 聊天室 ${processRoomId}: 訊息數 ${messageCount}，上次處理 ${lastProcessed}，門檻 ${nextThreshold}`)
+
+  // 如果還沒達到下個門檻，就不處理（視為成功，不需要處理）
+  if (messageCount < nextThreshold) return true
 
   try {
     const apiKey = userStore.apiKey
-    if (!apiKey) return
+    if (!apiKey) return true  // 沒有 API key，視為成功（不需要處理）
 
     // 取得最近 15 則訊息
     const recentMessages = currentMessages.slice(-15)
@@ -430,7 +469,7 @@ const handleMemoryGeneration = async (targetRoomId?: string) => {
     if (targetRoom?.type === 'single') {
       // 私聊：為單一角色生成記憶
       const targetCharacterId = targetRoom.characterIds[0]
-      if (!targetCharacterId) return
+      if (!targetCharacterId) return true  // 沒有角色，視為成功（不需要處理）
 
       const result = memoriesStore.addCharacterShortTermMemory(
         targetCharacterId,
@@ -493,9 +532,11 @@ const handleMemoryGeneration = async (targetRoomId?: string) => {
     lastMemoryProcessedCount.value[processRoomId] = messageCount
     saveTrackingData(MEMORY_TRACKING_KEY, lastMemoryProcessedCount.value)
     console.log(`[記憶] 已更新處理記錄: ${processRoomId} -> ${messageCount}`)
+    return true  // 成功
   } catch (error) {
     console.error('記憶生成失敗:', error)
-    // 靜默失敗，不影響正常對話
+    // 靜默失敗，不影響正常對話，但回傳失敗狀態
+    return false
   }
 }
 
@@ -520,11 +561,11 @@ const handleRoomContextGeneration = async (targetRoomId?: string) => {
   // 計算應該在哪個訊息數量觸發（每 30 則一次）
   const nextThreshold = Math.floor(lastProcessed / 30 + 1) * 30
 
-  // 如果還沒達到下個門檻，就不處理
-  if (messageCount < nextThreshold) return
-
   console.log(`[情境] 聊天室 ${processRoomId}: 訊息數 ${messageCount}，上次處理 ${lastProcessed}，門檻 ${nextThreshold}`)
 
+  // 如果還沒達到下個門檻，就不處理
+  if (messageCount < nextThreshold) return
+  
   try {
     const apiKey = userStore.apiKey
     if (!apiKey) return
@@ -540,6 +581,33 @@ const handleRoomContextGeneration = async (targetRoomId?: string) => {
     // 只有在當前聊天室時才更新 UI
     if (processRoomId === roomId.value) {
       editingContextContent.value = summary
+    }
+
+    // 評估角色間關係（群聊才需要）
+    if (targetRoom.characterIds.length >= 2) {
+      const characters = targetRoom.characterIds
+        .map(id => characterStore.getCharacterById(id))
+        .filter((c): c is NonNullable<typeof c> => c !== null)
+
+      // 背景執行關係評估，不阻塞主流程
+      evaluateCharacterRelationships(apiKey, characters, recentMessages)
+        .then(relationships => {
+          if (relationships.length > 0) {
+            console.log(`[關係] 評估完成，共 ${relationships.length} 對關係`)
+            // 更新到 store
+            for (const rel of relationships) {
+              relationshipsStore.updateRelationshipState(
+                rel.fromId,
+                rel.toId,
+                rel.type,
+                rel.state
+              )
+            }
+          }
+        })
+        .catch(err => {
+          console.warn('關係評估失敗:', err)
+        })
     }
 
     // 記錄已處理的訊息數量並存到 localStorage
@@ -724,16 +792,22 @@ const handleSingleChatMessage = async (userMessage: string) => {
       content: aiResponse.text
     })
 
+    // 更新角色的最後已讀時間
+    characterStore.updateLastRead(currentCharacter.id, currentRoomId, Date.now())
+
     // 只有在使用者還在同一個聊天室時才滾動
     if (roomId.value === currentRoomId) {
       scrollToBottom()
     }
 
     // 記憶處理（針對原聊天室）
-    await handleMemoryGeneration(currentRoomId)
+    const memorySuccess = await handleMemoryGeneration(currentRoomId)
 
     // 聊天室情境處理（群聊專用，針對原聊天室）
-    await handleRoomContextGeneration(currentRoomId)
+    // 只有記憶生成成功時才執行，避免記憶失敗但情境計數被更新的問題
+    if (memorySuccess) {
+      await handleRoomContextGeneration(currentRoomId)
+    }
   } catch (error) {
     console.error('Failed to get character response:', error)
     alert('取得回應時發生錯誤')
@@ -972,8 +1046,11 @@ const handleGroupChatMessage = async (userMessage: string) => {
           content: aiResponse.text
         })
 
+        // 更新角色的最後已讀時間
+        characterStore.updateLastRead(currentCharacter.id, currentRoomId, Date.now())
+
         // 只有在使用者還在同一個聊天室時才滾動
-        if (roomId.value === currentRoomId) {
+        if (roomId.value === currentRoomId && currentRound === 1 && isFirstCharacterInThisRound) {
           scrollToBottom()
         }
 
@@ -984,10 +1061,13 @@ const handleGroupChatMessage = async (userMessage: string) => {
 
     // 記憶處理（針對原聊天室）
     // 需要確保記憶處理是針對 currentRoomId，而非當前顯示的聊天室
-    await handleMemoryGeneration(currentRoomId)
+    const memorySuccess = await handleMemoryGeneration(currentRoomId)
 
     // 聊天室情境處理（群聊專用，針對原聊天室）
-    await handleRoomContextGeneration(currentRoomId)
+    // 只有記憶生成成功時才執行，避免記憶失敗但情境計數被更新的問題
+    if (memorySuccess) {
+      await handleRoomContextGeneration(currentRoomId)
+    }
   } catch (error) {
     console.error('Failed to get character response:', error)
     alert('取得回應時發生錯誤')
@@ -1413,14 +1493,8 @@ onBeforeUnmount(() => {
         <div class="info">
           <!-- 編輯模式 -->
           <div v-if="editingGroupName" class="group-name-edit">
-            <input
-              v-model="editingGroupNameContent"
-              type="text"
-              class="group-name-input"
-              placeholder="輸入群組名稱"
-              @keydown.enter="handleSaveGroupName"
-              @keydown.esc="handleCancelEditGroupName"
-            >
+            <input v-model="editingGroupNameContent" type="text" class="group-name-input" placeholder="輸入群組名稱"
+              @keydown.enter="handleSaveGroupName" @keydown.esc="handleCancelEditGroupName">
             <div class="group-name-actions">
               <button class="btn-sm btn-secondary" @click="handleCancelEditGroupName">取消</button>
               <button class="btn-sm btn-primary" @click="handleSaveGroupName">儲存</button>
@@ -1443,18 +1517,31 @@ onBeforeUnmount(() => {
 
       <div class="spacer"></div>
 
-      <!-- 情境按鈕 -->
-      <button v-if="!isMultiSelectMode" class="btn btn-info-outline" @click="toggleContextPanel">
-        <FileText :size="20" />
-        <span class="context-btn-label">情境</span>
-      </button>
+      <!-- 右側按鈕區域 -->
+      <div v-if="!isMultiSelectMode" class="header-actions">
+        <div class="header-buttons">
+          <!-- 情境按鈕 -->
+          <button class="btn btn-info-outline" @click="toggleContextPanel">
+            <FileText :size="20" />
+            <span class="context-btn-label">情境</span>
+          </button>
 
-      <!-- 記憶/成員按鈕 -->
-      <button v-if="!isMultiSelectMode" class="btn btn-info" @click="toggleMemoryPanel">
-        <Bubbles v-if="room.type === 'single'" :size="20" />
-        <Users v-else :size="20" />
-        <span class="memory-btn-label">{{ room.type === 'single' ? '記憶' : '成員' }}</span>
-      </button>
+          <!-- 記憶/成員按鈕 -->
+          <button class="btn btn-info" @click="toggleMemoryPanel">
+            <Bubbles v-if="room.type === 'single'" :size="20" />
+            <Users v-else :size="20" />
+            <span class="memory-btn-label">{{ room.type === 'single' ? '記憶' : '成員' }}</span>
+          </button>
+        </div>
+
+        <!-- 私聊時顯示好感度和關係 -->
+        <div v-if="room.type === 'single' && characterRelationshipDisplay" class="header-relationship">
+          <span class="affection-value">♥ {{ characterRelationshipDisplay.affection }}</span>
+          <span class="relationship-level" :style="{ backgroundColor: characterRelationshipDisplay.color }">
+            {{ characterRelationshipDisplay.name }}
+          </span>
+        </div>
+      </div>
 
       <button v-if="isMultiSelectMode" class="delete-btn btn btn-danger"
         :disabled="selectedMessagesForDelete.size === 0" @click="handleBatchDelete">
@@ -1602,14 +1689,23 @@ onBeforeUnmount(() => {
               </div>
               <div class="member-info">
                 <h4 class="member-name">{{ char.name }}</h4>
-                <p class="member-status" :class="getMemberStatusColorClass(char)">{{ getCharacterStatus(char) === 'online' ? '在線' :
+                <p class="member-status" :class="getMemberStatusColorClass(char)">{{ getCharacterStatus(char) ===
+                  'online' ? '在線' :
                   getCharacterStatus(char) ===
                   'away' ? '忙碌中' : '離線' }}</p>
                 <p v-if="char.statusMessage" class="statusMsg">{{ char.statusMessage }}</p>
               </div>
-              <button class="btn btn-info" @click="toggleMemoryPanel">
-                <Bubbles :size="20" />記憶
-              </button>
+              <div class="member-actions">
+                <button class="btn btn-info" @click.stop="handleViewMemberMemory(char)">
+                  <Bubbles :size="20" />記憶
+                </button>
+                <div class="member-relationship">
+                  <span class="affection-value">♥ {{ getMemberRelationship(char.id).affection }}</span>
+                  <span class="relationship-level" :style="{ backgroundColor: getMemberRelationship(char.id).color }">
+                    {{ getMemberRelationship(char.id).name }}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1727,7 +1823,8 @@ onBeforeUnmount(() => {
               @change="toggleMessageSelection(message.id)">
           </div>
 
-          <div class="message-avatar" @click="handleAvatarClick(message.senderId, $event)" :class="{ 'clickable': message.senderId !== 'user' }">
+          <div class="message-avatar" @click="handleAvatarClick(message.senderId, $event)"
+            :class="{ 'clickable': message.senderId !== 'user' }">
             <img :src="getSenderAvatar(message.senderId, message.senderName)" :alt="message.senderName">
           </div>
           <div class="message-content">
@@ -1737,7 +1834,8 @@ onBeforeUnmount(() => {
             </div>
             <!-- 編輯模式 -->
             <div v-if="editingMessageId === message.id" class="message-edit-container">
-              <textarea v-model="editingMessageContent" class="message-edit-input" rows="3" @keydown.ctrl.enter="handleSaveEdit" @keydown.esc="handleCancelEdit"></textarea>
+              <textarea v-model="editingMessageContent" class="message-edit-input" rows="3"
+                @keydown.ctrl.enter="handleSaveEdit" @keydown.esc="handleCancelEdit"></textarea>
               <div class="message-edit-actions">
                 <button class="btn-sm btn-secondary" @click="handleCancelEdit">取消</button>
                 <button class="btn-sm btn-primary" @click="handleSaveEdit">儲存</button>
@@ -3109,6 +3207,38 @@ onBeforeUnmount(() => {
   color: var(--color-primary);
 }
 
+/* 成員操作區和關係顯示 */
+.member-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.member-relationship {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.member-relationship .relationship-level {
+  padding: 2px var(--spacing-sm);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.member-relationship .affection-value {
+  padding: 2px var(--spacing-sm);
+  background: rgba(255, 77, 79, 0.1);
+  color: #ff4d4f;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
 /* ==================== 新增：Header 按鈕樣式 ==================== */
 
 .context-btn,
@@ -3150,6 +3280,43 @@ onBeforeUnmount(() => {
   font-weight: 500;
 }
 
+/* Header 右側按鈕區域 */
+.header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-sm);
+}
+
+.header-buttons {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+/* Header 好感度和關係顯示 */
+.header-relationship {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.header-relationship .relationship-level {
+  padding: 2px var(--spacing-sm);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.header-relationship .affection-value {
+  padding: 2px var(--spacing-sm);
+  background: rgba(255, 77, 79, 0.1);
+  color: #ff4d4f;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
 /* 面板操作區 */
 .panel-actions {
   padding: var(--spacing-lg);
@@ -3177,6 +3344,7 @@ onBeforeUnmount(() => {
 @media (max-width: 768px) {
   .chat-header {
     padding: var(--spacing-md) var(--spacing-xs);
+    gap: var(--spacing-xs);
   }
 
   .group-avatars {
@@ -3211,6 +3379,10 @@ onBeforeUnmount(() => {
   }
 
   /* 響應式：Header 按鈕文字 */
+  .header-buttons {
+    gap: var(--spacing-xs);
+  }
+
   .context-btn-label,
   .memory-btn-label {
     display: none;
@@ -3221,6 +3393,17 @@ onBeforeUnmount(() => {
     padding: var(--spacing-sm);
   }
 
+  /* 響應式：好感度顯示 */
+  .header-relationship {
+    gap: var(--spacing-xs);
+  }
+
+  .header-relationship .relationship-level,
+  .header-relationship .affection-value {
+    font-size: 10px;
+    padding: 1px var(--spacing-xs);
+  }
+
   /* 響應式：成員項目 */
   .member-item {
     padding: var(--spacing-md);
@@ -3229,6 +3412,13 @@ onBeforeUnmount(() => {
   .member-avatar {
     width: 40px;
     height: 40px;
+  }
+
+  /* 響應式：成員關係顯示 */
+  .member-relationship .relationship-level,
+  .member-relationship .affection-value {
+    font-size: 10px;
+    padding: 1px var(--spacing-xs);
   }
 
   /* 響應式：情境面板 */
@@ -3243,6 +3433,7 @@ onBeforeUnmount(() => {
   .context-actions .btn {
     width: 100%;
   }
+
 }
 
 /* 面板底部 */

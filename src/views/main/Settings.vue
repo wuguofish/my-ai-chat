@@ -128,6 +128,10 @@ const handleValidateApiKey = async () => {
 }
 
 const handleExportData = () => {
+  // 讀取記憶/情境追蹤資料
+  const memoryTracking = localStorage.getItem('ai-chat-memory-tracking')
+  const contextTracking = localStorage.getItem('ai-chat-context-tracking')
+
   const data = {
     user: userStore.profile,
     characters: characterStore.characters,
@@ -140,6 +144,11 @@ const handleExportData = () => {
     relationships: {
       userToCharacter: relationshipsStore.userToCharacter,
       characterToCharacter: relationshipsStore.characterToCharacter
+    },
+    // 記憶/情境處理追蹤資料
+    tracking: {
+      memory: memoryTracking ? JSON.parse(memoryTracking) : {},
+      context: contextTracking ? JSON.parse(contextTracking) : {}
     }
   }
 
@@ -196,6 +205,16 @@ const handleImportData = (event: Event) => {
               userToCharacter: data.relationships.userToCharacter || [],
               characterToCharacter: data.relationships.characterToCharacter || []
             })
+          }
+
+          // 還原記憶/情境處理追蹤資料
+          if (data.tracking) {
+            if (data.tracking.memory) {
+              localStorage.setItem('ai-chat-memory-tracking', JSON.stringify(data.tracking.memory))
+            }
+            if (data.tracking.context) {
+              localStorage.setItem('ai-chat-context-tracking', JSON.stringify(data.tracking.context))
+            }
           }
 
           // 遷移舊版本的記憶資料（如果有）
@@ -255,6 +274,10 @@ const handleGoogleBackup = async () => {
       await handleGoogleConnect()
     }
 
+    // 讀取記憶/情境追蹤資料
+    const memoryTracking = localStorage.getItem('ai-chat-memory-tracking')
+    const contextTracking = localStorage.getItem('ai-chat-context-tracking')
+
     // 準備備份資料（包含完整資料）
     const data = {
       user: userStore.profile,
@@ -268,6 +291,11 @@ const handleGoogleBackup = async () => {
       relationships: {
         userToCharacter: relationshipsStore.userToCharacter,
         characterToCharacter: relationshipsStore.characterToCharacter
+      },
+      // 記憶/情境處理追蹤資料
+      tracking: {
+        memory: memoryTracking ? JSON.parse(memoryTracking) : {},
+        context: contextTracking ? JSON.parse(contextTracking) : {}
       },
       timestamp: new Date().toISOString()
     }
@@ -294,7 +322,8 @@ const handleGoogleBackup = async () => {
         // 重新授權成功，重試備份
         if (isGoogleConnected.value) {
           alert('重新授權成功！即將重新執行備份。')
-          handleGoogleBackup()
+          await handleGoogleBackup()
+          return  // 避免 finally 再次設定 isSyncing = false
         }
       } catch (reauthError) {
         alert('重新授權失敗：' + (reauthError as Error).message)
@@ -355,6 +384,16 @@ const handleGoogleRestore = async () => {
       })
     }
 
+    // 還原記憶/情境處理追蹤資料
+    if (data.tracking) {
+      if (data.tracking.memory) {
+        localStorage.setItem('ai-chat-memory-tracking', JSON.stringify(data.tracking.memory))
+      }
+      if (data.tracking.context) {
+        localStorage.setItem('ai-chat-context-tracking', JSON.stringify(data.tracking.context))
+      }
+    }
+
     alert('從 Google Drive 還原成功！')
     window.location.reload()
   } catch (error) {
@@ -375,7 +414,8 @@ const handleGoogleRestore = async () => {
         // 重新授權成功，重試還原
         if (isGoogleConnected.value) {
           alert('重新授權成功！即將重新執行還原。')
-          handleGoogleRestore();
+          await handleGoogleRestore()
+          return  // 避免 finally 再次設定 isSyncing = false
         }
       } catch (reauthError) {
         alert('重新授權失敗：' + (reauthError as Error).message)
@@ -587,6 +627,9 @@ const handleGoogleRestore = async () => {
           <button @click="clearCacheAndReload" class="link-btn">
             <span>🔄</span> 清除快取並重新載入
           </button>
+          <a href="https://portaly.cc/atone0331/support" target="_blank" class="link-btn">
+            <span>💟</span> Donate
+          </a>
         </div>
 
         <div v-if="versionInfo" class="changelog">
@@ -922,6 +965,7 @@ const handleGoogleRestore = async () => {
   display: flex;
   gap: var(--spacing-sm);
   flex-wrap: wrap;
+  margin-bottom: var(--spacing-md);
 }
 
 .tech-tag {

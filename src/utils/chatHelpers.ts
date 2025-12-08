@@ -4,7 +4,8 @@ import type {
   ChatRoom,
   UserCharacterRelationship,
   CharacterRelationship,
-  Memory
+  Memory,
+  Message
 } from '@/types'
 import { getRelationshipLevelName } from './relationshipHelpers'
 
@@ -174,8 +175,11 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     `請以 ${character.name} 的身份，根據以上所有資訊，用符合角色性格和說話風格的方式自然地回應對話。`,
     `\n## 重要指令 - 絕對遵守`,
     `- 你不知道其他人的內部設定或秘密，除非他們在對話中說出來或在記憶中曾經揭示。`,
+    `- 專心扮演目前prompt內的角色即可，禁止演出其他模型負責的角色。`,
+    `- 可以回應使用者以外的模型所扮演的角色，並與之互動，以增進使用者體驗。`,
+    `- 禁止每個名詞都用『』標註。`,
     `- 回覆必須口語化、生活化。避免使用書信體或過於正式的用語。`,
-    `- 嚴禁重複已經出現過的內容。`,
+    `- 禁止重複出現和前幾句一樣的內容`,
     `- 對話中若需要描述動作，用 *動作* 表達（Markdown 斜體語法），並用第三人稱描述所有人的動作。`,
     `- 如須描述動作，動作和對話間須換行，要一句動作、一句對話，不要寫在同一行內。`,
     `- 請務必回應使用者的每一句話，避免只回傳空洞的動作描述（如「看著你」、「微笑」），必須要有實際的對話內容。`,
@@ -730,8 +734,8 @@ export async function generateStatusMessage(
     night: '晚上'
   }
 
-  // 組裝 Prompt
-  let prompt = `你是 ${character.name}，請根據以下資訊，生成一則符合你個性的狀態訊息（類似 LINE 的個人狀態）。
+  // 組裝 System Prompt（角色設定）
+  let systemPrompt = `你是一名名為 ${character.name} 的虛擬遊戲角色。
 
 ## 你的個性
 ${character.personality}
@@ -739,23 +743,28 @@ ${character.personality}
 ## 你的說話風格
 ${character.speakingStyle || '自然隨性'}
 
+${character.background ? `## 你的背景故事\n${character.background}` : ''}`
+
+  // 組裝 User Prompt（任務指令與上下文）
+  let userPrompt = `請生成一則符合你個性的狀態訊息（類似 LINE 的個人狀態）。
+
 ## 當前時間
 ${timeDescriptions[currentTimeOfDay]}`
 
   // 加入短期記憶
   if (shortTermMemories.length > 0) {
-    prompt += `\n\n## 最近的經歷\n`
+    userPrompt += `\n\n## 最近的經歷\n`
     shortTermMemories.forEach((mem, index) => {
-      prompt += `${index + 1}. ${mem.content}\n`
+      userPrompt += `${index + 1}. ${mem.content}\n`
     })
   }
 
   // 加入心情
   if (mood) {
-    prompt += `\n\n## 目前心情\n${mood}`
+    userPrompt += `\n\n## 目前心情\n${mood}`
   }
 
-  prompt += `\n\n請生成一則 **30 字以內** 的狀態訊息，要：
+  userPrompt += `\n\n請生成一則 **30 字以內** 的狀態訊息，要：
 - 符合你的個性和說話風格
 - 反映當前時間和最近經歷
 - 簡短有趣，像是你真的在更新個人狀態
@@ -769,17 +778,40 @@ ${timeDescriptions[currentTimeOfDay]}`
 你的狀態訊息：`
 
   // 呼叫 Gemini API
-  const { GoogleGenerativeAI } = await import('@google/generative-ai')
+  const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = await import('@google/generative-ai')
   const genAI = new GoogleGenerativeAI(apiKey)
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash-lite',
+    systemInstruction: systemPrompt,
+    safetySettings: [
+      {
+        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold: HarmBlockThreshold.BLOCK_NONE
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold: HarmBlockThreshold.BLOCK_NONE
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+        threshold: HarmBlockThreshold.BLOCK_NONE
+      }
+    ],
     generationConfig: {
       temperature: 0.9,  // 提高創意
       maxOutputTokens: 100,
     }
   })
 
-  const result = await model.generateContent(prompt)
+  const result = await model.generateContent(userPrompt)
   const statusMessage = result.response.text().trim()
 
   // 確保不超過 30 字
@@ -831,6 +863,11 @@ async function checkAndUpdateAllCharacterStatus() {
         // 觸發狀態訊息生成
         triggerStatusUpdateOnStatusChange(character.id).catch((err: unknown) => {
           console.warn(`${character.name} 上線時自動生成狀態訊息失敗:`, err)
+        })
+
+        // 觸發未讀訊息檢查和自動回應
+        triggerUnreadMessageResponse(character).catch((err: unknown) => {
+          console.warn(`${character.name} 上線時檢查未讀訊息失敗:`, err)
         })
       }
 
@@ -978,4 +1015,244 @@ async function triggerStatusUpdateOnStatusChange(characterId: string): Promise<v
     console.error('作息變化時生成狀態訊息失敗:', error)
     throw error
   }
+}
+
+// ==========================================
+// 未讀訊息回應系統
+// ==========================================
+
+/**
+ * 取得角色在特定聊天室的未讀訊息
+ */
+export function getUnreadMessages(
+  character: Character,
+  chatRoom: { id: string; messages: Message[] }
+): Message[] {
+  const lastReadAt = character.lastReadMessages?.[chatRoom.id]?.lastReadAt
+
+  // 如果沒有已讀記錄，返回空陣列（代表角色從未參與此聊天室）
+  if (!lastReadAt) {
+    return []
+  }
+
+  // 過濾出未讀訊息
+  return chatRoom.messages.filter(msg => {
+    const msgTime = new Date(msg.timestamp).getTime()
+    // 訊息時間晚於最後已讀時間，且不是角色自己發的
+    return msgTime > lastReadAt && msg.senderId !== character.id
+  })
+}
+
+/**
+ * 判斷角色是否應該回應未讀訊息
+ * 回傳值：需要回應的未讀訊息（已過濾和限制數量）
+ */
+export function getMessagesToRespond(
+  character: Character,
+  unreadMessages: Message[]
+): Message[] {
+  if (unreadMessages.length === 0) {
+    return []
+  }
+
+  // 只看最近 10 則未讀訊息（避免太久沒上線一次回太多）
+  const recentUnread = unreadMessages.slice(-10)
+
+  // 檢查是否被 @ 提及
+  const mentionedMessages = recentUnread.filter(msg =>
+    msg.mentionedCharacterIds?.includes(character.id) ||
+    msg.content.includes(`@${character.id}`) ||
+    msg.content.includes(`@${character.name}`)
+  )
+
+  // 如果有被 @ 提及，回傳被提及的訊息
+  if (mentionedMessages.length > 0) {
+    return mentionedMessages
+  }
+
+  // 如果未讀訊息超過 5 則，也考慮回應
+  if (recentUnread.length >= 5) {
+    return recentUnread
+  }
+
+  return []
+}
+
+/**
+ * 檢查訊息是否為自動回應（用於防止無限循環）
+ */
+export function isAutoResponse(msg: Message): boolean {
+  return msg.type === 'auto_response'
+}
+
+// 記錄每個聊天室最後一次自動回應的時間（防止洗訊息）
+const lastAutoResponseTime: { [roomId: string]: number } = {}
+
+// 自動回應冷卻時間（10 分鐘）
+const AUTO_RESPONSE_COOLDOWN = 10 * 60 * 1000
+
+/**
+ * 觸發角色上線時的未讀訊息回應
+ */
+async function triggerUnreadMessageResponse(character: Character): Promise<void> {
+  try {
+    const { useChatRoomsStore } = await import('@/stores/chatRooms')
+    const { useCharacterStore } = await import('@/stores/characters')
+    const { useUserStore } = await import('@/stores/user')
+    const { v4: uuidv4 } = await import('uuid')
+
+    const chatRoomsStore = useChatRoomsStore()
+    const characterStore = useCharacterStore()
+    const userStore = useUserStore()
+
+    // 檢查 API key
+    if (!userStore.apiKey) {
+      console.log(`跳過 ${character.name} 的未讀訊息檢查：沒有 API key`)
+      return
+    }
+
+    // 取得角色參與的所有聊天室
+    const characterRooms = chatRoomsStore.chatRooms.filter(room =>
+      room.characterIds.includes(character.id)
+    )
+
+    for (const room of characterRooms) {
+      // 檢查冷卻時間（同一聊天室 10 分鐘內只能有一次自動回應）
+      const lastTime = lastAutoResponseTime[room.id]
+      if (lastTime && Date.now() - lastTime < AUTO_RESPONSE_COOLDOWN) {
+        console.log(`跳過 ${room.name} 的自動回應：冷卻中`)
+        continue
+      }
+
+      // 取得聊天室的訊息
+      const roomMessages = chatRoomsStore.getMessages(room.id)
+
+      // 取得未讀訊息
+      const unreadMessages = getUnreadMessages(character, { id: room.id, messages: roomMessages })
+
+      // 過濾掉自動回應的訊息（防止無限循環）
+      const filteredUnread = unreadMessages.filter(msg => !isAutoResponse(msg))
+
+      // 判斷是否需要回應
+      const messagesToRespond = getMessagesToRespond(character, filteredUnread)
+
+      if (messagesToRespond.length === 0) {
+        continue
+      }
+
+      console.log(`${character.name} 在 ${room.name} 有 ${messagesToRespond.length} 則需要回應的訊息`)
+
+      try {
+        // 生成回應
+        const responseText = await generateCatchUpResponse(
+          character,
+          messagesToRespond,
+          userStore.apiKey
+        )
+
+        // 建立訊息物件
+        const newMessage: Message = {
+          id: uuidv4(),
+          roomId: room.id,
+          senderId: character.id,
+          senderName: character.name,
+          content: responseText,
+          timestamp: new Date().toISOString(),
+          type: 'auto_response'  // 標記為自動回應
+        }
+
+        // 發送訊息到聊天室
+        chatRoomsStore.addMessage(room.id, newMessage)
+
+        // 更新角色的最後已讀時間
+        characterStore.updateLastRead(character.id, room.id, Date.now(), newMessage.id)
+
+        // 記錄自動回應時間
+        lastAutoResponseTime[room.id] = Date.now()
+
+        console.log(`✅ ${character.name} 在 ${room.name} 自動回應：${responseText.slice(0, 50)}...`)
+      } catch (err) {
+        console.error(`${character.name} 在 ${room.name} 生成回應失敗:`, err)
+      }
+    }
+  } catch (error) {
+    console.error('觸發未讀訊息回應失敗:', error)
+    throw error
+  }
+}
+
+/**
+ * 生成角色的「剛上線回應」
+ * 角色看到未讀訊息後，自然地回應
+ */
+export async function generateCatchUpResponse(
+  character: Character,
+  messagesToRespond: Message[],
+  apiKey: string
+): Promise<string> {
+  const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = await import('@google/generative-ai')
+
+  const genAI = new GoogleGenerativeAI(apiKey)
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash',
+    safetySettings: [
+      {
+        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold: HarmBlockThreshold.BLOCK_NONE
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold: HarmBlockThreshold.BLOCK_NONE
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH
+      }
+    ],
+    generationConfig: {
+      temperature: 0.8,
+      maxOutputTokens: 2048
+    }
+  })
+
+  // 格式化未讀訊息摘要
+  const messagesSummary = messagesToRespond
+    .map(msg => `${msg.senderName}: ${msg.content}`)
+    .join('\n')
+
+  // 檢查是否被 @ 提及
+  const wasMentioned = messagesToRespond.some(msg =>
+    msg.mentionedCharacterIds?.includes(character.id) ||
+    msg.content.includes(`@${character.id}`) ||
+    msg.content.includes(`@${character.name}`)
+  )
+
+  const prompt = `你是「${character.name}」，
+  ${character.personality ? `你的性格：${character.personality}` : '一個友善的人'}。
+  ${character.speakingStyle ? `說話風格：${character.speakingStyle}` : ''}
+
+你剛剛上線，看到了以下的訊息：
+---
+${messagesSummary}
+---
+
+${wasMentioned ? '注意：你被 @ 點名了，請針對被點名的內容回應。' : ''}
+
+請用你的角色身份，自然地回應這些訊息。回應要簡短自然（1-2句話），可以：
+- 打個招呼說你剛看到訊息
+- 針對話題發表看法
+- 或者表達你對被 @ 的回應
+
+只輸出回應內容，不要加任何前綴或說明：`
+
+  const result = await model.generateContent(prompt)
+  return result.response.text().trim()
 }

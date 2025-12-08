@@ -336,6 +336,13 @@ const handleDeleteRelation = (targetId: string) => {
   }
 }
 
+// 刪除 LLM 評估的關係狀態
+const handleDeleteState = (fromId: string, toId: string) => {
+  if (confirm('確定要清除這個關係狀態嗎？')) {
+    relationshipsStore.deleteRelationshipState(fromId, toId)
+  }
+}
+
 const handleDelete = () => {
   if (character.value && confirm(`確定要刪除好友「${character.value.name}」嗎？`)) {
     // 同時刪除關係資料
@@ -566,6 +573,13 @@ const getRelationshipTypeText = (type: string) => {
                 </span>
               </div>
               <div class="relationship-description">{{ rel.description }}</div>
+              <div v-if="rel.state" class="relationship-state">
+                <span class="state-label">目前狀態：</span>
+                <span class="state-content">{{ rel.state }}</span>
+                <button class="btn-ghost-small" @click="handleDeleteState(rel.fromCharacterId, rel.toCharacterId)" title="清除狀態">
+                  <X :size="14" />
+                </button>
+              </div>
               <div v-if="rel.note" class="relationship-note-small">{{ rel.note }}</div>
             </div>
             <div class="relationship-actions">
@@ -600,6 +614,10 @@ const getRelationshipTypeText = (type: string) => {
               </span>
             </div>
             <div class="relationship-description">{{ rel.description }}</div>
+            <div v-if="rel.state" class="relationship-state">
+              <span class="state-label">目前狀態：</span>
+              <span class="state-content">{{ rel.state }}</span>
+            </div>
             <div v-if="rel.note" class="relationship-note-small">{{ rel.note }}</div>
           </div>
         </div>
@@ -1132,6 +1150,48 @@ const getRelationshipTypeText = (type: string) => {
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
   font-style: italic;
+}
+
+/* LLM 評估的關係狀態 */
+.relationship-state {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+  margin-bottom: var(--spacing-sm);
+  border-left: 3px solid var(--color-primary);
+}
+
+.state-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.state-content {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+}
+
+.btn-ghost-small {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xs);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  transition: all var(--transition);
+}
+
+.btn-ghost-small:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-error);
 }
 
 /* 認識的人類朋友 */

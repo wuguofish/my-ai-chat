@@ -23,6 +23,7 @@
 - **構建工具**: Vite
 - **AI API**: Google Gemini API
 - **樣式**: 原生 CSS + CSS Variables
+- **Vibe Coding工具**: Claude Code（已包含基礎的CLAUDE.md檔，供其他開發者與Claude Code協作時使用）
 
 ## 快速開始
 

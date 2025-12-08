@@ -100,6 +100,10 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
         {
           category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
           threshold: HarmBlockThreshold.BLOCK_NONE
+        },
+        {
+          category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH
         }
       ],
       generationConfig: {
@@ -164,12 +168,14 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
 
     // 建立聊天會話並發送訊息（支援多層降級重試）
     let text: string
+    let response: any  // 保存 response 以便後續檢查封鎖原因
 
     try {
       // 第一次嘗試：使用完整歷史（最多 20 則）
       const chat = model.startChat({ history })
       const result = await chat.sendMessage(_userMsg)
-      text = result.response.text()
+      response = result.response
+      text = response.text()
     } catch (firstError: any) {
       // 檢查是否為內容封鎖錯誤
       const isContentBlocked = firstError.message?.includes('PROHIBITED_CONTENT') ||
@@ -185,7 +191,8 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
           shorterHistory = ensureHistoryStartsWithUser(shorterHistory)
           const retryChat = model.startChat({ history: shorterHistory })
           const retryResult = await retryChat.sendMessage(_userMsg)
-          text = retryResult.response.text()
+          response = retryResult.response
+          text = response.text()
           console.log('✅ 縮短歷史後重試成功（5 則）')
         } catch (secondError: any) {
           // 第二次也被封鎖，嘗試完全不使用歷史
@@ -200,7 +207,8 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
               // 第三次嘗試：完全不使用歷史
               const noHistoryChat = model.startChat({ history: [] })
               const finalResult = await noHistoryChat.sendMessage(_userMsg)
-              text = finalResult.response.text()
+              response = finalResult.response
+              text = response.text()
               console.log('✅ 無歷史模式重試成功')
             } catch (thirdError: any) {
               // 三次都失敗，代表當前訊息本身有問題
@@ -218,10 +226,55 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
       }
     }
 
-    // 移除 AI 可能自作聰明加上的 [角色名]: 前綴
-    // 例如：「[楊竣宇]: 大家午安」→「大家午安」
-    // 注意：只移除冒號後的單一空格，不要移除換行符號
-    text = text.replace(/^\[.*?\]:[ ]?/gm, '')
+    // 處理 AI 自作聰明加上的對話格式問題（群聊時）
+    // 情況 1：AI 幻想出其他角色的對話（換行分隔），例如：
+    //   「[楊竣宇]: 大家午安。\n[趙書煜]: 午安啊竣宇。」
+    // 情況 2：AI 幻想出其他角色的對話（同一行內），例如：
+    //   「[楊竣宇]: 內容...[趙書煜]: 內容...」
+    // 情況 3：只是單純加上自己的前綴，例如：
+    //   「[楊竣宇]: 大家午安」
+    // 解決方案：移除所有其他角色的對話，只保留當前角色的內容
+    if (isGroupChat) {
+      const characterName = character.name
+
+      // 先處理「從其他角色開始到下一個標記或結尾」的部分
+      // 使用正則找出所有 [角色名]: 的位置，只保留當前角色的內容
+      const segments: string[] = []
+
+      // 使用正則分割：找出所有 [xxx]: 標記
+      const tagPattern = /\[([^\]]+)\]:[ ]?/g
+      let lastIndex = 0
+      let currentSpeaker: string | null = null
+      let match: RegExpExecArray | null
+
+      // 檢查開頭是否有 [角色名]: 標記
+      const firstTagMatch = text.match(/^\[([^\]]+)\]:[ ]?/)
+      if (!firstTagMatch) {
+        // 開頭沒有標記，假設是當前角色在說話
+        currentSpeaker = characterName
+      }
+
+      while ((match = tagPattern.exec(text)) !== null) {
+        // 如果之前有內容，且是當前角色說的，加入 segments
+        if (lastIndex < match.index && currentSpeaker === characterName) {
+          segments.push(text.slice(lastIndex, match.index))
+        }
+
+        // 更新當前說話者
+        currentSpeaker = match[1] ?? null
+        lastIndex = match.index + match[0].length
+      }
+
+      // 處理最後一段內容
+      if (lastIndex < text.length && currentSpeaker === characterName) {
+        segments.push(text.slice(lastIndex))
+      }
+
+      text = segments.join('').trim()
+    } else {
+      // 單人聊天：只需移除自己名字的前綴
+      text = text.replace(/^\[.*?\]:[ ]?/gm, '')
+    }
 
     // 將短 ID 轉換回長 ID（群聊時）
     if (useShortIds && context?.otherCharactersInRoom) {
@@ -246,10 +299,54 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
       })
     }
 
+    // 檢查是否因為 MAX_TOKENS 被截斷（有內容但不完整）
+    const finishReasonCheck = response?.candidates?.[0]?.finishReason
+    if (finishReasonCheck === 'MAX_TOKENS') {
+      console.warn('⚠️ AI 回應因達到 token 上限而被截斷')
+      throw new Error('MAX_TOKENS_REACHED')
+    }
+
     // 解析好感度（從最後一行提取）
     const lines = text.trim().split('\n')
     const lastLine = (lines.length > 0 ? lines[lines.length - 1] : '') ?? ''
     const parsedAffection = parseInt(lastLine.trim(), 10)
+
+    // 輔助函數：檢查 response 並拋出適當的錯誤（空回應時使用）
+    const checkEmptyResponseAndThrow = (textToCheck: string) => {
+      if (textToCheck && textToCheck.length > 0) return // 有內容，不需要處理
+
+      // 從 response 中取得封鎖原因
+      const blockReason = response?.promptFeedback?.blockReason
+      const finishReason = response?.candidates?.[0]?.finishReason
+      const safetyRatings = response?.candidates?.[0]?.safetyRatings
+
+      console.warn('⚠️ AI 回應內容為空，檢查封鎖原因:', {
+        blockReason,
+        finishReason,
+        safetyRatings
+      })
+
+      // 判斷是否為安全性封鎖
+      if (blockReason === 'SAFETY' ||
+          blockReason === 'PROHIBITED_CONTENT' ||
+          finishReason === 'SAFETY' ||
+          finishReason === 'PROHIBITED_CONTENT') {
+        throw new Error('BLOCKED_BY_SAFETY')
+      }
+
+      // 判斷是否為 token 上限
+      if (finishReason === 'MAX_TOKENS') {
+        throw new Error('MAX_TOKENS_REACHED')
+      }
+
+      // 其他情況（可能是額度用盡等）
+      if (blockReason || finishReason) {
+        throw new Error(`BLOCKED: ${blockReason || finishReason}`)
+      }
+
+      // 沒有明確原因的空回應
+      throw new Error('EMPTY_RESPONSE')
+    }
 
     // 如果最後一行是有效的數字，且該行只有數字（沒有其他文字，允許負號）
     const isOnlyNumber = /^-?\d+$/.test(lastLine.trim())
@@ -258,10 +355,7 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
       const cleanText = lines.slice(0, -1).join('\n').trim()
 
       // 檢查移除數字後是否變成空字串
-      if (!cleanText || cleanText.length === 0) {
-        console.warn('⚠️ AI 回應內容為空（只有好感度數字），拋出錯誤要求重試')
-        throw new Error('EMPTY_RESPONSE_WITH_AFFECTION')
-      }
+      checkEmptyResponseAndThrow(cleanText)
 
       return {
         text: cleanText,
@@ -272,10 +366,7 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
     // 如果解析失敗，就回傳原文，不更新好感度
     // 但要先檢查是否為空
     const finalText = text.trim()
-    if (!finalText || finalText.length === 0) {
-      console.warn('⚠️ AI 回應內容為空字串，拋出錯誤')
-      throw new Error('EMPTY_RESPONSE')
-    }
+    checkEmptyResponseAndThrow(finalText)
 
     return {
       text: finalText,
@@ -287,8 +378,25 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
     // 檢查是否為內容被封鎖的錯誤
     if (error.message?.includes('PROHIBITED_CONTENT') ||
         error.message?.includes('blocked') ||
+        error.message?.includes('BLOCKED_BY_SAFETY') ||
         error.message?.includes('SAFETY')) {
       throw new Error('回應因違反 Gemini API 內容政策而被封鎖。請嘗試調整對話內容或角色設定。')
+    }
+
+    // 檢查是否為空回應（沒有明確封鎖原因）
+    if (error.message === 'EMPTY_RESPONSE') {
+      throw new Error('AI 回應內容為空，請稍後再試。')
+    }
+
+    // 檢查是否為 token 上限問題
+    if (error.message === 'MAX_TOKENS_REACHED') {
+      throw new Error('AI 回應因達到 token 上限而被截斷。請到好友的「進階設定」中調高「最大輸出 Token 數」（建議 2048 以上）。')
+    }
+
+    // 檢查是否有其他封鎖原因（從 response 取得）
+    if (error.message?.startsWith('BLOCKED:')) {
+      const reason = error.message.replace('BLOCKED:', '').trim()
+      throw new Error(`AI 回應被封鎖（${reason}），請稍後再試或調整對話內容。`)
     }
 
     // 檢查是否為額度用盡

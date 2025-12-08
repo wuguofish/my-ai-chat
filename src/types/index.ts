@@ -105,6 +105,14 @@ export interface Character {
   // 是否為隱藏設定的名片（匯入時不顯示詳細設定）
   isPrivate?: boolean
 
+  // 各聊天室的最後已讀狀態（用於未讀訊息回應系統）
+  lastReadMessages?: {
+    [chatRoomId: string]: {
+      lastReadAt: number       // 最後已讀時間戳
+      lastReadMessageId?: string  // 最後已讀訊息 ID
+    }
+  }
+
   createdAt: string
   updatedAt: string
 }
@@ -131,7 +139,7 @@ export interface ChatRoom {
   lastMessageAt: string
 }
 
-export type MessageType = 'user' | 'character' | 'system'
+export type MessageType = 'user' | 'character' | 'system' | 'auto_response'
 
 export interface Message {
   id: string
@@ -197,8 +205,10 @@ export interface CharacterRelationship {
   fromCharacterId: string
   toCharacterId: string
   relationshipType: CharacterRelationType
-  description: string
+  description: string  // 玩家可編輯的關係描述
   note?: string
+  state?: string       // LLM 評估的最新關係狀態（可編輯/刪除）
+  updatedAt?: number   // 最後更新時間戳
 }
 
 // ==========================================

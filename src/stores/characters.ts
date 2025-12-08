@@ -75,6 +75,31 @@ export const useCharacterStore = defineStore('characters', () => {
   }
 
   /**
+   * 更新角色在特定聊天室的最後已讀狀態
+   * 每次角色發送訊息時應該呼叫此函數
+   */
+  function updateLastRead(characterId: string, chatRoomId: string, timestamp: number, messageId?: string) {
+    const character = characters.value.find(c => c.id === characterId)
+    if (character) {
+      if (!character.lastReadMessages) {
+        character.lastReadMessages = {}
+      }
+      character.lastReadMessages[chatRoomId] = {
+        lastReadAt: timestamp,
+        lastReadMessageId: messageId
+      }
+    }
+  }
+
+  /**
+   * 取得角色在特定聊天室的最後已讀時間
+   */
+  function getLastReadTime(characterId: string, chatRoomId: string): number | null {
+    const character = characters.value.find(c => c.id === characterId)
+    return character?.lastReadMessages?.[chatRoomId]?.lastReadAt ?? null
+  }
+
+  /**
    * 為沒有作息設定的舊角色加上預設作息（上班族）
    */
   function migrateCharacterSchedules() {
@@ -111,6 +136,9 @@ export const useCharacterStore = defineStore('characters', () => {
     clearCharacters,
     updateCharacterStatus,
     clearCharacterStatus,
+    // 未讀訊息系統
+    updateLastRead,
+    getLastReadTime,
     // Migration
     migrateCharacterSchedules
   }
