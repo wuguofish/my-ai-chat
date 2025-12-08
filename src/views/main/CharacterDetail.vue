@@ -5,7 +5,7 @@ import { useUserStore } from '@/stores/user'
 import { useCharacterStore } from '@/stores/characters'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { useChatRoomsStore } from '@/stores/chatRooms'
-import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
+import { getRelationshipLevelInfo, getCharacterRelationshipTypeText } from '@/utils/relationshipHelpers'
 import { getCharacterStatus } from '@/utils/chatHelpers'
 import { SCHEDULE_TEMPLATES } from '@/utils/constants'
 import type { Character } from '@/types'
@@ -393,18 +393,8 @@ const getCharacterName = (id: string) => {
   return char ? char.name : '未知角色'
 }
 
-// 取得角色關係類型文字
-const getRelationshipTypeText = (type: string) => {
-  const typeMap: Record<string, string> = {
-    neutral: '普通',
-    friend: '朋友',
-    rival: '競爭',
-    family: '家人',
-    romantic: '戀愛',
-    custom: '自訂'
-  }
-  return typeMap[type] || type
-}
+// 取得角色關係類型文字（使用共用函數）
+const getRelationshipTypeText = getCharacterRelationshipTypeText
 </script>
 
 <template>

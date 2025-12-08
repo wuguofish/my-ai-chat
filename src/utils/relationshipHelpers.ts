@@ -58,6 +58,21 @@ export function getRelationshipLevelByAffection(affection: number): Relationship
 }
 
 /**
+ * 取得角色間關係類型的中文名稱
+ */
+export function getCharacterRelationshipTypeText(type: string): string {
+  const typeMap: Record<string, string> = {
+    neutral: '普通',
+    friend: '朋友',
+    rival: '競爭',
+    family: '家人',
+    romantic: '戀愛',
+    custom: '自訂'
+  }
+  return typeMap[type] || type
+}
+
+/**
  * 格式化關係描述
  * 用於 System Prompt 中
  */

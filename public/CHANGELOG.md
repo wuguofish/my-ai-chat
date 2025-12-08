@@ -1,5 +1,20 @@
 # 更新履歷
 
+## [1.6.5] - 2025-12-08
+
+### 🐛 Bug 修正
+- **修正 System Prompt 中角色關係顯示錯誤的問題**
+  - 原本會顯示所有角色間的關係（A→B 和 B→A），導致名稱顯示混淆
+  - 現在只顯示當前角色「主動」對其他角色的看法（即 A→B）
+  - 設計理念：我們不一定知道別人怎麼看待自己
+
+### 🔧 技術改進
+- 新增 `getCharacterRelationshipTypeText` 共用函數於 `relationshipHelpers.ts`
+  - 將角色關係類型（neutral/friend/rival/family/romantic）翻譯為中文
+  - `CharacterDetail.vue` 和 `chatHelpers.ts` 共用此函數，避免重複定義
+
+---
+
 ## [1.6.4] - 2025-12-08
 
 ### ✨ 新增功能

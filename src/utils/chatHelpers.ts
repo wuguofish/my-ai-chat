@@ -7,7 +7,7 @@ import type {
   Memory,
   Message
 } from '@/types'
-import { getRelationshipLevelName } from './relationshipHelpers'
+import { getRelationshipLevelName, getCharacterRelationshipTypeText } from './relationshipHelpers'
 
 export interface SystemPromptContext {
   character: Character
@@ -132,22 +132,45 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     
   }
 
-  // 6. 與其他角色的關係
+  // 6. 與其他角色的關係（只顯示當前角色主動對其他角色的看法）
   if (characterRelationships && characterRelationships.length > 0 && allCharacters) {
-    // 群聊時：只顯示聊天室內的角色關係
+    // 只保留 fromCharacterId 是當前角色的關係（即當前角色對別人的看法）
+    // 因為一般來說，我們不一定會知道別人怎麼看待我們
+    const outgoingRelationships = characterRelationships.filter(rel =>
+      rel.fromCharacterId === character.id
+    )
+
+    // 群聊時：進一步篩選只顯示聊天室內的角色
     // 私聊時：顯示所有角色關係（因為短期記憶可能提到其他聊天室的角色）
     const relevantRelationships = otherCharactersInRoom
-      ? characterRelationships.filter(rel =>
+      ? outgoingRelationships.filter(rel =>
           otherCharactersInRoom.some(c => c.id === rel.toCharacterId)
         )
-      : characterRelationships
+      : outgoingRelationships
 
     if (relevantRelationships.length > 0) {
       parts.push(`\n\n## 與其他角色的關係`)
       relevantRelationships.forEach(rel => {
         const otherChar = allCharacters.find(c => c.id === rel.toCharacterId)
         if (otherChar) {
-          parts.push(`\n- 與 ${otherChar.name}：${rel.description}；${rel.note ? `（${rel.note}）` : ''}`)
+          // 組合關係描述，避免空內容
+          const relParts: string[] = []
+          if (rel.relationshipType) {
+            relParts.push(getCharacterRelationshipTypeText(rel.relationshipType))
+          }
+          if (rel.description) {
+            relParts.push(rel.description)
+          }
+          if (rel.state) {
+            relParts.push(`目前狀態：${rel.state}`)
+          }
+          if (rel.note) {
+            relParts.push(`備註：${rel.note}`)
+          }
+          // 只有有內容時才加入
+          if (relParts.length > 0) {
+            parts.push(`\n- ${otherChar.name}：${relParts.join('；')}`)
+          }
         }
       })
     }
