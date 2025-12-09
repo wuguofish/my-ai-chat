@@ -8,8 +8,6 @@ import type {
   Message
 } from '@/types'
 import { getRelationshipLevelName, getCharacterRelationshipTypeText } from './relationshipHelpers'
-import { getGeminiResponseText } from '@/services/gemini'
-
 
 export interface SystemPromptContext {
   character: Character
@@ -797,7 +795,7 @@ export async function generateStatusMessage(
   }
 
   // 呼叫 Gemini API（提前引入以取得 isAdult）
-  const { createGeminiModel, isAdultConversation, getGeminiResponse } = await import('@/services/gemini')
+  const { createGeminiModel, isAdultConversation, getGeminiResponseText } = await import('@/services/gemini')
   const { useUserStore } = await import('@/stores/user')
   const { useRelationshipsStore } = await import('@/stores/relationships')
 
