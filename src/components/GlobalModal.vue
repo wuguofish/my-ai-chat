@@ -43,32 +43,22 @@ watch(() => modalState.value.isOpen, (isOpen) => {
         <div class="modal-container" :class="`modal-${modalState.options.type}`">
           <!-- Header -->
           <div class="modal-header">
-            <component
-              :is="IconComponent"
-              class="modal-icon"
-              :size="24"
-            />
             <h3 class="modal-title">{{ modalState.options.title }}</h3>
           </div>
 
           <!-- Body -->
           <div class="modal-body">
+            <component :is="IconComponent" class="modal-icon" :size="48" />
             <p class="modal-message">{{ modalState.options.message }}</p>
           </div>
 
           <!-- Footer -->
           <div class="modal-footer">
-            <button
-              v-if="modalState.options.showCancel"
-              class="btn-secondary"
-              @click="closeModal(false)"
-            >
+            <button v-if="modalState.options.showCancel" class="btn-secondary" @click="closeModal(false)">
               {{ modalState.options.cancelText }}
             </button>
-            <button
-              :class="modalState.options.type === 'danger' ? 'btn-danger' : 'btn-primary'"
-              @click="closeModal(true)"
-            >
+            <button class="btn-primary"
+              @click="closeModal(true)">
               {{ modalState.options.confirmText }}
             </button>
           </div>
@@ -109,6 +99,7 @@ watch(() => modalState.value.isOpen, (isOpen) => {
   gap: var(--spacing-md);
   padding: var(--spacing-xl);
   border-bottom: 1px solid var(--color-border);
+  justify-content: center;
 }
 
 .modal-icon {
@@ -133,7 +124,7 @@ watch(() => modalState.value.isOpen, (isOpen) => {
 
 .modal-title {
   margin: 0;
-  font-size: var(--text-lg);
+  font-size: var(--text-2xl);
   font-weight: 600;
   color: var(--color-text-primary);
 }
@@ -141,11 +132,13 @@ watch(() => modalState.value.isOpen, (isOpen) => {
 /* Body */
 .modal-body {
   padding: var(--spacing-xl);
+  align-items: center;
+  text-align: center;
 }
 
 .modal-message {
   margin: 0;
-  font-size: var(--text-base);
+  font-size: var(--text-xl);
   color: var(--color-text-secondary);
   line-height: 1.6;
   white-space: pre-wrap;
@@ -154,7 +147,7 @@ watch(() => modalState.value.isOpen, (isOpen) => {
 /* Footer */
 .modal-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   gap: var(--spacing-md);
   padding: var(--spacing-lg) var(--spacing-xl);
   background: var(--color-bg-secondary);

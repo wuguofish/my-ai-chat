@@ -176,23 +176,14 @@ export function createGeminiModel(
 }
 
 export async function getGeminiResponseText(userPrompt: string, model: GenerativeModel): Promise<string> { 
-  let history: Content[] = []
 
-  history.push({
-    role: 'user',
-    parts: [{ text: userPrompt }]
+  let msg = (await getGeminiResponse(userPrompt, model)).text()
 
-  })
+  if (msg.length > 30) { 
+    return getActuallyContent(msg)
+  }
 
-  history.push({
-    role: 'model',
-    parts: [{ text: '好的，我知道了，我已經依據你的說明產生內容，如下：' }]
-  })
-
-  const chat = model.startChat({ history: history })
-  let msg = (await chat.sendMessage('請繼續，已經輸出的內容不必再輸出。')).response.text();
-
-  return getActuallyContent(msg)
+  return msg
 
 }
 
@@ -215,7 +206,7 @@ export async function getGeminiResponse(userPrompt: string, model: GenerativeMod
 
 }
 
-export function getActuallyContent(msg: string): string { 
+export function getActuallyContent(msg: string): string {
   // 清理可能的前綴文字（例如「讓我想想⋯⋯「xxx」」）
   // 如果有引號包裹的內容，只取引號內的文字
   const quotedMatch = msg.match(/[「""](.+?)[」""]/)
@@ -224,6 +215,120 @@ export function getActuallyContent(msg: string): string {
   }
 
   return msg
+}
+
+/**
+ * 清理 Gemini 濫用的引號（『』和「」）
+ * Gemini 常常用引號來「強調」詞彙，但這不符合中文習慣且影響閱讀體驗
+ * 這個函數會移除用於強調的引號，但保留用於引述的引號
+ *
+ * 判斷邏輯：
+ * - 如果引號內的文字很短（≤10字）且不是完整句子 → 移除引號
+ * - 如果引號內是完整的句子（有句號、問號等） → 保留引號
+ * - 如果引號內超過 10 個字 → 保留引號（可能是引述）
+ *
+ * 注意：動作描述中的「」不會被處理（因為那是對話格式的一部分）
+ */
+export function cleanExcessiveQuotes(text: string): string {
+  // 輔助函數：判斷是否應該保留引號
+  const shouldKeepQuotes = (content: string): boolean => {
+    // 如果內容包含句號、問號、驚嘆號，可能是引述完整句子，保留
+    if (/[。？！?!]/.test(content)) {
+      return true
+    }
+    // 如果內容超過 10 個字，可能是引述，保留
+    if (content.length > 10) {
+      return true
+    }
+    return false
+  }
+
+  // 先處理『』（這個幾乎都是濫用）
+  let result = text.replace(/『([^『』]+)』/g, (match, content) => {
+    return shouldKeepQuotes(content) ? match : content
+  })
+
+  // 再處理「」，但要小心不要影響對話格式
+  // 對話格式的「」通常在行首或 *動作* 之後
+  // 我們只處理在句子中間、用於強調詞彙的「」
+  result = result.replace(/「([^「」]+)」/g, (match, content, offset) => {
+    // 檢查是否在行首（可能是對話）
+    const beforeMatch = result.substring(0, offset)
+    const lastNewline = beforeMatch.lastIndexOf('\n')
+    const lineStart = lastNewline === -1 ? 0 : lastNewline + 1
+    const textBeforeOnLine = result.substring(lineStart, offset).trim()
+
+    // 如果這個「」在行首或 * 之後，可能是對話，保留
+    if (textBeforeOnLine === '' || textBeforeOnLine.endsWith('*')) {
+      return match
+    }
+
+    // 如果引號內容應該保留，保留
+    if (shouldKeepQuotes(content)) {
+      return match
+    }
+
+    // 否則移除引號
+    return content
+  })
+
+  return result
+}
+
+/**
+ * 被封鎖的 finishReason 類型
+ */
+const BLOCKED_FINISH_REASONS = [
+  'PROHIBITED_CONTENT',
+  'BLOCKLIST',
+  'SAFETY',
+  'OTHER'  // 'OTHER' 有時也代表被封鎖
+]
+
+/**
+ * 檢查 Gemini 回應是否被內容過濾封鎖
+ * 即使 API 沒有拋出錯誤，回應也可能因為內容政策被封鎖
+ *
+ * @param response - Gemini API 回應物件
+ * @returns 封鎖資訊，如果沒有被封鎖則回傳 null
+ */
+export function checkResponseBlocked(response: any): { reason: string; message: string } | null {
+  // 檢查 promptFeedback（輸入被封鎖）
+  const promptBlockReason = response?.promptFeedback?.blockReason
+  if (promptBlockReason) {
+    return {
+      reason: promptBlockReason,
+      message: `輸入內容被封鎖: ${promptBlockReason}`
+    }
+  }
+
+  // 檢查 candidates[0].finishReason（輸出被封鎖）
+  const finishReason = response?.candidates?.[0]?.finishReason
+  if (finishReason && BLOCKED_FINISH_REASONS.includes(finishReason)) {
+    // 確認是否真的沒有內容（有時候 finishReason 是 'OTHER' 但仍有部分內容）
+    const hasContent = response?.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!hasContent) {
+      return {
+        reason: finishReason,
+        message: `回應被封鎖: ${finishReason}`
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * 自訂錯誤類別：內容被封鎖
+ */
+export class ContentBlockedError extends Error {
+  reason: string
+
+  constructor(reason: string, message: string) {
+    super(message)
+    this.name = 'ContentBlockedError'
+    this.reason = reason
+  }
 }
 
 export interface GetCharacterResponseParams {
@@ -365,49 +470,67 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
     // 確保第一條訊息是 user
     history = ensureHistoryStartsWithUser(history)
 
+    // 輔助函數：發送訊息並檢查回應是否被封鎖
+    const sendAndCheck = async (chatHistory: Content[], userMsg: string): Promise<{ text: string; response: any }> => {
+      history.push({
+        role: 'user',
+        parts: [{ text: userMsg }]
+      })
+      history.push({
+        role: 'model',
+        parts: [{ text: `[${character.name}]:` }]
+      })
+      const chat = model.startChat({ history: chatHistory })
+      const result = await chat.sendMessage('')
+      const response = result.response
+
+      // 檢查回應是否被封鎖（即使 API 沒有拋出錯誤）
+      const blocked = checkResponseBlocked(response)
+      if (blocked) {
+        throw new ContentBlockedError(blocked.reason, blocked.message)
+      }
+
+      return { text: response.text(), response }
+    }
+
+    // 輔助函數：檢查錯誤是否為內容封鎖
+    const isBlockedError = (error: any): boolean => {
+      return error instanceof ContentBlockedError ||
+             error.message?.includes('PROHIBITED_CONTENT') ||
+             error.message?.includes('blocked') ||
+             error.message?.includes('SAFETY')
+    }
+
     // 建立聊天會話並發送訊息（支援多層降級重試）
     let text: string
     let response: any  // 保存 response 以便後續檢查封鎖原因
 
     try {
       // 第一次嘗試：使用完整歷史（最多 20 則）
-      const chat = model.startChat({ history })
-      const result = await chat.sendMessage(_userMsg)
+      const result = await sendAndCheck(history, _userMsg)
+      text = result.text
       response = result.response
-      text = response.text()
     } catch (firstError: any) {
-      // 檢查是否為內容封鎖錯誤
-      const isContentBlocked = firstError.message?.includes('PROHIBITED_CONTENT') ||
-                               firstError.message?.includes('blocked') ||
-                               firstError.message?.includes('SAFETY')
-
-      if (isContentBlocked && history.length > 0) {
+      if (isBlockedError(firstError) && history.length > 0) {
         console.warn('⚠️ 內容被封鎖（完整歷史），嘗試縮短對話歷史重試...')
 
         try {
           // 第二次嘗試：只保留最近 5 則訊息
           let shorterHistory = history.slice(-5)
           shorterHistory = ensureHistoryStartsWithUser(shorterHistory)
-          const retryChat = model.startChat({ history: shorterHistory })
-          const retryResult = await retryChat.sendMessage(_userMsg)
-          response = retryResult.response
-          text = response.text()
+          const result = await sendAndCheck(shorterHistory, _userMsg)
+          text = result.text
+          response = result.response
           console.log('✅ 縮短歷史後重試成功（5 則）')
         } catch (secondError: any) {
-          // 第二次也被封鎖，嘗試完全不使用歷史
-          const isStillBlocked = secondError.message?.includes('PROHIBITED_CONTENT') ||
-                                 secondError.message?.includes('blocked') ||
-                                 secondError.message?.includes('SAFETY')
-
-          if (isStillBlocked) {
+          if (isBlockedError(secondError)) {
             console.warn('⚠️ 內容仍被封鎖（短歷史），嘗試無歷史模式...')
 
             try {
               // 第三次嘗試：完全不使用歷史
-              const noHistoryChat = model.startChat({ history: [] })
-              const finalResult = await noHistoryChat.sendMessage(_userMsg)
-              response = finalResult.response
-              text = response.text()
+              const result = await sendAndCheck([], _userMsg)
+              text = result.text
+              response = result.response
               console.log('✅ 無歷史模式重試成功')
             } catch (thirdError: any) {
               // 三次都失敗，代表當前訊息本身有問題
@@ -551,7 +674,7 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
     const isOnlyNumber = /^-?\d+$/.test(lastLine.trim())
     if (!isNaN(parsedAffection) && isOnlyNumber) {
       // 移除最後一行的數字，保留對話內容
-      const cleanText = lines.slice(0, -1).join('\n').trim()
+      let cleanText = lines.slice(0, -1).join('\n').trim()
 
       // 如果移除數字後變成空字串，代表 AI 只回傳了好感度
       // 這種情況下靜默更新好感度，不顯示訊息
@@ -564,6 +687,9 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
         }
       }
 
+      // 清理濫用的『』引號
+      cleanText = cleanExcessiveQuotes(cleanText)
+
       return {
         text: cleanText,
         newAffection: parsedAffection
@@ -572,8 +698,11 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
 
     // 如果解析失敗，就回傳原文，不更新好感度
     // 但要先檢查是否為空
-    const finalText = text.trim()
+    let finalText = text.trim()
     checkEmptyResponseAndThrow(finalText)
+
+    // 清理濫用的『』引號
+    finalText = cleanExcessiveQuotes(finalText)
 
     return {
       text: finalText,
@@ -587,7 +716,7 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
         error.message?.includes('blocked') ||
         error.message?.includes('BLOCKED_BY_SAFETY') ||
         error.message?.includes('SAFETY')) {
-      throw new Error('回應因違反 Gemini API 內容政策而被封鎖。請嘗試調整對話內容或角色設定。')
+      throw new Error('回應因違反 Gemini API 內容政策而被封鎖。請嘗試調整對話內容、角色記憶或角色設定。')
     }
 
     // 檢查是否為空回應（沒有明確封鎖原因）

@@ -111,6 +111,10 @@ export interface Character {
   statusMessage?: string
   statusUpdatedAt?: number  // 狀態訊息更新時間戳
 
+  // 角色當前情緒狀態（由 AI 根據對話內容評估）
+  mood?: string             // 例如："開心"、"有點煩躁"、"期待"
+  moodUpdatedAt?: number    // 情緒更新時間戳
+
   // 是否為隱藏設定的名片（匯入時不顯示詳細設定）
   isPrivate?: boolean
 

@@ -16,75 +16,69 @@
 
 ---
 
-### Phase 2：使用者生日祝福功能
+### Phase 2：使用者生日祝福功能 ✅
 
-**目前狀態：** 待實作
+**目前狀態：** 已完成
 
 **功能描述：**
 當使用者生日當天開啟 App 時，好友會自動發送生日祝福訊息。
 
-**實作挑戰：**
-- 純前端架構，無後端推播機制
-- 使用者必須主動開啟 App 才能觸發
-
-**建議實作方式：**
-1. **進入 App 時檢測**
-   - 檢查是否為使用者生日當天
+**實作內容：**
+1. **進入 App 時檢測** (`App.vue` onMounted)
+   - 檢查是否為使用者生日當天（MM-DD 格式比對）
    - 檢查今年是否已發送過祝福（避免重複）
-   - 由好友自動發送一則祝福訊息到聊天室
+   - 好感度達到 friend（30）以上的好友會自動發送祝福
 
-2. **需要的資料結構**
-   - 記錄每個角色今年是否已發送生日祝福
-   - 可存在 `UserCharacterRelationship` 或獨立的記錄中
+2. **資料結構**
+   - 獨立 localStorage key：`ai-chat-birthday-wishes`
+   - 格式：`{ characterId: year }` 記錄發送年份
 
-3. **祝福訊息生成**
-   - 使用 AI 根據角色個性生成個性化祝福
-   - 或預設模板 + 角色風格調整
+3. **祝福訊息生成** (`src/services/birthdayService.ts`)
+   - 使用 Gemini 2.5 Flash Lite 生成個性化祝福
+   - Prompt 包含角色個性、說話風格、與使用者的關係等級
+   - AI 失敗時有 fallback 預設模板
 
-**預估工作量：** 3-4 小時
+4. **Settings 頁面**
+   - 新增使用者生日輸入欄位（MM-DD 格式）
+   - 自動格式化輸入
 
 ---
 
-### Phase 3：狀態訊息 mood 參數實作
+### Phase 3：狀態訊息 mood 參數實作 ✅
 
-**目前狀態：** 預留設計，尚未實作
+**目前狀態：** 已完成
 
 **功能描述：**
-`generateStatusMessage` 函數已預留 `mood` 參數，用於根據角色心情生成更符合情境的狀態訊息。
+角色情緒由 AI 根據對話內容自動評估，並在生成狀態訊息時使用。
 
-**現有介面：**
-```typescript
-interface StatusMessageContext {
-  shortTermMemories?: Array<{ content: string }>
-  mood?: string  // 心情描述（例如：開心、煩躁）← 尚未使用
-  timeOfDay?: 'morning' | 'afternoon' | 'evening' | 'night'
-}
-```
+**實作內容：**
 
-**可能的 mood 來源：**
+1. **資料結構**
+   - 在 `Character` interface 加上 `mood?: string` 和 `moodUpdatedAt?: number`
+   - 在 `characters.ts` store 新增 `updateCharacterMood()` action
 
-1. **從好感度變化趨勢計算**
-   - 追蹤最近幾次好感度變化的數值
-   - 計算趨勢（上升/下降/平穩）
-   - 轉換為心情描述：
-     - 持續上升 → "開心"、"雀躍"
-     - 持續下降 → "有點失落"、"煩躁"
-     - 平穩 → 不傳入 mood，讓 AI 自由發揮
+2. **私聊情緒評估**（每 15 則訊息）
+   - `generateMemorySummaryWithMood()` 同時回傳摘要和角色情緒
+   - 整合到短期記憶生成流程，不增加 API 呼叫次數
 
-2. **從特定事件觸發**
-   - 被 @ 提及後沒有回應 → "被冷落"
-   - 生日當天 → "期待"
-   - 長時間沒對話 → "無聊"、"想念"
+3. **群聊情緒評估**（每 30 則訊息）
+   - `evaluateCharacterRelationshipsWithMood()` 同時回傳關係和所有角色情緒
+   - 整合到角色間關係評估流程，不增加 API 呼叫次數
 
-3. **從對話內容推斷**（較複雜）
-   - 分析最近訊息中的情緒詞彙
-   - 需要額外的 LLM 呼叫或情緒分析
+4. **狀態訊息生成**
+   - 所有 `generateStatusMessage()` 呼叫處都帶入 `character.mood`
+   - Prompt 會包含「目前心情」段落，讓狀態訊息更符合角色當前情緒
 
-**建議實作方式：**
-在 `relationships.ts` 的 `updateAffection` 中記錄好感度變化歷史，然後在生成狀態訊息時計算趨勢。
-
-**預估工作量：** 2-3 小時
+**修改的檔案：**
+- `src/types/index.ts` - Character interface
+- `src/stores/characters.ts` - updateCharacterMood action
+- `src/services/memoryService.ts` - 新增情緒評估函數
+- `src/views/main/ChatRoom.vue` - 處理情緒更新
+- `src/stores/memories.ts` - 帶入 mood
+- `src/stores/relationships.ts` - 帶入 mood
+- `src/utils/chatHelpers.ts` - 帶入 mood
+- `src/views/main/CharacterDetail.vue` - 帶入 mood
 
 ---
 
-**最後更新：** 2025-12-09
+**最後更新：** 2025-12-10

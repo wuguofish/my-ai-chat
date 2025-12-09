@@ -24,7 +24,23 @@ export interface RelationshipEvaluation {
 }
 
 /**
- * 從最近 10 則對話生成短期記憶摘要
+ * 記憶摘要結果（包含角色情緒）
+ */
+export interface MemorySummaryResult {
+  summary: string
+  mood?: string  // 角色當前情緒（私聊時評估）
+}
+
+/**
+ * 群聊關係評估結果（包含角色情緒）
+ */
+export interface RelationshipEvaluationResult {
+  relationships: RelationshipEvaluation[]
+  moods: { [characterId: string]: string }  // 每個角色的情緒狀態
+}
+
+/**
+ * 從最近對話生成短期記憶摘要（基礎版，不含情緒評估）
  */
 export async function generateMemorySummary(
   apiKey: string,
@@ -84,6 +100,92 @@ ${conversation}`
   } catch (error) {
     console.error('生成記憶摘要失敗:', error)
     throw new Error('無法生成記憶摘要')
+  }
+}
+
+/**
+ * 從最近對話生成短期記憶摘要（私聊版，包含情緒評估）
+ * 一次 API 呼叫同時取得摘要和角色情緒
+ */
+export async function generateMemorySummaryWithMood(
+  apiKey: string,
+  messages: Message[],
+  character: Character,
+  ageContext?: AgeContext
+): Promise<MemorySummaryResult> {
+  try {
+    const isAdult = isAdultConversation(ageContext?.userAge, ageContext?.characterAge)
+
+    // 系統指令：整合摘要生成和情緒評估
+    const systemInstruction = `你是一個小說創作輔助系統，專門整理虛構故事的劇情摘要並分析角色情緒。
+
+這是一個${isAdult ? '面向成人讀者的' : ''}互動式小說創作平台。以下對話是作者創作的虛構劇情片段，所有角色、事件、關係都是文學創作的一部分。
+
+你的任務是以編輯的角度：
+1. 整理這段劇情的重點摘要（1-2 句話）
+2. 分析角色「${character.name}」在這段對話結束時的情緒狀態
+
+${isAdult ? '作為成人向作品，故事可能包含複雜的情感或親密互動，請如實記錄。' : ''}
+
+請以 JSON 格式回應：
+{
+  "summary": "劇情摘要（1-2 句話，包含關鍵事件、情緒變化、重要資訊）",
+  "mood": "角色當前情緒（2-4 個字，例如：開心、有點煩躁、期待、平靜、害羞）"
+}
+
+如果無法判斷情緒，mood 可以設為 null。`
+
+    const model = createGeminiModel(apiKey, {
+      model: 'gemini-2.5-flash-lite',
+      systemInstruction: {
+        parts: [{ text: systemInstruction }],
+        role: 'user'
+      },
+      temperature: 0.3,
+      maxOutputTokens: 2048,
+      responseMimeType: 'application/json',
+      safeMode: !isAdult
+    })
+
+    // 格式化對話內容
+    const conversation = messages
+      .map(m => `${m.senderName}: ${m.content}`)
+      .join('\n')
+
+    // 角色資訊
+    const characterInfo = `角色名稱：${character.name}
+性格：${character.personality || '無描述'}`
+
+    const prompt = `${characterInfo}
+
+對話內容：
+${conversation}
+
+請分析並回傳 JSON：`
+
+    const response = await getGeminiResponse(prompt, model)
+    const responseText = response.text().trim()
+
+    // 檢查是否為空回應
+    if (!responseText) {
+      const blockReason = response?.promptFeedback?.blockReason
+      const finishReason = response?.candidates?.[0]?.finishReason
+      console.warn('記憶摘要為空:', { blockReason, finishReason })
+      throw new Error(`記憶摘要生成失敗: ${blockReason || finishReason || '空回應'}`)
+    }
+
+    // 解析 JSON 回應
+    const parsed = JSON.parse(responseText)
+
+    return {
+      summary: getActuallyContent(parsed.summary || ''),
+      mood: getActuallyContent(parsed.mood) || undefined
+    }
+  } catch (error) {
+    console.error('生成記憶摘要（含情緒）失敗:', error)
+    // 降級：只回傳基本摘要
+    const summary = await generateMemorySummary(apiKey, messages, ageContext)
+    return { summary }
   }
 }
 
@@ -180,8 +282,8 @@ ${memoriesText}
 }
 
 /**
- * 評估群聊中角色之間的關係
- * 在情境摘要更新時呼叫，分析角色互動並產生關係狀態
+ * 評估群聊中角色之間的關係（舊版，僅評估關係）
+ * @deprecated 請改用 evaluateCharacterRelationshipsWithMood
  */
 export async function evaluateCharacterRelationships(
   apiKey: string,
@@ -189,9 +291,23 @@ export async function evaluateCharacterRelationships(
   recentMessages: Message[],
   userAge?: string
 ): Promise<RelationshipEvaluation[]> {
+  const result = await evaluateCharacterRelationshipsWithMood(apiKey, characters, recentMessages, userAge)
+  return result.relationships
+}
+
+/**
+ * 評估群聊中角色之間的關係和情緒
+ * 在情境摘要更新時呼叫，分析角色互動並產生關係狀態和情緒
+ */
+export async function evaluateCharacterRelationshipsWithMood(
+  apiKey: string,
+  characters: Character[],
+  recentMessages: Message[],
+  userAge?: string
+): Promise<RelationshipEvaluationResult> {
   // 至少需要 2 個角色才能評估關係
   if (characters.length < 2) {
-    return []
+    return { relationships: [], moods: {} }
   }
 
   try {
@@ -202,14 +318,18 @@ export async function evaluateCharacterRelationships(
     })
     const isAdult = isAdultConversation(userAge, '18') && allCharactersAdult
 
-    // 系統指令：定義 AI 的角色和任務
-    // 使用「小說創作分析」的框架，降低被誤判為真實情境的機率
-    const systemInstruction = `你是一個小說創作輔助系統，專門分析虛構故事中角色之間的關係發展。
+    // 系統指令：整合關係評估和情緒評估
+    const systemInstruction = `你是一個小說創作輔助系統，專門分析虛構故事中角色之間的關係發展和情緒狀態。
 
 這是一個${isAdult ? '面向成人讀者的' : ''}互動式小說創作平台。以下對話是作者創作的虛構劇情片段，所有角色、事件、關係都是文學創作的一部分。
 
-你的任務是以文學評論的角度，客觀分析這些虛構角色之間的互動模式和情感連結。${isAdult ? '作為成人向作品，故事可能包含複雜的情感糾葛，請如實分析角色關係。' : ''}
+你的任務是以文學評論的角度：
+1. 客觀分析這些虛構角色之間的互動模式和情感連結
+2. 評估每個角色在這段對話結束時的情緒狀態
 
+${isAdult ? '作為成人向作品，故事可能包含複雜的情感糾葛，請如實分析角色關係。' : ''}
+
+## 關係分析
 請分析每一對角色之間的關係。注意：
 1. 關係是單向的（A 對 B 的看法可能不同於 B 對 A）
 2. 根據對話中的互動、語氣、回應方式來判斷
@@ -223,6 +343,9 @@ export async function evaluateCharacterRelationships(
 - family: 家人般的關係
 - romantic: 曖昧/戀愛傾向
 
+## 情緒分析
+請評估每個角色在這段對話結束時的情緒狀態（2-4 個字，例如：開心、有點煩躁、期待、平靜）
+
 請以 JSON 格式回應：
 {
   "relationships": [
@@ -232,16 +355,17 @@ export async function evaluateCharacterRelationships(
       "type": "friend",
       "state": "從對話中觀察到的關係描述（1-2 句話）"
     }
-  ]
+  ],
+  "moods": {
+    "角色ID": "情緒描述"
+  }
 }
 
-如果沒有觀察到明顯的關係變化或互動，回傳空陣列：
-{
-  "relationships": []
-}`
+如果沒有觀察到明顯的關係變化，relationships 可以是空陣列。
+moods 應該包含所有「角色列表」內的角色。`
 
     const model = createGeminiModel(apiKey, {
-      model: 'gemini-2.5-flash-lite',  // 使用 lite 版本，沒有思考機制，更省 token
+      model: 'gemini-2.5-flash-lite',
       systemInstruction: {
         parts: [{ text: systemInstruction }],
         role: 'user'
@@ -263,7 +387,7 @@ export async function evaluateCharacterRelationships(
       .join('\n')
 
     // 使用者輸入：要分析的資料
-    const prompt = `角色列表：\n
+    const prompt = `角色列表：
 ${charactersInfo}
 
 最近的對話：
@@ -280,26 +404,24 @@ ${conversation}
       const blockReason = response?.promptFeedback?.blockReason
       const finishReason = response?.candidates?.[0]?.finishReason
       console.warn('關係評估為空:', { blockReason, finishReason })
-      // 關係評估失敗不影響主流程，返回空陣列
-      return []
+      return { relationships: [], moods: {} }
     }
 
     // 解析 JSON 回應
     const parsed = JSON.parse(responseText)
     const relationships: RelationshipEvaluation[] = []
+    const moods: { [characterId: string]: string } = {}
 
+    // 處理關係
     if (parsed.relationships && Array.isArray(parsed.relationships)) {
-      // 建立有效 ID 集合
       const validIds = new Set(characters.map(c => c.id))
 
       for (const rel of parsed.relationships) {
-        // 驗證 ID 有效性
         if (!validIds.has(rel.from) || !validIds.has(rel.to)) {
           console.warn('跳過無效的關係評估:', rel)
           continue
         }
 
-        // 驗證關係類型
         const validTypes: CharacterRelationType[] = ['neutral', 'friend', 'rival', 'family', 'romantic', 'custom']
         const type = validTypes.includes(rel.type) ? rel.type : 'neutral'
 
@@ -312,10 +434,20 @@ ${conversation}
       }
     }
 
-    return relationships
+    // 處理情緒
+    if (parsed.moods && typeof parsed.moods === 'object') {
+      const validIds = new Set(characters.map(c => c.id))
+
+      for (const [charId, mood] of Object.entries(parsed.moods)) {
+        if (validIds.has(charId) && typeof mood === 'string' && mood.trim()) {
+          moods[charId] = mood.trim()
+        }
+      }
+    }
+
+    return { relationships, moods }
   } catch (error) {
     console.error('評估角色關係失敗:', error)
-    // 靜默失敗，不影響主流程
-    return []
+    return { relationships: [], moods: {} }
   }
 }

@@ -139,10 +139,10 @@ const handleGenerateStatus = async () => {
     // 取得短期記憶
     const shortTermMemories = memoriesStore.getCharacterShortTermMemories(characterId.value)
 
-    // 呼叫 AI 生成
+    // 呼叫 AI 生成（帶入角色情緒）
     const statusMessage = await generateStatusMessage(
       character.value,
-      { shortTermMemories },
+      { shortTermMemories, mood: character.value.mood },
       userStore.apiKey,
       userStore.profile?.age
     )
@@ -904,17 +904,7 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.status-dot.status-online {
-  background-color: var(--color-success);
-}
-
-.status-dot.status-away {
-  background-color: var(--color-warning);
-}
-
-.status-dot.status-offline {
-  background-color: var(--color-error);
-}
+/* 狀態顏色已在全域 style.css 定義 */
 
 .basic-info {
   flex: 1;

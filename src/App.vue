@@ -6,6 +6,14 @@ import { startStatusMonitoring, stopStatusMonitoring, syncHolidayCache } from '@
 import { useMemoriesStore } from '@/stores/memories'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useCharacterStore } from '@/stores/characters'
+import { useUserStore } from '@/stores/user'
+import { useRelationshipsStore } from '@/stores/relationships'
+import {
+  isUserBirthdayToday,
+  getEligibleCharactersForBirthdayWish,
+  generateBirthdayWish,
+  markWishSent
+} from '@/services/birthdayService'
 import ToastContainer from '@/components/ToastContainer.vue'
 import GlobalModal from '@/components/GlobalModal.vue'
 
@@ -18,6 +26,8 @@ const versionInfo = ref<VersionInfo | null>(null)
 const memoriesStore = useMemoriesStore()
 const chatRoomsStore = useChatRoomsStore()
 const characterStore = useCharacterStore()
+const userStore = useUserStore()
+const relationshipsStore = useRelationshipsStore()
 const router = useRouter()
 
 // 檢查版本的函數
@@ -29,6 +39,82 @@ const performVersionCheck = async () => {
     versionInfo.value = await getVersionInfo(serverVersion.value) || null
     showUpdateDialog.value = true
   }
+}
+
+/**
+ * 檢查並發送生日祝福
+ * 如果今天是使用者生日，好感度達到 friend 以上的好友會自動發送祝福
+ */
+const checkAndSendBirthdayWishes = async () => {
+  // 檢查是否為使用者生日
+  if (!userStore.profile?.birthday || !isUserBirthdayToday(userStore.profile.birthday)) {
+    return
+  }
+
+  // 檢查是否有 API Key
+  if (!userStore.apiKey) {
+    console.log('🎂 今天是使用者生日，但沒有 API Key，跳過生日祝福')
+    return
+  }
+
+  console.log('🎂 今天是使用者生日！開始檢查生日祝福...')
+
+  // 取得應該發送祝福的好友列表
+  const eligibleCharacters = getEligibleCharactersForBirthdayWish(
+    characterStore.characters,
+    chatRoomsStore.chatRooms,
+    (characterId: string) => {
+      const relationship = relationshipsStore.getUserCharacterRelationship(characterId)
+      return relationship?.affection ?? 0
+    }
+  )
+
+  if (eligibleCharacters.length === 0) {
+    console.log('🎂 沒有符合條件的好友需要發送祝福')
+    return
+  }
+
+  console.log(`🎂 找到 ${eligibleCharacters.length} 位好友要發送生日祝福`)
+
+  // 依序為每個好友生成並發送祝福訊息
+  for (const { character, chatRoom } of eligibleCharacters) {
+    try {
+      console.log(`🎂 正在為 ${character.name} 生成生日祝福...`)
+
+      // 取得關係資訊
+      const relationship = relationshipsStore.getUserCharacterRelationship(character.id)
+      if (!relationship) continue
+
+      // 使用 AI 生成祝福訊息
+      const wishMessage = await generateBirthdayWish(
+        character,
+        userStore.profile,
+        relationship,
+        userStore.apiKey
+      )
+
+      // 將祝福訊息新增到聊天室
+      chatRoomsStore.addMessage(chatRoom.id, {
+        roomId: chatRoom.id,
+        senderId: character.id,
+        senderName: character.name,
+        content: wishMessage,
+        type: 'character'
+      })
+
+      // 標記已發送祝福
+      markWishSent(character.id)
+
+      console.log(`🎂 ${character.name} 的生日祝福已發送: ${wishMessage}`)
+
+      // 避免 API 呼叫過於頻繁，加入短暫延遲
+      await new Promise(resolve => setTimeout(resolve, 500))
+    } catch (error) {
+      console.error(`🎂 為 ${character.name} 生成生日祝福時發生錯誤:`, error)
+    }
+  }
+
+  console.log('🎂 生日祝福發送完成！')
 }
 
 onMounted(async () => {
@@ -43,6 +129,11 @@ onMounted(async () => {
 
   // 啟動作息狀態監控系統
   startStatusMonitoring()
+
+  // 檢查並發送生日祝福（非阻塞，在背景執行）
+  checkAndSendBirthdayWishes().catch(err => {
+    console.error('生日祝福檢查失敗:', err)
+  })
 
   // 初始版本檢查
   await performVersionCheck()

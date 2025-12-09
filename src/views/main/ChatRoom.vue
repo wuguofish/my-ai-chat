@@ -21,7 +21,12 @@ import {
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import { useCharacterStatus, getCharacterStatusInfo } from '@/composables/useCharacterStatus'
 import { getCharacterResponse } from '@/services/gemini'
-import { generateMemorySummary, extractLongTermMemories, evaluateCharacterRelationships } from '@/services/memoryService'
+import {
+  generateMemorySummary,
+  generateMemorySummaryWithMood,
+  extractLongTermMemories,
+  evaluateCharacterRelationshipsWithMood
+} from '@/services/memoryService'
 import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users, Pencil } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -199,7 +204,8 @@ const menuPosition = ref({ x: 0, y: 0 })
 const isMultiSelectMode = ref(false)
 const selectedMessagesForDelete = ref<Set<string>>(new Set())
 
-// 訊息編輯
+// 訊息編輯 Modal
+const showEditModal = ref(false)
 const editingMessageId = ref<string | null>(null)
 const editingMessageContent = ref('')
 
@@ -468,14 +474,20 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
       const targetCharacterId = targetRoom.characterIds[0]
       if (!targetCharacterId) return true  // 沒有角色，視為成功（不需要處理）
 
-      // 取得角色資訊用於年齡判斷
+      // 取得角色資訊用於年齡判斷和情緒評估
       const targetCharacter = characterStore.getCharacterById(targetCharacterId)
+      if (!targetCharacter) return true
 
-      // 生成短期記憶摘要
-      const summary = await generateMemorySummary(apiKey, recentMessages, {
-        userAge: userAge.value,
-        characterAge: targetCharacter?.age
-      })
+      // 生成短期記憶摘要（包含情緒評估）
+      const { summary, mood } = await generateMemorySummaryWithMood(
+        apiKey,
+        recentMessages,
+        targetCharacter,
+        {
+          userAge: userAge.value,
+          characterAge: targetCharacter.age
+        }
+      )
 
       const result = memoriesStore.addCharacterShortTermMemory(
         targetCharacterId,
@@ -496,6 +508,12 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
           'auto',
           processRoomId
         )
+      }
+
+      // 更新角色情緒
+      if (mood) {
+        characterStore.updateCharacterMood(targetCharacterId, mood)
+        console.log(`[情緒] ${targetCharacter.name} 的情緒已更新: ${mood}`)
       }
 
       // 私聊：直接使用短期記憶更新聊天室情境
@@ -616,14 +634,14 @@ const handleRoomContextGeneration = async (targetRoomId?: string) => {
       editingContextContent.value = summary
     }
 
-    // 評估角色間關係（群聊才需要）
+    // 評估角色間關係和情緒（群聊才需要）
     if (targetRoom.characterIds.length >= 2) {
-      // 背景執行關係評估，不阻塞主流程
-      evaluateCharacterRelationships(apiKey, targetCharacters, recentMessages, userAge.value)
-        .then(relationships => {
+      // 背景執行關係和情緒評估，不阻塞主流程
+      evaluateCharacterRelationshipsWithMood(apiKey, targetCharacters, recentMessages, userAge.value)
+        .then(({ relationships, moods }) => {
+          // 更新關係
           if (relationships.length > 0) {
             console.log(`[關係] 評估完成，共 ${relationships.length} 對關係`)
-            // 更新到 store
             for (const rel of relationships) {
               relationshipsStore.updateRelationshipState(
                 rel.fromId,
@@ -633,9 +651,22 @@ const handleRoomContextGeneration = async (targetRoomId?: string) => {
               )
             }
           }
+
+          // 更新情緒
+          const moodEntries = Object.entries(moods)
+          if (moodEntries.length > 0) {
+            console.log(`[情緒] 評估完成，共 ${moodEntries.length} 位角色`)
+            for (const [charId, mood] of moodEntries) {
+              characterStore.updateCharacterMood(charId, mood)
+              const char = characterStore.getCharacterById(charId)
+              if (char) {
+                console.log(`[情緒] ${char.name}: ${mood}`)
+              }
+            }
+          }
         })
-        .catch(err => {
-          console.warn('關係評估失敗:', err)
+        .catch((err: unknown) => {
+          console.warn('關係/情緒評估失敗:', err)
         })
     }
 
@@ -857,9 +888,10 @@ const handleSingleChatMessage = async (userMessage: string) => {
     if (memorySuccess) {
       await handleRoomContextGeneration(currentRoomId)
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to get character response:', error)
-    await alert('取得回應時發生錯誤', { type: 'danger' })
+    const errorMessage = error?.message || '未知錯誤'
+    await alert(errorMessage, { title: '取得回應時發生錯誤', type: 'danger' })
   } finally {
     isLoading.value = false
   }
@@ -1123,9 +1155,10 @@ const handleGroupChatMessage = async (userMessage: string) => {
     if (memorySuccess) {
       await handleRoomContextGeneration(currentRoomId)
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to get character response:', error)
-    await alert('取得回應時發生錯誤', { type: 'danger' })
+    const errorMessage = error?.message || '未知錯誤'
+    await alert(`取得回應時發生錯誤：${errorMessage}`, { type: 'danger' })
   } finally {
     isLoading.value = false
   }
@@ -1207,7 +1240,7 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 // 訊息長按/點擊事件
 const handleMessageLongPress = (messageId: string, event: MouseEvent | TouchEvent) => {
-  if (isMultiSelectMode.value || editingMessageId.value) return
+  if (isMultiSelectMode.value || showEditModal.value) return
 
   selectedMessageForMenu.value = messageId
 
@@ -1223,7 +1256,7 @@ const handleMessageLongPress = (messageId: string, event: MouseEvent | TouchEven
 
 // Touch 事件處理（iOS 支援）
 const handleTouchStart = (messageId: string, event: TouchEvent) => {
-  if (isMultiSelectMode.value || editingMessageId.value) return
+  if (isMultiSelectMode.value || showEditModal.value) return
 
   longPressTriggered.value = false
 
@@ -1279,7 +1312,7 @@ const handleCopyMessage = () => {
   closeMessageMenu()
 }
 
-// 開始編輯訊息
+// 開始編輯訊息（開啟 Modal）
 const handleEditMessage = () => {
   if (!selectedMessageForMenu.value) return
 
@@ -1287,6 +1320,7 @@ const handleEditMessage = () => {
   if (message) {
     editingMessageId.value = message.id
     editingMessageContent.value = message.content
+    showEditModal.value = true
   }
 
   closeMessageMenu()
@@ -1309,6 +1343,7 @@ const handleSaveEdit = () => {
 
 // 取消編輯
 const handleCancelEdit = () => {
+  showEditModal.value = false
   editingMessageId.value = null
   editingMessageContent.value = ''
 }
@@ -1884,17 +1919,7 @@ onBeforeUnmount(() => {
               <span class="sender-name">{{ message.senderName }}</span>
               <span class="message-time">{{ formatMessageTime(message.timestamp) }}</span>
             </div>
-            <!-- 編輯模式 -->
-            <div v-if="editingMessageId === message.id" class="message-edit-container">
-              <textarea v-model="editingMessageContent" class="message-edit-input" rows="3"
-                @keydown.ctrl.enter="handleSaveEdit" @keydown.esc="handleCancelEdit"></textarea>
-              <div class="message-edit-actions">
-                <button class="btn-sm btn-secondary" @click="handleCancelEdit">取消</button>
-                <button class="btn-sm btn-primary" @click="handleSaveEdit">儲存</button>
-              </div>
-            </div>
-            <!-- 一般顯示模式 -->
-            <div v-else class="message-text" v-html="formatMessageContent(message.content)"></div>
+            <div class="message-text" v-html="formatMessageContent(message.content)"></div>
           </div>
         </div>
       </div>
@@ -2034,6 +2059,32 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <!-- 編輯訊息 Modal -->
+    <div v-if="showEditModal" class="modal-overlay" @click="handleCancelEdit">
+      <div class="modal-content edit-message-modal" @click.stop>
+        <div class="modal-header">
+          <h3>編輯訊息</h3>
+          <button class="modal-close" @click="handleCancelEdit">✕</button>
+        </div>
+        <div class="modal-body">
+          <textarea
+            v-model="editingMessageContent"
+            class="edit-message-textarea"
+            rows="10"
+            placeholder="輸入訊息內容..."
+            @keydown.ctrl.enter="handleSaveEdit"
+            @keydown.meta.enter="handleSaveEdit"
+            @keydown.esc="handleCancelEdit"
+          ></textarea>
+          <p class="edit-hint">按 Ctrl+Enter 儲存，Esc 取消</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" @click="handleCancelEdit">取消</button>
+          <button class="btn-primary" @click="handleSaveEdit">儲存</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -2111,17 +2162,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
 }
 
-.status-indicator.online {
-  background: #52c41a;
-}
-
-.status-indicator.away {
-  background: #faad14;
-}
-
-.status-indicator.offline {
-  background: #999;
-}
+/* 狀態顏色已在全域 style.css 定義 */
 
 .chat-header-info .info {
   display: flex;
@@ -2407,36 +2448,44 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-sm);
 }
 
-/* Message editing */
-.message-edit-container {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-  width: 100%;
+/* Edit Message Modal */
+.edit-message-modal {
+  max-width: 1280px;
+  width: 90%;
 }
 
-.message-edit-input {
+.edit-message-textarea {
   width: 100%;
   padding: var(--spacing-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   font-size: var(--text-base);
   font-family: inherit;
-  line-height: 1.5;
+  line-height: 1.6;
   resize: vertical;
-  min-height: 60px;
+  min-height: 120px;
+  background: var(--color-bg-primary);
 }
 
-.message-edit-input:focus {
+.edit-message-textarea:focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
-.message-edit-actions {
+.edit-hint {
+  margin-top: var(--spacing-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+.modal-footer {
   display: flex;
   gap: var(--spacing-sm);
   justify-content: flex-end;
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--spacing-lg);
 }
 
 /* Typing indicator */

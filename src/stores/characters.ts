@@ -75,6 +75,30 @@ export const useCharacterStore = defineStore('characters', () => {
   }
 
   /**
+   * 更新角色情緒狀態
+   * @param characterId 角色 ID
+   * @param mood 情緒描述（例如："開心"、"有點煩躁"）
+   */
+  function updateCharacterMood(characterId: string, mood: string) {
+    const character = characters.value.find(c => c.id === characterId)
+    if (character) {
+      character.mood = mood
+      character.moodUpdatedAt = Date.now()
+    }
+  }
+
+  /**
+   * 清除角色情緒狀態
+   */
+  function clearCharacterMood(characterId: string) {
+    const character = characters.value.find(c => c.id === characterId)
+    if (character) {
+      character.mood = undefined
+      character.moodUpdatedAt = undefined
+    }
+  }
+
+  /**
    * 更新角色在特定聊天室的最後已讀狀態
    * 每次角色發送訊息時應該呼叫此函數
    */
@@ -192,6 +216,9 @@ export const useCharacterStore = defineStore('characters', () => {
     clearCharacters,
     updateCharacterStatus,
     clearCharacterStatus,
+    // 情緒系統
+    updateCharacterMood,
+    clearCharacterMood,
     // 未讀訊息系統
     updateLastRead,
     getLastReadTime,

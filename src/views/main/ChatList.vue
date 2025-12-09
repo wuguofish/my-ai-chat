@@ -333,17 +333,7 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
   border: 2px solid var(--color-bg-primary);
 }
 
-.status-indicator.online {
-  background: #52c41a;
-}
-
-.status-indicator.away {
-  background: #faad14;
-}
-
-.status-indicator.offline {
-  background: #999;
-}
+/* 狀態顏色已在全域 style.css 定義 */
 
 .chat-info {
   flex: 1;

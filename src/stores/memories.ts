@@ -46,10 +46,10 @@ export const useMemoriesStore = defineStore('memories', () => {
       // 取得短期記憶作為上下文
       const shortTermMemories = getCharacterShortTermMemories(characterId)
 
-      // 呼叫 AI 生成狀態訊息
+      // 呼叫 AI 生成狀態訊息（帶入角色情緒）
       const statusMessage = await generateStatusMessage(
         character,
-        { shortTermMemories },
+        { shortTermMemories, mood: character.mood },
         userStore.apiKey,
         userStore.profile?.age
       )

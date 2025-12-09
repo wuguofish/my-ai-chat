@@ -63,6 +63,7 @@ h1, h2, h3, h4, h5, h6,
   --color-success: #52c41a;
   --color-warning: #e78712;
   --color-error: #ff4d4f;
+  --color-danger: #ff4d4f;
   --color-info: #66b3ff;
 
   /* 文字顏色 */
@@ -792,6 +793,22 @@ textarea {
 }
 
 .status-badge.offline {
+  background-color: #999;
+}
+
+/* 狀態指示燈顏色（統一所有狀態指示燈的顏色） */
+.status-indicator.online,
+.status-dot.status-online {
+  background-color: #52c41a;
+}
+
+.status-indicator.away,
+.status-dot.status-away {
+  background-color: #faad14;
+}
+
+.status-indicator.offline,
+.status-dot.status-offline {
   background-color: #999;
 }
 

@@ -99,7 +99,7 @@ export function generateSystemPrompt(context: SystemPromptContext): string {
   const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary,
     otherCharactersInRoom, allCharacters, isOfflineButMentioned, useShortIds, isAdultMode } = context
 
-  const parts: string[] = [generateDefaultCharacterPrompt(character)]
+  const parts: string[] = [generateDefaultCharacterPrompt(character, isAdultMode||false)]
   
   // 1. 目前時間資訊
   const now = new Date()
@@ -267,7 +267,7 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     `- 你不知道其他人的內部設定或秘密，除非他們在對話中說出來或在記憶中曾經揭示。`,
     `- 專心扮演目前prompt內的角色即可，禁止演出其他模型負責的角色。`,
     `- 可以回應使用者以外的模型所扮演的角色，並與之互動，以增進使用者體驗。`,
-    `- 『』引號僅用於引用他人話語，禁止用來強調或裝飾詞彙。錯誤範例：「這個『效率』很『頂級』」。`,
+    `- 【嚴禁濫用『』引號】絕對禁止用『』來強調、裝飾、或突顯詞彙。錯誤示範：「讓我的『歌聲』不要讓你『當機』」「這個『效率』很『頂級』」「被『拋棄』的『AI』」。正確做法：直接寫出詞彙，不加任何引號。『』只能用於直接引述他人說過的完整句子。`,
     `- 回覆必須口語化、生活化。避免使用書信體或過於正式的用語。`,
     `- 禁止重複出現和前幾句一樣的內容`,
     `- 避免重複相同的動作、情節發展或句型結構。`,
@@ -325,11 +325,11 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
 /**
  * 生成預設的角色 Prompt（不含情境資訊）
  */
-function generateDefaultCharacterPrompt(character: Character): string {
+function generateDefaultCharacterPrompt(character: Character, isAdult: boolean): string {
   const parts: string[] = []
 
   // 基本身份
-  parts.push(`你是 ${character.name}。`)
+  parts.push(`這是一個${isAdult ? '成人向的' : ''}互動式小說創作平台，你需要在其中扮演虛擬AI角色： ${character.name}和使用者互動，以下是 ${character.name}的基本資訊：`)
 
   if (character.age) { 
     parts.push(`年齡： ${character.age}。`)
@@ -350,22 +350,22 @@ function generateDefaultCharacterPrompt(character: Character): string {
 
   // 性格
   if (character.personality && character.personality.trim()) {
-    parts.push(`\n性格：${character.personality}`)
+    parts.push(`\n\n性格：\n${character.personality}`)
   }
 
   // 說話風格
   if (character.speakingStyle && character.speakingStyle.trim()) {
-    parts.push(`\n說話風格：${character.speakingStyle}`)
+    parts.push(`\n\n說話風格：\n${character.speakingStyle}`)
   }
 
   // 喜歡的事物
   if (character.likes && character.likes.trim()) {
-    parts.push(`\n喜歡：${character.likes}`)
+    parts.push(`\n\n喜歡：${character.likes}`)
   }
 
   // 討厭的事物
   if (character.dislikes && character.dislikes.trim()) {
-    parts.push(`\n討厭：${character.dislikes}`)
+    parts.push(`\n\n討厭：${character.dislikes}`)
   }
 
   // 角色過去發生的重大事件
@@ -1149,10 +1149,10 @@ async function triggerStatusUpdateOnStatusChange(characterId: string): Promise<v
     // 取得短期記憶
     const shortTermMemories = memoriesStore.getCharacterShortTermMemories(characterId)
 
-    // 生成狀態訊息
+    // 生成狀態訊息（帶入角色情緒）
     const statusMessage = await generateStatusMessage(
       character,
-      { shortTermMemories },
+      { shortTermMemories, mood: character.mood },
       userStore.apiKey,
       userStore.profile?.age
     )

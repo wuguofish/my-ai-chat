@@ -15,7 +15,11 @@
       "Bash(git commit:*)",
       "Bash(git push)",
       "Bash(del \"d:\\7755\\my-ai-chat\\TODO.md\")",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(git -C \"d:\\7755\\my-ai-chat\" status)",
+      "Bash(git -C \"d:\\7755\\my-ai-chat\" diff --stat)",
+      "Bash(git -C \"d:\\7755\\my-ai-chat\" log --oneline -5)",
+      "Bash(git -C \"d:\\7755\\my-ai-chat\" add -A)"
     ],
     "deny": [],
     "ask": []

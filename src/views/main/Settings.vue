@@ -63,6 +63,7 @@ const editingProfile = ref({
   realName: userStore.profile?.realName || '',
   age: userStore.profile?.age || '',
   gender: userStore.profile?.gender || 'unset',
+  birthday: userStore.profile?.birthday || '',
   profession: userStore.profile?.profession || '',
   bio: userStore.profile?.bio || '',
   globalSystemPrompt: userStore.profile?.globalSystemPrompt || ''
@@ -75,6 +76,7 @@ const handleEditProfile = () => {
     realName: userStore.profile?.realName || '',
     age: userStore.profile?.age || '',
     gender: userStore.profile?.gender || 'unset',
+    birthday: userStore.profile?.birthday || '',
     profession: userStore.profile?.profession || '',
     bio: userStore.profile?.bio || '',
     globalSystemPrompt: userStore.profile?.globalSystemPrompt || ''
@@ -88,6 +90,7 @@ const handleSaveProfile = async () => {
     realName: editingProfile.value.realName,
     age: editingProfile.value.age,
     gender: editingProfile.value.gender as any,
+    birthday: editingProfile.value.birthday,
     profession: editingProfile.value.profession,
     bio: editingProfile.value.bio,
     globalSystemPrompt: editingProfile.value.globalSystemPrompt
@@ -98,6 +101,21 @@ const handleSaveProfile = async () => {
 
 const handleCancelEdit = () => {
   showEditProfile.value = false
+}
+
+/**
+ * 格式化生日輸入（MM-DD 格式）
+ * 自動在輸入兩位數字後加上 "-"
+ */
+const formatBirthdayInput = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  let value = input.value.replace(/[^0-9]/g, '') // 只保留數字
+
+  if (value.length >= 2) {
+    value = value.slice(0, 2) + '-' + value.slice(2, 4)
+  }
+
+  editingProfile.value.birthday = value.slice(0, 5) // 限制最多 5 字元（MM-DD）
 }
 
 const handleUpdateApiKey = async () => {
@@ -482,6 +500,12 @@ const handleGoogleRestore = async () => {
             <option value="male">男</option>
             <option value="female">女</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label>生日（選填）</label>
+          <input v-model="editingProfile.birthday" class="input-field" placeholder="MM-DD（例如：03-14）"
+            maxlength="5" @input="formatBirthdayInput" />
+          <p class="form-hint">填寫後，生日當天好感度達到「朋友」以上的好友會自動發送祝福</p>
         </div>
         <div class="form-group">
           <label>職業（選填）</label>

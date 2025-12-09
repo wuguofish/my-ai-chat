@@ -117,10 +117,10 @@ export const useRelationshipsStore = defineStore('relationships', {
         // 取得短期記憶
         const shortTermMemories = memoriesStore.getCharacterShortTermMemories(characterId)
 
-        // 生成狀態訊息
+        // 生成狀態訊息（帶入角色情緒）
         const statusMessage = await generateStatusMessage(
           character,
-          { shortTermMemories },
+          { shortTermMemories, mood: character.mood },
           userStore.apiKey,
           userStore.profile?.age
         )
