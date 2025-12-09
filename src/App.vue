@@ -2,7 +2,7 @@
 import { RouterView, useRouter } from 'vue-router'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { checkVersion, updateStoredVersion, clearCacheAndReload, fetchServerVersion, getVersionInfo, type VersionInfo } from '@/utils/version'
-import { startStatusMonitoring, stopStatusMonitoring } from '@/utils/chatHelpers'
+import { startStatusMonitoring, stopStatusMonitoring, syncHolidayCache } from '@/utils/chatHelpers'
 import { useMemoriesStore } from '@/stores/memories'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useCharacterStore } from '@/stores/characters'
@@ -37,6 +37,9 @@ onMounted(async () => {
 
   // 為沒有作息設定的舊角色加上預設作息
   characterStore.migrateCharacterSchedules()
+
+  // 初始化假日快取（用於角色作息判斷）
+  await syncHolidayCache()
 
   // 啟動作息狀態監控系統
   startStatusMonitoring()

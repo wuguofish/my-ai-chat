@@ -472,14 +472,8 @@ const handleGoogleRestore = async () => {
         </div>
         <div class="form-group">
           <label>年齡（選填）</label>
-          <input
-            v-model="editingProfile.age"
-            type="number"
-            min="1"
-            max="9999"
-            class="input-field"
-            placeholder="請輸入數字"
-          />
+          <input v-model="editingProfile.age" type="number" min="1" max="9999" class="input-field"
+            placeholder="請輸入數字" />
         </div>
         <div class="form-group">
           <label>性別（選填）</label>
@@ -500,19 +494,14 @@ const handleGoogleRestore = async () => {
         </div>
         <div class="form-group">
           <label>全域自訂 Prompt（選填）</label>
-          <textarea
-            v-model="editingProfile.globalSystemPrompt"
-            class="input-field"
-            placeholder="這裡的內容會附加在所有角色的 System Prompt 後面，例如：回覆時使用繁體中文、每次回覆不超過100字..."
-            rows="4"
-            maxlength="1000"
-          />
+          <textarea v-model="editingProfile.globalSystemPrompt" class="input-field"
+            placeholder="這裡的內容會附加在所有角色的 System Prompt 後面，例如：回覆時使用繁體中文、每次回覆不超過100字..." rows="4" maxlength="1000" />
           <div class="char-count">{{ editingProfile.globalSystemPrompt.length }}/1000</div>
           <p class="form-hint">此設定會套用到所有角色對話，無需在每個角色單獨設定</p>
         </div>
         <div class="button-group">
-          <button class="btn-primary" @click="handleSaveProfile">儲存</button>
-          <button class="btn-secondary" @click="handleCancelEdit">取消</button>
+          <button class="btn btn-primary" @click="handleSaveProfile">儲存</button>
+          <button class="btn btn-secondary" @click="handleCancelEdit">取消</button>
         </div>
       </div>
     </div>

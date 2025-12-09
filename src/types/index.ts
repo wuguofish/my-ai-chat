@@ -60,6 +60,12 @@ export interface ActivePeriod {
   status: CharacterStatus
 }
 
+// 新版作息設定（區分平日/假日）
+export interface ScheduleConfig {
+  workdayPeriods: ActivePeriod[]  // 上班日（週一～週五，非國定假日）
+  holidayPeriods: ActivePeriod[]  // 放假日（週末 + 國定假日）
+}
+
 export interface Event {
   id: string
   title: string
@@ -83,12 +89,13 @@ export interface Character {
   maxOutputTokens?: number
   events: string[]
 
-  // 作息時間設定（支援舊格式和新格式）
+  // 作息時間設定（支援多種格式）
   activeHours?: {
     start: number  // 0-23，例如 8 代表早上 8 點
     end: number    // 0-23，例如 23 代表晚上 11 點
   }
-  activePeriods?: ActivePeriod[]  // 新格式：支援多時段
+  activePeriods?: ActivePeriod[]  // 舊格式：支援多時段（不分平日假日）
+  schedule?: ScheduleConfig       // 新格式：區分平日/假日
 
   // 匯入的角色卡 metadata（保留原作者資訊）
   importedMetadata?: {

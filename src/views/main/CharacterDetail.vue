@@ -7,8 +7,9 @@ import { useRelationshipsStore } from '@/stores/relationships'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useModal } from '@/composables/useModal'
 import { getRelationshipLevelInfo, getCharacterRelationshipTypeText } from '@/utils/relationshipHelpers'
-import { getCharacterStatus } from '@/utils/chatHelpers'
-import { SCHEDULE_TEMPLATES } from '@/utils/constants'
+import { useCharacterStatus } from '@/composables/useCharacterStatus'
+import { SCHEDULE_TEMPLATES_V2 } from '@/utils/constants'
+import { isTodayHolidaySync } from '@/utils/chatHelpers'
 import type { Character } from '@/types'
 import { Plus, ArrowLeft, MessageCircle, Edit, Bubbles, Trash2, X, Heart } from 'lucide-vue-next'
 
@@ -155,43 +156,47 @@ const handleGenerateStatus = async () => {
   }
 }
 
-// 角色狀態相關
-const characterStatus = computed(() => {
-  if (!character.value) return 'offline'
-  return getCharacterStatus(character.value)
-})
+// 角色狀態相關（使用共用 composable）
+const { status: characterStatus, statusText: characterStatusText } = useCharacterStatus(character)
 
-const characterStatusText = computed(() => {
-  const status = characterStatus.value
-  if (status === 'online') return '在線'
-  if (status === 'away') return '忙碌中'
-  return '離線'
-})
-
-// 作息表資訊
+// 作息表資訊（支援新格式 schedule，並區分平日/假日）
 const scheduleInfo = computed(() => {
-  if (!character.value?.activePeriods || character.value.activePeriods.length === 0) {
-    return { type: 'none', template: null, periods: [] }
-  }
+  // 優先檢查新格式 schedule
+  if (character.value?.schedule) {
+    const isHoliday = isTodayHolidaySync()
+    const todayPeriods = isHoliday
+      ? character.value.schedule.holidayPeriods
+      : character.value.schedule.workdayPeriods
 
-  // 檢查是否符合某個模板
-  const matchedTemplate = SCHEDULE_TEMPLATES.find(template =>
-    JSON.stringify(template.periods) === JSON.stringify(character.value!.activePeriods)
-  )
+    // 檢查是否符合某個模板
+    const matchedTemplate = SCHEDULE_TEMPLATES_V2.find(template =>
+      JSON.stringify(template.schedule.workdayPeriods) === JSON.stringify(character.value!.schedule!.workdayPeriods) &&
+      JSON.stringify(template.schedule.holidayPeriods) === JSON.stringify(character.value!.schedule!.holidayPeriods)
+    )
 
-  if (matchedTemplate) {
     return {
-      type: 'template',
-      template: matchedTemplate,
-      periods: matchedTemplate.periods
+      type: matchedTemplate ? 'template' : 'custom',
+      template: matchedTemplate || null,
+      isHoliday,
+      workdayPeriods: character.value.schedule.workdayPeriods,
+      holidayPeriods: character.value.schedule.holidayPeriods,
+      periods: todayPeriods  // 今天適用的時段
     }
   }
 
-  return {
-    type: 'custom',
-    template: null,
-    periods: character.value.activePeriods
+  // 向下相容：檢查舊格式 activePeriods
+  if (character.value?.activePeriods && character.value.activePeriods.length > 0) {
+    return {
+      type: 'legacy',
+      template: null,
+      isHoliday: false,
+      workdayPeriods: character.value.activePeriods,
+      holidayPeriods: character.value.activePeriods,
+      periods: character.value.activePeriods
+    }
   }
+
+  return { type: 'none', template: null, isHoliday: false, periods: [], workdayPeriods: [], holidayPeriods: [] }
 })
 
 // 調整關係（包含親密關係設定）
@@ -486,6 +491,9 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
       <div class="section">
         <div class="section-header">
           <h2 class="section-title">作息表</h2>
+          <span v-if="scheduleInfo.type !== 'none'" class="schedule-day-indicator">
+            {{ scheduleInfo.isHoliday ? '🎉 今天是假日' : '💼 今天是平日' }}
+          </span>
         </div>
         <div v-if="scheduleInfo.type === 'none'" class="schedule-empty">
           尚未設定作息表（將永久離線）
@@ -494,16 +502,51 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
           <div v-if="scheduleInfo.type === 'template'" class="schedule-template-name">
             {{ scheduleInfo.template?.name }}
           </div>
+          <div v-else-if="scheduleInfo.type === 'legacy'" class="schedule-template-name">
+            舊版作息（平日假日相同）
+          </div>
           <div v-else class="schedule-template-name">
             自訂作息
           </div>
-          <div class="schedule-periods">
-            <div v-for="(period, index) in scheduleInfo.periods" :key="index" class="schedule-period-item">
-              <div class="period-time">
-                {{ String(period.start).padStart(2, '0') }}:00 - {{ String(period.end).padStart(2, '0') }}:00
+
+          <!-- 平日/假日分頁顯示 -->
+          <div class="schedule-tabs">
+            <div class="schedule-tab-group">
+              <div :class="['schedule-tab', { active: !scheduleInfo.isHoliday }]">
+                💼 平日
               </div>
-              <div :class="['period-status', `status-${period.status}`]">
-                {{ period.status === 'online' ? '在線' : period.status === 'away' ? '忙碌中' : '離線' }}
+              <div :class="['schedule-tab', { active: scheduleInfo.isHoliday }]">
+                🎉 假日
+              </div>
+            </div>
+          </div>
+
+          <!-- 平日作息 -->
+          <div class="schedule-section">
+            <div class="schedule-section-title">平日作息</div>
+            <div class="schedule-periods">
+              <div v-for="(period, index) in scheduleInfo.workdayPeriods" :key="'workday-' + index" class="schedule-period-item">
+                <div class="period-time">
+                  {{ String(period.start).padStart(2, '0') }}:00 - {{ String(period.end).padStart(2, '0') }}:00
+                </div>
+                <div :class="['status-badge', period.status]">
+                  {{ period.status === 'online' ? '在線' : period.status === 'away' ? '忙碌中' : '離線' }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 假日作息 -->
+          <div class="schedule-section">
+            <div class="schedule-section-title">假日作息</div>
+            <div class="schedule-periods">
+              <div v-for="(period, index) in scheduleInfo.holidayPeriods" :key="'holiday-' + index" class="schedule-period-item">
+                <div class="period-time">
+                  {{ String(period.start).padStart(2, '0') }}:00 - {{ String(period.end).padStart(2, '0') }}:00
+                </div>
+                <div :class="['status-badge', period.status]">
+                  {{ period.status === 'online' ? '在線' : period.status === 'away' ? '忙碌中' : '離線' }}
+                </div>
               </div>
             </div>
           </div>
@@ -821,32 +864,6 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
   max-width: 900px;
   margin: 0 auto;
   padding: var(--spacing-xl) var(--spacing-xl) 80px var(--spacing-xl);
-}
-
-.header {
-  position: sticky;
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  top: 0;
-  width: 100%;
-  padding: var(--spacing-lg);
-  border-bottom: 2px solid var(--color-border);
-  z-index: var(--z-sticky);
-  background: var(--color-bg-secondary);
-  margin-bottom: var(--spacing-xl);
-}
-
-.header h3 {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  margin: 0;
-}
-
-.header .btn-ghost {
-  visibility: hidden;
 }
 
 /* 角色資訊卡片 */
@@ -1421,10 +1438,55 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
   padding: var(--spacing-lg);
 }
 
+.schedule-day-indicator {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-tertiary);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius);
+}
+
 .schedule-template-name {
   font-size: var(--text-base);
   color: var(--color-text-secondary);
   margin-bottom: var(--spacing-lg);
+  font-weight: 600;
+}
+
+.schedule-tabs {
+  margin-bottom: var(--spacing-lg);
+}
+
+.schedule-tab-group {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.schedule-tab {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.schedule-tab.active {
+  background: var(--color-primary);
+  color: var(--color-text-white);
+}
+
+.schedule-section {
+  margin-bottom: var(--spacing-lg);
+}
+
+.schedule-section:last-child {
+  margin-bottom: 0;
+}
+
+.schedule-section-title {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--spacing-sm);
   font-weight: 600;
 }
 
@@ -1454,23 +1516,5 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
   font-weight: 500;
 }
 
-.period-status {
-  padding: var(--spacing-xs) var(--spacing-md);
-  border-radius: var(--radius-lg);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: white;
-}
-
-.period-status.status-online {
-  background-color: var(--color-success);
-}
-
-.period-status.status-away {
-  background-color: var(--color-warning);
-}
-
-.period-status.status-offline {
-  background-color: var(--color-error);
-}
+/* 使用全域 .status-badge 樣式 */
 </style>

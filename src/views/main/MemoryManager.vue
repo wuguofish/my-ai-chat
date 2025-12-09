@@ -4,8 +4,9 @@ import { useRouter, useRoute } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
 import { useMemoriesStore } from '@/stores/memories'
 import { useModal } from '@/composables/useModal'
-import PageHeader from '@/components/common/PageHeader.vue'
 import type { Character, Memory } from '@/types'
+import { ArrowLeft } from 'lucide-vue-next'
+
 
 const { confirmDanger } = useModal()
 
@@ -148,14 +149,16 @@ const formatDate = (dateString: string) => {
 <template>
   <div v-if="character" class="memory-manager">
     <!-- 標題列 -->
-    <PageHeader :title="`${character.name} 的記憶`">
-      <template #actions>
-        <button class="btn btn-primary-outline btn-sm" @click="handleBack">
-          ← 返回
-        </button>
-      </template>
-    </PageHeader>
-
+    <div class="header">
+      <button class="back-btn" @click="handleBack">
+        <ArrowLeft :size="20" />
+        返回
+      </button>
+      <h3>
+        {{ character.name }} 的記憶
+      </h3>
+      <span class="btn-ghost btn"></span>
+    </div>
     <div class="content-section centered">
       <!-- 說明 -->
       <div class="info-box">

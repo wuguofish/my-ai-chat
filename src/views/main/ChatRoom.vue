@@ -16,10 +16,10 @@ import {
   determineRespondingCharacters,
   parseMentionedCharacterIds,
   isCharacterOnline,
-  getCharacterStatus,
   shuffleAvoidFirst
 } from '@/utils/chatHelpers'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
+import { useCharacterStatus, getCharacterStatusInfo } from '@/composables/useCharacterStatus'
 import { getCharacterResponse } from '@/services/gemini'
 import { generateMemorySummary, extractLongTermMemories, evaluateCharacterRelationships } from '@/services/memoryService'
 import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users, Pencil } from 'lucide-vue-next'
@@ -97,34 +97,16 @@ const mentionOptions = computed(() => {
   return options
 })
 
-// 單人聊天角色狀態
-const characterStatus = computed(() => {
-  if (!character.value) return null
-  return getCharacterStatus(character.value)
-})
-
-const characterStatusText = computed(() => {
-  const status = characterStatus.value
-  if (!status) return '線上'
-  if (status === 'online') return '在線'
-  if (status === 'away') return '忙碌中'
-  return '離線'
-})
-
-// 根據上線狀態決定文字顏色（單人聊天用）
-const statusColorClass = computed(() => {
-  const status = characterStatus.value
-  if (!status || status === 'online') return 'text-success'
-  if (status === 'away') return 'text-warning'
-  return 'text-error'
-})
+// 單人聊天角色狀態（使用共用 composable）
+const {
+  status: characterStatus,
+  statusText: characterStatusText,
+  statusTextClass: statusColorClass
+} = useCharacterStatus(character)
 
 // 根據角色狀態決定文字顏色（成員清單用）
-const getMemberStatusColorClass = (character: Character) => {
-  const status = getCharacterStatus(character)
-  if (status === 'online') return 'text-success'
-  if (status === 'away') return 'text-warning'
-  return 'text-error'
+const getMemberStatusColorClass = (char: Character) => {
+  return getCharacterStatusInfo(char).statusTextClass
 }
 
 // 取得單人聊天角色的好感度和關係資訊（用於 header 顯示）
@@ -1758,14 +1740,11 @@ onBeforeUnmount(() => {
                 <img
                   :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`"
                   :alt="char.name">
-                <div :class="['status-dot', getCharacterStatus(char)]"></div>
+                <div :class="['status-dot', getCharacterStatusInfo(char).status]"></div>
               </div>
               <div class="member-info">
                 <h4 class="member-name">{{ char.name }}</h4>
-                <p class="member-status" :class="getMemberStatusColorClass(char)">{{ getCharacterStatus(char) ===
-                  'online' ? '在線' :
-                  getCharacterStatus(char) ===
-                  'away' ? '忙碌中' : '離線' }}</p>
+                <p class="member-status" :class="getMemberStatusColorClass(char)">{{ getCharacterStatusInfo(char).statusText }}</p>
                 <p v-if="char.statusMessage" class="statusMsg">{{ char.statusMessage }}</p>
               </div>
               <div class="member-actions">
@@ -1997,14 +1976,11 @@ onBeforeUnmount(() => {
                     :src="char.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(char.name)}&background=764ba2&color=fff`"
                     :alt="char.name">
                 </div>
-                <div :class="['status-indicator', getCharacterStatus(char)]" />
+                <div :class="['status-indicator', getCharacterStatusInfo(char).status]" />
               </div>
               <div class="member-info">
                 <h4 class="member-name">{{ char.name }}</h4>
-                <p class="member-status">
-                  {{ getCharacterStatus(char) === 'online' ? '在線' : getCharacterStatus(char) === 'away' ? '忙碌中' : '離線'
-                  }}
-                </p>
+                <p class="member-status">{{ getCharacterStatusInfo(char).statusText }}</p>
               </div>
             </div>
           </div>

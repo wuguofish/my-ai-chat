@@ -2,8 +2,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
-import type { Character, Gender, ActivePeriod } from '@/types'
-import { LIMITS, SCHEDULE_TEMPLATES } from '@/utils/constants'
+import type { Character, Gender } from '@/types'
+import { LIMITS, SCHEDULE_TEMPLATES_V2 } from '@/utils/constants'
 import AvatarCropper from '@/components/common/AvatarCropper.vue'
 import { v4 as uuidv4 } from 'uuid'
 import { ArrowLeft, FolderLock } from 'lucide-vue-next'
@@ -37,9 +37,9 @@ const maxOutputTokens = ref<number>(2048)
 // 作息時間（預設為上班族模板）
 const scheduleMode = ref<'disabled' | 'template' | 'custom'>('template')
 const selectedTemplateId = ref('office-worker')
-const customPeriods = ref<ActivePeriod[]>([
-  { start: 0, end: 24, status: 'online' }
-])
+
+// 用於預覽的 tab 狀態
+const schedulePreviewTab = ref<'workday' | 'holiday'>('workday')
 
 // 事件記憶
 const events = ref<string[]>([])
@@ -75,21 +75,25 @@ onMounted(() => {
       events.value = [...character.events]
 
       // 載入作息時間設定
-      if (character.activePeriods && character.activePeriods.length > 0) {
-        // 新格式：檢查是否匹配某個模板
-        const matchedTemplate = SCHEDULE_TEMPLATES.find(template =>
-          JSON.stringify(template.periods) === JSON.stringify(character.activePeriods)
+      if (character.schedule) {
+        // 最新格式：區分平日/假日
+        const matchedTemplate = SCHEDULE_TEMPLATES_V2.find(template =>
+          JSON.stringify(template.schedule) === JSON.stringify(character.schedule)
         )
 
         if (matchedTemplate) {
           scheduleMode.value = 'template'
           selectedTemplateId.value = matchedTemplate.id
         } else {
+          // 有 schedule 但不匹配模板（自訂）
           scheduleMode.value = 'custom'
-          customPeriods.value = [...character.activePeriods]
         }
+      } else if (character.activePeriods && character.activePeriods.length > 0) {
+        // 舊格式：不分平日假日，預設為「全天候在線」模板
+        scheduleMode.value = 'template'
+        selectedTemplateId.value = 'always-online'
       } else if (character.activeHours) {
-        // 舊格式：轉換為模板模式（向後兼容）
+        // 最舊格式：轉換為模板模式
         scheduleMode.value = 'template'
         selectedTemplateId.value = 'always-online'
       } else {
@@ -135,12 +139,13 @@ const handleSubmit = () => {
     maxOutputTokens: maxOutputTokens.value || undefined,
     events: events.value.filter(e => e.trim() !== ''),
 
-    // 儲存作息時間（新格式）
-    activePeriods: scheduleMode.value === 'template'
-      ? SCHEDULE_TEMPLATES.find(t => t.id === selectedTemplateId.value)?.periods
-      : scheduleMode.value === 'custom'
-        ? customPeriods.value
-        : undefined,
+    // 儲存作息時間（使用最新的 schedule 格式）
+    schedule: scheduleMode.value === 'template'
+      ? SCHEDULE_TEMPLATES_V2.find(t => t.id === selectedTemplateId.value)?.schedule
+      : undefined,
+    // 清除舊格式欄位
+    activePeriods: undefined,
+    activeHours: undefined,
 
     // 保留 isPrivate 和 importedMetadata（如果是編輯模式）
     isPrivate: originalCharacter?.isPrivate,
@@ -405,18 +410,42 @@ const getDefaultAvatar = (name: string) => {
         <div v-if="scheduleMode === 'template'" class="form-group">
           <label for="scheduleTemplate">選擇作息模板</label>
           <select id="scheduleTemplate" v-model="selectedTemplateId" class="input-field" :disabled="isPrivate">
-            <option v-for="template in SCHEDULE_TEMPLATES" :key="template.id" :value="template.id">
+            <option v-for="template in SCHEDULE_TEMPLATES_V2" :key="template.id" :value="template.id">
               {{ template.name }} - {{ template.description }}
             </option>
           </select>
           <div class="template-preview">
-            <h4>時段說明：</h4>
-            <div v-for="(period, index) in SCHEDULE_TEMPLATES.find(t => t.id === selectedTemplateId)?.periods || []"
-              :key="index" class="period-item">
+            <!-- 平日/假日 Tab 切換 -->
+            <div class="schedule-tabs">
+              <button
+                type="button"
+                :class="['schedule-tab', { active: schedulePreviewTab === 'workday' }]"
+                @click="schedulePreviewTab = 'workday'"
+              >
+                📅 上班日
+              </button>
+              <button
+                type="button"
+                :class="['schedule-tab', { active: schedulePreviewTab === 'holiday' }]"
+                @click="schedulePreviewTab = 'holiday'"
+              >
+                🎉 放假日
+              </button>
+            </div>
+            <p class="schedule-hint">
+              {{ schedulePreviewTab === 'workday' ? '週一～週五（非國定假日）' : '週末 + 國定假日（見紅就休）' }}
+            </p>
+            <div
+              v-for="(period, index) in schedulePreviewTab === 'workday'
+                ? SCHEDULE_TEMPLATES_V2.find(t => t.id === selectedTemplateId)?.schedule.workdayPeriods || []
+                : SCHEDULE_TEMPLATES_V2.find(t => t.id === selectedTemplateId)?.schedule.holidayPeriods || []"
+              :key="index"
+              class="period-item"
+            >
               <span class="period-time">
                 {{ String(period.start).padStart(2, '0') }}:00 - {{ String(period.end).padStart(2, '0') }}:00
               </span>
-              <span :class="['period-status', period.status]">
+              <span :class="['status-badge', period.status]">
                 {{ period.status === 'online' ? '在線' : period.status === 'away' ? '忙碌' : '離線' }}
               </span>
             </div>
@@ -846,6 +875,43 @@ const getDefaultAvatar = (name: string) => {
   border-radius: var(--radius);
 }
 
+.schedule-tabs {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.schedule-tab {
+  flex: 1;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-bg-primary);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  transition: all var(--transition);
+}
+
+.schedule-tab:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.schedule-tab.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+  font-weight: 600;
+}
+
+.schedule-hint {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  margin: 0 0 var(--spacing-md) 0;
+  text-align: center;
+}
+
 .template-preview h4 {
   font-size: var(--text-base);
   color: var(--color-text-primary);
@@ -869,27 +935,7 @@ const getDefaultAvatar = (name: string) => {
   font-family: monospace;
 }
 
-.period-status {
-  padding: var(--spacing-xs) var(--spacing-md);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  font-weight: 600;
-}
-
-.period-status.online {
-  background: #52c41a;
-  color: white;
-}
-
-.period-status.away {
-  background: #faad14;
-  color: white;
-}
-
-.period-status.offline {
-  background: #999;
-  color: white;
-}
+/* 使用全域 .status-badge 樣式 */
 
 .custom-notice {
   padding: var(--spacing-lg);
@@ -930,17 +976,7 @@ const getDefaultAvatar = (name: string) => {
   color: var(--color-text-secondary);
 }
 
-.status-online {
-  color: #52c41a;
-}
-
-.status-away {
-  color: #faad14;
-}
-
-.status-offline {
-  color: #999;
-}
+/* 使用全域 .text-status-online, .text-status-away, .text-status-offline 樣式 */
 
 .error-message {
   color: var(--color-error);

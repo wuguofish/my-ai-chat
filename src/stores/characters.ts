@@ -5,7 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Character } from '@/types'
-import { LIMITS, SCHEDULE_TEMPLATES } from '@/utils/constants'
+import { LIMITS, SCHEDULE_TEMPLATES_V2, SCHEDULE_TEMPLATES } from '@/utils/constants'
 
 export const useCharacterStore = defineStore('characters', () => {
   // State
@@ -100,24 +100,80 @@ export const useCharacterStore = defineStore('characters', () => {
   }
 
   /**
-   * 為沒有作息設定的舊角色加上預設作息（上班族）
+   * 舊模板 ID 對應到新模板 ID 的映射表
+   * 舊版有些模板在新版被合併或重命名
+   */
+  const OLD_TO_NEW_TEMPLATE_MAP: Record<string, string> = {
+    'always-online': 'always-online',
+    'office-worker': 'office-worker',
+    'student-early': 'student-early',
+    'student-night': 'student-night',
+    'freelancer-early': 'freelancer',      // 合併為單一「自由工作者」
+    'freelancer-night': 'night-owl',       // 夜貓型自由工作者 → 夜貓子
+    'internet-addict-early': 'internet-addict',  // 合併為單一「網路成癮者」
+    'internet-addict-night': 'internet-addict',  // 合併為單一「網路成癮者」
+    'always-busy': 'always-busy'
+  }
+
+  /**
+   * 為舊角色遷移作息設定到新格式（schedule）
+   * - 已有 schedule → 不做任何改動
+   * - 有 activePeriods → 嘗試對應到新模板
+   * - 沒有任何作息設定 → 使用「上班族」模板
    */
   function migrateCharacterSchedules() {
-    const officeWorkerTemplate = SCHEDULE_TEMPLATES.find(t => t.id === 'office-worker')
-    if (!officeWorkerTemplate) return
+    const defaultTemplate = SCHEDULE_TEMPLATES_V2.find(t => t.id === 'office-worker')
+    if (!defaultTemplate) return
 
     let migratedCount = 0
+    const migrationLog: string[] = []
 
     characters.value.forEach(character => {
-      // 如果角色沒有 activePeriods 或是空陣列，加上預設值
-      if (!character.activePeriods || character.activePeriods.length === 0) {
-        character.activePeriods = [...officeWorkerTemplate.periods]
-        migratedCount++
+      // 如果已經有新格式 schedule，跳過
+      if (character.schedule) return
+
+      let targetTemplateId = 'office-worker'  // 預設
+
+      // 嘗試從舊的 activePeriods 找到對應的舊模板
+      if (character.activePeriods && character.activePeriods.length > 0) {
+        const matchedOldTemplate = SCHEDULE_TEMPLATES.find(template =>
+          JSON.stringify(template.periods) === JSON.stringify(character.activePeriods)
+        )
+
+        if (matchedOldTemplate) {
+          // 找到對應的舊模板，映射到新模板
+          targetTemplateId = OLD_TO_NEW_TEMPLATE_MAP[matchedOldTemplate.id] || 'office-worker'
+          migrationLog.push(`${character.name}: ${matchedOldTemplate.id} → ${targetTemplateId}`)
+        } else {
+          migrationLog.push(`${character.name}: 自訂作息 → office-worker（預設）`)
+        }
+      } else {
+        migrationLog.push(`${character.name}: 無作息設定 → office-worker（預設）`)
       }
+
+      // 取得目標模板
+      const targetTemplate = SCHEDULE_TEMPLATES_V2.find(t => t.id === targetTemplateId)
+      if (targetTemplate) {
+        character.schedule = {
+          workdayPeriods: [...targetTemplate.schedule.workdayPeriods],
+          holidayPeriods: [...targetTemplate.schedule.holidayPeriods]
+        }
+      } else {
+        character.schedule = {
+          workdayPeriods: [...defaultTemplate.schedule.workdayPeriods],
+          holidayPeriods: [...defaultTemplate.schedule.holidayPeriods]
+        }
+      }
+
+      // 清除舊格式欄位
+      character.activePeriods = undefined
+      character.activeHours = undefined
+      migratedCount++
     })
 
     if (migratedCount > 0) {
-      console.log(`已為 ${migratedCount} 位角色設定預設作息（上班族）`)
+      console.log(`✅ 已為 ${migratedCount} 位角色遷移作息設定到新格式（平日/假日分開）`)
+      migrationLog.forEach(log => console.log(`   ${log}`))
     }
   }
 

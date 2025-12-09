@@ -444,6 +444,32 @@ textarea {
   min-height: 100%;
 }
 
+.header {
+  position: sticky;
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  top: 0;
+  width: 100%;
+  padding: var(--spacing-lg);
+  border-bottom: 2px solid var(--color-border);
+  z-index: var(--z-sticky);
+  background: var(--color-bg-secondary);
+  margin-bottom: var(--spacing-xl);
+}
+
+.header h3 {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+}
+
+.header .btn-ghost {
+  visibility: hidden;
+}
+
 
 /* 內容區塊 */
 .content-section {
@@ -724,6 +750,44 @@ textarea {
 
 .text-white {
   color: white;
+}
+
+/* 角色狀態文字顏色 */
+.text-status-online {
+  color: #52c41a;
+}
+
+.text-status-away {
+  color: #faad14;
+}
+
+.text-status-offline {
+  color: #999;
+}
+
+/* ==========================================
+   角色狀態指示燈樣式
+   ========================================== */
+
+/* 狀態標籤（用於作息表等顯示） */
+.status-badge {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: white;
+}
+
+.status-badge.online {
+  background-color: #52c41a;
+}
+
+.status-badge.away {
+  background-color: #faad14;
+}
+
+.status-badge.offline {
+  background-color: #999;
 }
 
 .text-sm {

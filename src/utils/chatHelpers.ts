@@ -9,6 +9,61 @@ import type {
 } from '@/types'
 import { getRelationshipLevelName, getCharacterRelationshipTypeText } from './relationshipHelpers'
 
+// 假日快取（從 holidayService 同步）
+let cachedIsHoliday: boolean | null = null
+let cachedHolidayDate: string | null = null
+
+/**
+ * 取得今天的日期字串 (YYYY-MM-DD)
+ */
+function getTodayString(): string {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/**
+ * 同步更新假日快取
+ * 應在應用程式啟動時呼叫一次
+ */
+export async function syncHolidayCache(): Promise<void> {
+  try {
+    const { isTodayHoliday } = await import('@/services/holidayService')
+    const today = getTodayString()
+
+    // 只有日期改變時才重新取得
+    if (cachedHolidayDate !== today) {
+      cachedIsHoliday = await isTodayHoliday()
+      cachedHolidayDate = today
+      console.log(`📅 假日快取已更新: ${today} -> ${cachedIsHoliday ? '假日' : '上班日'}`)
+    }
+  } catch (error) {
+    console.warn('同步假日快取失敗，使用週末判斷:', error)
+    // Fallback: 使用週末判斷
+    const now = new Date()
+    const day = now.getDay()
+    cachedIsHoliday = day === 0 || day === 6
+    cachedHolidayDate = getTodayString()
+  }
+}
+
+/**
+ * 取得今天是否為假日（同步版本，使用快取）
+ */
+export function isTodayHolidaySync(): boolean {
+  // 如果快取有效，直接使用
+  const today = getTodayString()
+  if (cachedHolidayDate === today && cachedIsHoliday !== null) {
+    return cachedIsHoliday
+  }
+
+  // 快取無效時，使用週末判斷作為 fallback
+  const day = new Date().getDay()
+  return day === 0 || day === 6
+}
+
 export interface SystemPromptContext {
   character: Character
   user: UserProfile
@@ -455,7 +510,36 @@ export function parseMentionedCharacterIds(message: string, allCharacterIds: str
 }
 
 /**
+ * 根據時段陣列取得當前狀態
+ */
+function getStatusFromPeriods(
+  periods: { start: number; end: number; status: 'online' | 'away' | 'offline' }[],
+  currentHour: number
+): 'online' | 'away' | 'offline' {
+  for (const period of periods) {
+    if (period.start <= period.end) {
+      // 正常時段：例如 8:00 到 18:00
+      if (currentHour >= period.start && currentHour < period.end) {
+        return period.status
+      }
+    } else {
+      // 跨日時段：例如 23:00 到 02:00
+      if (currentHour >= period.start || currentHour < period.end) {
+        return period.status
+      }
+    }
+  }
+  // 如果沒有匹配的時段，預設為離線
+  return 'offline'
+}
+
+/**
  * 取得角色目前的狀態（根據作息時間）
+ * 支援三種格式：
+ * 1. schedule（新格式）：區分平日/假日
+ * 2. activePeriods（舊格式）：不分平日假日
+ * 3. activeHours（最舊格式）：簡單的 online/offline 二分法
+ *
  * @param character 角色物件
  * @param currentTime 當前時間（可選，預設為現在）
  * @returns 角色狀態 'online' | 'away' | 'offline'
@@ -464,27 +548,24 @@ export function getCharacterStatus(character: Character, currentTime?: Date): 'o
   const now = currentTime || new Date()
   const currentHour = now.getHours()
 
-  // 優先使用新格式 activePeriods
-  if (character.activePeriods && character.activePeriods.length > 0) {
-    // 找到當前時間所在的時段
-    for (const period of character.activePeriods) {
-      if (period.start <= period.end) {
-        // 正常時段：例如 8:00 到 18:00
-        if (currentHour >= period.start && currentHour < period.end) {
-          return period.status
-        }
-      } else {
-        // 跨日時段：例如 23:00 到 02:00
-        if (currentHour >= period.start || currentHour < period.end) {
-          return period.status
-        }
-      }
+  // 最優先：使用新格式 schedule（區分平日/假日）
+  if (character.schedule) {
+    const isHoliday = isTodayHolidaySync()
+    const periods = isHoliday
+      ? character.schedule.holidayPeriods
+      : character.schedule.workdayPeriods
+
+    if (periods && periods.length > 0) {
+      return getStatusFromPeriods(periods, currentHour)
     }
-    // 如果沒有匹配的時段，預設為離線
-    return 'offline'
   }
 
-  // 向後兼容舊格式 activeHours（簡單的 online/offline 二分法）
+  // 次優先：使用舊格式 activePeriods（不分平日假日）
+  if (character.activePeriods && character.activePeriods.length > 0) {
+    return getStatusFromPeriods(character.activePeriods, currentHour)
+  }
+
+  // 向後兼容最舊格式 activeHours（簡單的 online/offline 二分法）
   if (character.activeHours) {
     const { start, end } = character.activeHours
     const isInActiveHours = (start <= end)

@@ -1,5 +1,27 @@
 # 更新履歷
 
+## [1.6.8] - 2025-12-09
+
+### ✨ 新增功能
+- **新增兩個作息模板**
+  - 「上班族父母」：平日上班+育兒，假日顧小孩，只有深夜才有自己的時間
+  - 「輪班工作者」：假日反而要上班，平日反而比較空閒
+
+### 🔧 技術改進
+- **角色狀態邏輯重構**
+  - 新增 `useCharacterStatus` composable，統一管理角色狀態判斷邏輯
+  - 提取 `getCharacterStatusInfo()` 函數，適用於 v-for 等非 reactive 場景
+  - 新增全域 CSS：`.text-status-online`、`.text-status-away`、`.text-status-offline`
+  - 新增全域 CSS：`.status-badge.online`、`.status-badge.away`、`.status-badge.offline`
+  - `CharacterDetail.vue`、`ChatRoom.vue`、`CharacterForm.vue` 統一使用共用元件
+
+- **好友詳情頁作息表顯示優化**
+  - 修正「尚未設定作息表」誤顯示的問題
+  - 新增平日/假日分頁顯示，清楚區分不同日期的作息
+  - 顯示今天是平日還是假日的提示
+
+---
+
 ## [1.6.7] - 2025-12-09
 
 ### 🔧 技術改進
@@ -520,6 +542,4 @@
 ### 🚀 計劃功能
 - [ ] 更多關係互動選項
 - [ ] 自訂主題顏色
-- [ ] NPC關係進展評估系統
-- [ ] 好友狀態列
 - [ ] 好友動態牆
