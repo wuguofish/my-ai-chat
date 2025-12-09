@@ -7,6 +7,7 @@ import { useMemoriesStore } from '@/stores/memories'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useCharacterStore } from '@/stores/characters'
 import ToastContainer from '@/components/ToastContainer.vue'
+import GlobalModal from '@/components/GlobalModal.vue'
 
 // 版本更新提示
 const showUpdateDialog = ref(false)
@@ -102,6 +103,9 @@ const handleLater = () => {
 
   <!-- Toast 通知容器 -->
   <ToastContainer />
+
+  <!-- 全域 Modal 對話框 -->
+  <GlobalModal />
 
   <RouterView />
 </template>

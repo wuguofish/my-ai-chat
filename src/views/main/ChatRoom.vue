@@ -7,6 +7,7 @@ import { useUserStore } from '@/stores/user'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { useMemoriesStore } from '@/stores/memories'
 import { useToast } from '@/composables/useToast'
+import { useModal } from '@/composables/useModal'
 import type { Character } from '@/types'
 import {
   formatMessageTime,
@@ -31,6 +32,7 @@ const userStore = useUserStore()
 const relationshipsStore = useRelationshipsStore()
 const memoriesStore = useMemoriesStore()
 const { info } = useToast()
+const { alert, confirm } = useModal()
 
 const roomId = computed(() => route.params.id as string)
 const room = computed(() => chatRoomStore.getRoomById(roomId.value))
@@ -56,6 +58,21 @@ const groupCharacters = computed(() => {
 // 使用者資訊
 const userName = computed(() => userStore.userName)
 const userAvatar = computed(() => userStore.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName.value)}&background=667eea&color=fff`)
+const userAge = computed(() => userStore.profile?.age)
+
+// 取得記憶生成用的年齡資訊（單聊用當前角色，群聊用所有角色中最年輕的）
+const getAgeContextForMemory = (targetCharacter?: Character | null) => {
+  if (targetCharacter) {
+    return { userAge: userAge.value, characterAge: targetCharacter.age }
+  }
+  // 群聊：找出最年輕的角色（未設定年齡視為未成年）
+  const ages = groupCharacters.value.map(c => {
+    const age = parseInt(c.age || '', 10)
+    return isNaN(age) ? 0 : age
+  })
+  const minAge = ages.length > 0 ? Math.min(...ages) : 0
+  return { userAge: userAge.value, characterAge: minAge > 0 ? String(minAge) : undefined }
+}
 
 // @ 選單可選擇的對象
 const mentionOptions = computed(() => {
@@ -259,7 +276,7 @@ const handleGenerateContext = async () => {
 
   const currentMessages = messages.value
   if (currentMessages.length < 10) {
-    alert('訊息數量不足，無法生成情境（至少需要 10 則訊息）')
+    await alert('訊息數量不足，無法生成情境（至少需要 10 則訊息）', { type: 'warning' })
     return
   }
 
@@ -267,24 +284,24 @@ const handleGenerateContext = async () => {
     isGeneratingContext.value = true
     const apiKey = userStore.apiKey
     if (!apiKey) {
-      alert('請先在設定中填入 API Key')
+      await alert('請先在設定中填入 API Key', { type: 'warning' })
       return
     }
 
     // 取得最近 20 則訊息
     const recentMessages = currentMessages.slice(-20)
 
-    // 生成情境摘要
-    const summary = await generateMemorySummary(apiKey, recentMessages)
+    // 生成情境摘要（群聊情境用最年輕角色判斷安全模式）
+    const summary = await generateMemorySummary(apiKey, recentMessages, getAgeContextForMemory())
 
     // 更新聊天室情境
     memoriesStore.updateRoomSummary(roomId.value, summary)
     editingContextContent.value = summary
 
-    alert('情境更新成功！')
+    await alert('情境更新成功！', { type: 'success' })
   } catch (error) {
     console.error('生成情境失敗:', error)
-    alert('生成情境失敗：' + (error as Error).message)
+    await alert('生成情境失敗：' + (error as Error).message, { type: 'danger' })
   } finally {
     isGeneratingContext.value = false
   }
@@ -330,7 +347,7 @@ const handleGenerateMemory = async () => {
 
   const currentMessages = messages.value
   if (currentMessages.length < 10) {
-    alert('訊息數量不足，無法生成記憶（至少需要 10 則訊息）')
+    await alert('訊息數量不足，無法生成記憶（至少需要 10 則訊息）', { type: 'warning' })
     return
   }
 
@@ -338,18 +355,17 @@ const handleGenerateMemory = async () => {
     isGeneratingMemory.value = true
     const apiKey = userStore.apiKey
     if (!apiKey) {
-      alert('請先在設定中填入 API Key')
+      await alert('請先在設定中填入 API Key', { type: 'warning' })
       return
     }
 
     // 取得最近 15 則訊息
     const recentMessages = currentMessages.slice(-15)
 
-    // 生成短期記憶摘要
-    const summary = await generateMemorySummary(apiKey, recentMessages)
-
     // 判斷是私聊還是群聊
     if (room.value?.type === 'single' && character.value) {
+      // 私聊：生成短期記憶摘要（用當前角色判斷安全模式）
+      const summary = await generateMemorySummary(apiKey, recentMessages, getAgeContextForMemory(character.value))
       // 私聊：為單一角色生成記憶
       const result = memoriesStore.addCharacterShortTermMemory(
         character.value.id,
@@ -359,7 +375,7 @@ const handleGenerateMemory = async () => {
       )
 
       if (result === null) {
-        if (confirm('短期記憶已滿（6 筆全未處理），是否要先提取長期記憶？')) {
+        if (await confirm('短期記憶已滿（6 筆全未處理），是否要先提取長期記憶？')) {
           await processShortTermMemoriesForCharacter(character.value.id)
           memoriesStore.addCharacterShortTermMemory(
             character.value.id,
@@ -367,12 +383,14 @@ const handleGenerateMemory = async () => {
             'manual',
             roomId.value
           )
-          alert('記憶生成成功！')
+          await alert('記憶生成成功！', { type: 'success' })
         }
       } else {
-        alert('記憶生成成功！')
+        await alert('記憶生成成功！', { type: 'success' })
       }
     } else if (room.value?.type === 'group') {
+      // 群聊：生成短期記憶摘要（用最年輕角色判斷安全模式）
+      const summary = await generateMemorySummary(apiKey, recentMessages, getAgeContextForMemory())
       // 群聊：為所有參與角色生成記憶
       let successCount = 0
       for (const char of groupCharacters.value) {
@@ -395,11 +413,11 @@ const handleGenerateMemory = async () => {
         }
         successCount++
       }
-      alert(`記憶生成成功！已為 ${successCount} 位角色生成記憶`)
+      await alert(`記憶生成成功！已為 ${successCount} 位角色生成記憶`, { type: 'success' })
     }
   } catch (error) {
     console.error('生成記憶失敗:', error)
-    alert('生成記憶失敗：' + (error as Error).message)
+    await alert('生成記憶失敗：' + (error as Error).message, { type: 'danger' })
   } finally {
     isGeneratingMemory.value = false
   }
@@ -462,14 +480,20 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
     // 取得最近 15 則訊息
     const recentMessages = currentMessages.slice(-15)
 
-    // 生成短期記憶摘要
-    const summary = await generateMemorySummary(apiKey, recentMessages)
-
     // 判斷是私聊還是群聊
     if (targetRoom?.type === 'single') {
       // 私聊：為單一角色生成記憶
       const targetCharacterId = targetRoom.characterIds[0]
       if (!targetCharacterId) return true  // 沒有角色，視為成功（不需要處理）
+
+      // 取得角色資訊用於年齡判斷
+      const targetCharacter = characterStore.getCharacterById(targetCharacterId)
+
+      // 生成短期記憶摘要
+      const summary = await generateMemorySummary(apiKey, recentMessages, {
+        userAge: userAge.value,
+        characterAge: targetCharacter?.age
+      })
 
       const result = memoriesStore.addCharacterShortTermMemory(
         targetCharacterId,
@@ -503,6 +527,19 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
       const targetCharacters = targetRoom.characterIds
         .map(id => characterStore.getCharacterById(id))
         .filter((c): c is NonNullable<typeof c> => c !== null)
+
+      // 群聊：找出最年輕的角色（用於判斷安全模式）
+      const ages = targetCharacters.map(c => {
+        const age = parseInt(c.age || '', 10)
+        return isNaN(age) ? 0 : age
+      })
+      const minAge = ages.length > 0 ? Math.min(...ages) : 0
+
+      // 生成短期記憶摘要
+      const summary = await generateMemorySummary(apiKey, recentMessages, {
+        userAge: userAge.value,
+        characterAge: minAge > 0 ? String(minAge) : undefined
+      })
 
       for (const char of targetCharacters) {
         const result = memoriesStore.addCharacterShortTermMemory(
@@ -573,8 +610,22 @@ const handleRoomContextGeneration = async (targetRoomId?: string) => {
     // 取得最近 30 則訊息
     const recentMessages = currentMessages.slice(-30)
 
+    // 取得群聊角色，找出最年輕的（用於判斷安全模式）
+    const targetCharacters = targetRoom.characterIds
+      .map(id => characterStore.getCharacterById(id))
+      .filter((c): c is NonNullable<typeof c> => c !== null)
+
+    const ages = targetCharacters.map(c => {
+      const age = parseInt(c.age || '', 10)
+      return isNaN(age) ? 0 : age
+    })
+    const minAge = ages.length > 0 ? Math.min(...ages) : 0
+
     // 生成聊天室情境摘要
-    const summary = await generateMemorySummary(apiKey, recentMessages)
+    const summary = await generateMemorySummary(apiKey, recentMessages, {
+      userAge: userAge.value,
+      characterAge: minAge > 0 ? String(minAge) : undefined
+    })
 
     // 更新聊天室情境
     memoriesStore.updateRoomSummary(processRoomId, summary)
@@ -585,12 +636,8 @@ const handleRoomContextGeneration = async (targetRoomId?: string) => {
 
     // 評估角色間關係（群聊才需要）
     if (targetRoom.characterIds.length >= 2) {
-      const characters = targetRoom.characterIds
-        .map(id => characterStore.getCharacterById(id))
-        .filter((c): c is NonNullable<typeof c> => c !== null)
-
       // 背景執行關係評估，不阻塞主流程
-      evaluateCharacterRelationships(apiKey, characters, recentMessages)
+      evaluateCharacterRelationships(apiKey, targetCharacters, recentMessages, userAge.value)
         .then(relationships => {
           if (relationships.length > 0) {
             console.log(`[關係] 評估完成，共 ${relationships.length} 對關係`)
@@ -631,8 +678,14 @@ const processShortTermMemoriesForCharacter = async (characterId: string) => {
 
     if (shortTermMemories.length === 0) return
 
+    // 取得角色資訊用於年齡判斷
+    const targetCharacter = characterStore.getCharacterById(characterId)
+
     // 呼叫 AI 提取長期記憶
-    const longTermMemoryContents = await extractLongTermMemories(apiKey, shortTermMemories)
+    const longTermMemoryContents = await extractLongTermMemories(apiKey, shortTermMemories, {
+      userAge: userAge.value,
+      characterAge: targetCharacter?.age
+    })
 
     // 批次新增長期記憶（只會觸發一次狀態更新）
     await memoriesStore.addCharacterMemories(
@@ -695,7 +748,7 @@ const handleSingleChatMessage = async (userMessage: string) => {
   try {
     const apiKey = userStore.apiKey
     if (!apiKey) {
-      alert('尚未設定 API Key，請到設定頁面設定')
+      await alert('尚未設定 API Key，請到設定頁面設定', { type: 'warning' })
       return
     }
 
@@ -784,6 +837,20 @@ const handleSingleChatMessage = async (userMessage: string) => {
       relationshipsStore.updateAffection(currentCharacter.id, aiResponse.newAffection)
     }
 
+    // 如果是靜默更新（AI 只回傳好感度），用系統訊息提示
+    if (aiResponse.silentUpdate) {
+      console.log('✅ 靜默更新好感度完成')
+      chatRoomStore.addSystemMessage(
+        currentRoomId,
+        `${currentCharacter.name} 對你的好感度有所變化`
+      )
+      // 只有在使用者還在同一個聊天室時才滾動
+      if (roomId.value === currentRoomId) {
+        scrollToBottom()
+      }
+      return
+    }
+
     // 新增角色訊息
     chatRoomStore.addMessage(currentRoomId, {
       roomId: currentRoomId,
@@ -810,7 +877,7 @@ const handleSingleChatMessage = async (userMessage: string) => {
     }
   } catch (error) {
     console.error('Failed to get character response:', error)
-    alert('取得回應時發生錯誤')
+    await alert('取得回應時發生錯誤', { type: 'danger' })
   } finally {
     isLoading.value = false
   }
@@ -850,7 +917,7 @@ const handleGroupChatMessage = async (userMessage: string) => {
   try {
     const apiKey = userStore.apiKey
     if (!apiKey) {
-      alert('尚未設定 API Key，請到設定頁面設定')
+      await alert('尚未設定 API Key，請到設定頁面設定', { type: 'warning' })
       return
     }
 
@@ -1029,6 +1096,12 @@ const handleGroupChatMessage = async (userMessage: string) => {
           relationshipsStore.updateAffection(currentCharacter.id, aiResponse.newAffection)
         }
 
+        // 如果是靜默更新（AI 只回傳好感度），跳過訊息處理
+        if (aiResponse.silentUpdate) {
+          console.log(`✅ ${currentCharacter.name} 靜默更新好感度完成，不新增訊息`)
+          continue
+        }
+
         // 轉換 AI 回應：@名字 → @ID（為了偵測提及）
         const aiResponseForAI = formatMessageForAI(aiResponse.text, allCharacters, userName.value)
 
@@ -1070,7 +1143,7 @@ const handleGroupChatMessage = async (userMessage: string) => {
     }
   } catch (error) {
     console.error('Failed to get character response:', error)
-    alert('取得回應時發生錯誤')
+    await alert('取得回應時發生錯誤', { type: 'danger' })
   } finally {
     isLoading.value = false
   }
@@ -1338,13 +1411,13 @@ const handleShowAddMember = () => {
   showAddMemberModal.value = true
 }
 
-const handleAddMember = (characterId: string) => {
+const handleAddMember = async (characterId: string) => {
   if (!room.value) return
 
   // 檢查人數限制
   const MAX_GROUP_MEMBERS = 15
   if (room.value.characterIds.length >= MAX_GROUP_MEMBERS) {
-    alert(`群組成員已達上限（${MAX_GROUP_MEMBERS} 人）`)
+    await alert(`群組成員已達上限（${MAX_GROUP_MEMBERS} 人）`, { type: 'warning' })
     return
   }
 
@@ -1380,12 +1453,12 @@ const handleEditGroupName = () => {
 }
 
 // 儲存群組名稱
-const handleSaveGroupName = () => {
+const handleSaveGroupName = async () => {
   if (!room.value) return
 
   const newName = editingGroupNameContent.value.trim()
   if (newName.length === 0) {
-    alert('群組名稱不能為空')
+    await alert('群組名稱不能為空', { type: 'warning' })
     return
   }
 
@@ -1411,9 +1484,9 @@ const handleBack = () => {
   router.push('/main/chats')
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (!room.value) {
-    alert('找不到聊天室')
+    await alert('找不到聊天室', { type: 'danger' })
     router.push('/main/chats')
     return
   }
@@ -2101,6 +2174,7 @@ onBeforeUnmount(() => {
   margin: 0;
   overflow: hidden;
   display: -webkit-box;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   line-height: 1.4;

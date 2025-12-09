@@ -5,11 +5,14 @@ import { useUserStore } from '@/stores/user'
 import { useCharacterStore } from '@/stores/characters'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { useChatRoomsStore } from '@/stores/chatRooms'
+import { useModal } from '@/composables/useModal'
 import { getRelationshipLevelInfo, getCharacterRelationshipTypeText } from '@/utils/relationshipHelpers'
 import { getCharacterStatus } from '@/utils/chatHelpers'
 import { SCHEDULE_TEMPLATES } from '@/utils/constants'
 import type { Character } from '@/types'
 import { Plus, ArrowLeft, MessageCircle, Edit, Bubbles, Trash2, X, Heart } from 'lucide-vue-next'
+
+const { alert, confirm, confirmDanger } = useModal()
 
 const router = useRouter()
 const route = useRoute()
@@ -114,9 +117,9 @@ const handleSaveStatus = () => {
   showStatusModal.value = false
 }
 
-const handleClearStatus = () => {
+const handleClearStatus = async () => {
   if (!character.value) return
-  if (confirm('確定要清除狀態訊息嗎？')) {
+  if (await confirm('確定要清除狀態訊息嗎？')) {
     characterStore.clearCharacterStatus(characterId.value)
     showStatusModal.value = false
   }
@@ -139,13 +142,14 @@ const handleGenerateStatus = async () => {
     const statusMessage = await generateStatusMessage(
       character.value,
       { shortTermMemories },
-      userStore.apiKey
+      userStore.apiKey,
+      userStore.profile?.age
     )
 
     editingStatus.value = statusMessage
   } catch (error) {
     console.error('生成狀態訊息失敗:', error)
-    alert('生成失敗，請稍後再試')
+    await alert('生成失敗，請稍後再試', { type: 'danger' })
   } finally {
     isGeneratingStatus.value = false
   }
@@ -205,7 +209,7 @@ const handleAdjustRelationship = () => {
   showAdjustModal.value = true
 }
 
-const handleSaveAdjustment = () => {
+const handleSaveAdjustment = async () => {
   // 更新好感度
   relationshipsStore.updateAffection(characterId.value, adjustAffection.value)
   // 更新親密關係設定
@@ -214,7 +218,7 @@ const handleSaveAdjustment = () => {
   relationshipsStore.updateRelationshipNote(characterId.value, adjustNote.value)
 
   showAdjustModal.value = false
-  alert('關係已更新')
+  await alert('關係已更新', { type: 'success' })
 }
 
 // 管理角色間關係
@@ -264,9 +268,9 @@ const handleAddRelation = () => {
   }
 }
 
-const handleSaveNewRelation = () => {
+const handleSaveNewRelation = async () => {
   if (!newRelation.value.targetCharacterId || !newRelation.value.description.trim()) {
-    alert('請選擇好友並填寫關係描述')
+    await alert('請選擇好友並填寫關係描述', { type: 'warning' })
     return
   }
 
@@ -282,7 +286,7 @@ const handleSaveNewRelation = () => {
   )
 
   showAddRelationModal.value = false
-  alert(newRelation.value.bidirectional ? '雙向關係已新增' : '關係已新增')
+  await alert(newRelation.value.bidirectional ? '雙向關係已新增' : '關係已新增', { type: 'success' })
 }
 
 const handleEditRelation = (targetId: string) => {
@@ -304,7 +308,7 @@ const handleEditRelation = (targetId: string) => {
   }
 }
 
-const handleSaveEditRelation = () => {
+const handleSaveEditRelation = async () => {
   if (!editingRelation.value) return
 
   relationshipsStore.updateCharacterRelationship(
@@ -320,31 +324,31 @@ const handleSaveEditRelation = () => {
 
   showEditRelationModal.value = false
   editingRelation.value = null
-  alert('關係已更新')
+  await alert('關係已更新', { type: 'success' })
 }
 
-const handleDeleteRelation = (targetId: string) => {
-  if (confirm('確定要刪除這個關係嗎？')) {
+const handleDeleteRelation = async (targetId: string) => {
+  if (await confirmDanger('確定要刪除這個關係嗎？')) {
     // 只刪除「目前角色→目標角色」的關係（單向刪除）
     const index = relationshipsStore.characterToCharacter.findIndex(
       r => r.fromCharacterId === characterId.value && r.toCharacterId === targetId
     )
     if (index !== -1) {
       relationshipsStore.characterToCharacter.splice(index, 1)
-      alert('關係已刪除')
+      await alert('關係已刪除', { type: 'success' })
     }
   }
 }
 
 // 刪除 LLM 評估的關係狀態
-const handleDeleteState = (fromId: string, toId: string) => {
-  if (confirm('確定要清除這個關係狀態嗎？')) {
+const handleDeleteState = async (fromId: string, toId: string) => {
+  if (await confirmDanger('確定要清除這個關係狀態嗎？')) {
     relationshipsStore.deleteRelationshipState(fromId, toId)
   }
 }
 
-const handleDelete = () => {
-  if (character.value && confirm(`確定要刪除好友「${character.value.name}」嗎？`)) {
+const handleDelete = async () => {
+  if (character.value && await confirmDanger(`確定要刪除好友「${character.value.name}」嗎？`)) {
     // 同時刪除關係資料
     relationshipsStore.deleteAllRelationshipsForCharacter(characterId.value)
     characterStore.deleteCharacter(characterId.value)
@@ -495,7 +499,7 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
           </div>
           <div class="schedule-periods">
             <div v-for="(period, index) in scheduleInfo.periods" :key="index" class="schedule-period-item">
-              <div class="period-time">              
+              <div class="period-time">
                 {{ String(period.start).padStart(2, '0') }}:00 - {{ String(period.end).padStart(2, '0') }}:00
               </div>
               <div :class="['period-status', `status-${period.status}`]">
@@ -563,14 +567,15 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
                 </span>
               </div>
               <div class="relationship-description">{{ rel.description }}</div>
+              <div v-if="rel.note" class="relationship-note-small">{{ rel.note }}</div>
               <div v-if="rel.state" class="relationship-state">
                 <span class="state-label">目前狀態：</span>
                 <span class="state-content">{{ rel.state }}</span>
-                <button class="btn-ghost-small" @click="handleDeleteState(rel.fromCharacterId, rel.toCharacterId)" title="清除狀態">
+                <button class="btn-ghost-small" @click="handleDeleteState(rel.fromCharacterId, rel.toCharacterId)"
+                  title="清除狀態">
                   <X :size="14" />
                 </button>
               </div>
-              <div v-if="rel.note" class="relationship-note-small">{{ rel.note }}</div>
             </div>
             <div class="relationship-actions">
               <button class="btn btn-sm btn-warning" @click="handleEditRelation(rel.toCharacterId)">
@@ -604,11 +609,11 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
               </span>
             </div>
             <div class="relationship-description">{{ rel.description }}</div>
+            <div v-if="rel.note" class="relationship-note-small">{{ rel.note }}</div>
             <div v-if="rel.state" class="relationship-state">
               <span class="state-label">目前狀態：</span>
               <span class="state-content">{{ rel.state }}</span>
             </div>
-            <div v-if="rel.note" class="relationship-note-small">{{ rel.note }}</div>
           </div>
         </div>
         <div v-else class="empty-state-small">
@@ -646,13 +651,14 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
           <div class="modal-body">
             <div class="form-group">
               <label>好感度：{{ adjustAffection }}</label>
-              <input v-model.number="adjustAffection" type="range" min="-300" max="300" step="1" class="affection-slider">
+              <input v-model.number="adjustAffection" type="range" min="-300" max="300" step="1"
+                class="affection-slider">
               <div class="affection-hint">
                 {{
-                  
-                  relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'enemy' ? '仇敵 (-100以下)' :
-                  relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'dislike' ? '不爽 (-100 ~ -30)' :
-                  relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'stranger' ? '陌生人 (-30 ~ 10)' :
+
+                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'enemy' ? '仇敵 (-100以下)' :
+                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'dislike' ? '不爽 (-100 ~ -30)' :
+                relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'stranger' ? '陌生人 (-30 ~ 10)' :
                 relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'acquaintance' ? '認識 (10 ~ 30)' :
                 relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'friend' ? '朋友 (30 ~ 80)' :
                 relationshipsStore.calculateRelationshipLevel(adjustAffection) === 'close_friend' ? '好友/曖昧 (80 ~ 200)' :

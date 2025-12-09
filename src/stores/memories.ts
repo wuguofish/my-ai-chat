@@ -50,7 +50,8 @@ export const useMemoriesStore = defineStore('memories', () => {
       const statusMessage = await generateStatusMessage(
         character,
         { shortTermMemories },
-        userStore.apiKey
+        userStore.apiKey,
+        userStore.profile?.age
       )
 
       // 更新狀態訊息

@@ -20,6 +20,7 @@ export const useUserStore = defineStore('user', () => {
   const userName = computed(() => profile.value?.nickname || '使用者')
   const userAvatar = computed(() => profile.value?.avatar || '')
   const apiKey = computed(() => profile.value?.apiConfig.geminiApiKey || '')
+  const globalSystemPrompt = computed(() => profile.value?.globalSystemPrompt || '')
 
   // Actions
   function setProfile(newProfile: UserProfile) {
@@ -55,6 +56,7 @@ export const useUserStore = defineStore('user', () => {
     userName,
     userAvatar,
     apiKey,
+    globalSystemPrompt,
     // Actions
     setProfile,
     updateProfile,

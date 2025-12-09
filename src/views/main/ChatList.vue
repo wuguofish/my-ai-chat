@@ -5,8 +5,11 @@ import { useUserStore } from '@/stores/user'
 import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { formatMessageTime, getCharacterStatus, formatMessageForDisplay } from '@/utils/chatHelpers'
+import { useModal } from '@/composables/useModal'
 import PageHeader from '@/components/common/PageHeader.vue'
 import type { ChatRoom } from '@/types'
+
+const { alert } = useModal()
 
 const router = useRouter()
 const characterStore = useCharacterStore()
@@ -48,9 +51,9 @@ const availableCharacters = computed(() => {
 const allCharacters = computed(() => characterStore.characters)
 
 
-const handleCreateSingleChat = () => {
+const handleCreateSingleChat = async () => {
   if (!selectedCharacterId.value) {
-    alert('請選擇一位角色')
+    await alert('請選擇一位角色')
     return
   }
 
@@ -67,9 +70,9 @@ const handleCreateSingleChat = () => {
   router.push(`/main/chats/${roomId}`)
 }
 
-const handleCreateGroupChat = () => {
+const handleCreateGroupChat = async () => {
   if (selectedGroupCharacterIds.value.length === 0) {
-    alert('請至少選擇一位成員')
+    await alert('請至少選擇一位成員')
     return
   }
 

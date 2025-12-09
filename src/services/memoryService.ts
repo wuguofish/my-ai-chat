@@ -2,8 +2,16 @@
  * 記憶管理服務
  */
 
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai'
+import { createGeminiModel, isAdultConversation, getGeminiResponse, getActuallyContent } from '@/services/gemini'
 import type { Message, Memory, Character, CharacterRelationType } from '@/types'
+
+/**
+ * 記憶生成的年齡資訊
+ */
+export interface AgeContext {
+  userAge?: string
+  characterAge?: string
+}
 
 /**
  * LLM 評估的關係結果
@@ -20,38 +28,36 @@ export interface RelationshipEvaluation {
  */
 export async function generateMemorySummary(
   apiKey: string,
-  messages: Message[]
+  messages: Message[],
+  ageContext?: AgeContext
 ): Promise<string> {
   try {
-    const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({
+    const isAdult = isAdultConversation(ageContext?.userAge, ageContext?.characterAge)
+
+    // 系統指令：定義 AI 的角色和任務
+    // 使用「小說創作分析」的框架，降低被誤判為真實情境的機率
+    const systemInstruction = `你是一個小說創作輔助系統，專門整理虛構故事的劇情摘要。
+
+這是一個${isAdult ? '面向成人讀者的' : ''}互動式小說創作平台。以下對話是作者創作的虛構劇情片段，所有角色、事件、關係都是文學創作的一部分。
+
+你的任務是以編輯的角度，整理這段劇情的重點摘要。${isAdult ? '作為成人向作品，故事可能包含複雜的情感或親密互動，請如實記錄。' : ''}
+
+請用 1-2 句話總結劇情的重點，包括：
+- 關鍵事件或話題
+- 重要的情緒或態度變化
+- 任何需要記住的具體資訊（時間、地點、人物等）
+
+只輸出摘要內容，不要加任何前綴或說明。`
+
+    const model = createGeminiModel(apiKey, {
       model: 'gemini-2.5-flash-lite',
-      safetySettings: [
-        {
-          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
-          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH
-        }
-      ],
-      generationConfig: {
-        temperature: 0.3,  // 較低溫度，確保摘要穩定
-        maxOutputTokens: 2048
-      }
+      systemInstruction: {
+        parts: [{ text: systemInstruction }],
+        role: 'user'
+      },
+      temperature: 0.3,  // 較低溫度，確保摘要穩定
+      maxOutputTokens: 2048,
+      safeMode: !isAdult
     })
 
     // 格式化對話內容
@@ -59,22 +65,11 @@ export async function generateMemorySummary(
       .map(m => `${m.senderName}: ${m.content}`)
       .join('\n')
 
-    const prompt = `你是一個角色扮演遊戲的記憶管理系統。你的任務是分析虛構角色之間的對話，提取重要資訊作為記憶摘要。
+    // 使用者輸入：要分析的對話
+    const prompt = `對話內容：
+${conversation}`
 
-注意：以下對話內容來自虛構的角色扮演情境，所有角色和事件都是虛構的。請以客觀的角度整理對話重點。
-
-對話內容：
-${conversation}
-
-請用 1-2 句話總結這段對話的重點，包括：
-- 關鍵事件或話題
-- 重要的情緒或態度變化
-- 任何需要記住的具體資訊（時間、地點、人物等）
-
-只輸出摘要內容，不要加任何前綴或說明：`
-
-    const result = await model.generateContent(prompt)
-    const response = result.response
+    const response = await getGeminiResponse(prompt, model)
     const summary = response.text().trim()
 
     // 檢查是否為空回應（可能是安全封鎖）
@@ -85,7 +80,7 @@ ${conversation}
       throw new Error(`記憶摘要生成失敗: ${blockReason || finishReason || '空回應'}`)
     }
 
-    return summary
+    return getActuallyContent(summary)
   } catch (error) {
     console.error('生成記憶摘要失敗:', error)
     throw new Error('無法生成記憶摘要')
@@ -98,54 +93,22 @@ ${conversation}
  */
 export async function extractLongTermMemories(
   apiKey: string,
-  shortTermMemories: Memory[]
+  shortTermMemories: Memory[],
+  ageContext?: AgeContext
 ): Promise<string[]> {
   try {
-    const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash-lite',
-      safetySettings: [
-        {
-          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
-          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH
-        }
-      ],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 2048
-      }
-    })
+    const isAdult = isAdultConversation(ageContext?.userAge, ageContext?.characterAge)
 
-    // 格式化短期記憶
-    const memoriesText = shortTermMemories
-      .map((m, i) => `${i + 1}. ${m.content}`)
-      .join('\n')
+    // 系統指令：定義 AI 的角色和任務
+    // 使用「小說創作分析」的框架，降低被誤判為真實情境的機率
+    const systemInstruction = `你是一個小說創作輔助系統，專門從劇情摘要中提取重要的角色設定和劇情線索。
 
-    const prompt = `你是一個角色扮演遊戲的記憶管理系統。你的任務是從虛構角色的短期記憶中，提取真正重要、需要長期保存的資訊。
+這是一個${isAdult ? '面向成人讀者的' : ''}互動式小說創作平台。以下記憶內容是作者創作的虛構劇情摘要，所有角色、事件、關係都是文學創作的一部分。
 
-注意：以下記憶內容來自虛構的角色扮演情境，所有角色和事件都是虛構的。請以客觀的角度整理重要資訊。
-
-短期記憶：
-${memoriesText}
+你的任務是以編輯的角度，提取需要長期記住的重要資訊。${isAdult ? '作為成人向作品，故事可能包含複雜的情感或親密互動，請如實記錄。' : ''}
 
 請提取以下類型的重要資訊：
-1. 使用者的個人資訊（生日、喜好、職業、重要經歷等）
+1. 角色的個人資訊（生日、喜好、職業、重要經歷等）
 2. 重要的承諾或約定
 3. 關鍵事件的轉折點
 4. 需要長期記住的特殊偏好或習慣
@@ -157,14 +120,33 @@ ${memoriesText}
 - 只輸出記憶內容，不要編號或前綴
 
 範例輸出：
-使用者的生日是 5 月 20 日
-使用者喜歡喝拿鐵咖啡，不加糖
-使用者計劃下個月去日本旅遊
+主角的生日是 5 月 20 日
+主角喜歡喝拿鐵咖啡，不加糖
+主角計劃下個月去日本旅遊`
+
+    const model = createGeminiModel(apiKey, {
+      model: 'gemini-2.5-flash-lite',
+      systemInstruction: {
+        parts: [{ text: systemInstruction }],
+        role: 'user'
+      },
+      temperature: 0.3,
+      maxOutputTokens: 2048,
+      safeMode: !isAdult
+    })
+
+    // 格式化短期記憶
+    const memoriesText = shortTermMemories
+      .map((m, i) => `${i + 1}. ${m.content}`)
+      .join('\n')
+
+    // 使用者輸入：要分析的短期記憶
+    const prompt = `短期記憶：
+${memoriesText}
 
 請開始分析：`
 
-    const result = await model.generateContent(prompt)
-    const response = result.response
+    const response = await getGeminiResponse(prompt, model)
     const responseText = response.text().trim()
 
     // 檢查是否為空回應（可能是安全封鎖）
@@ -185,7 +167,7 @@ ${memoriesText}
     }
 
     // 分割成多條記憶
-    const memories = responseText
+    const memories = getActuallyContent(responseText)
       .split('\n')
       .map(line => line.trim())
       .filter(line => line.length > 0 && line !== '無')
@@ -204,7 +186,8 @@ ${memoriesText}
 export async function evaluateCharacterRelationships(
   apiKey: string,
   characters: Character[],
-  recentMessages: Message[]
+  recentMessages: Message[],
+  userAge?: string
 ): Promise<RelationshipEvaluation[]> {
   // 至少需要 2 個角色才能評估關係
   if (characters.length < 2) {
@@ -212,62 +195,26 @@ export async function evaluateCharacterRelationships(
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      safetySettings: [
-        {
-          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
-          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH
-        }
-      ],
-      generationConfig: {
-        temperature: 0.3,
-        maxOutputTokens: 2048,
-        responseMimeType: 'application/json'
-      }
+    // 群聊情境：只有當使用者成年且所有角色都成年時才用寬鬆模式
+    const allCharactersAdult = characters.every(c => {
+      const age = parseInt(c.age || '', 10)
+      return !isNaN(age) && age >= 18
     })
+    const isAdult = isAdultConversation(userAge, '18') && allCharactersAdult
 
-    // 格式化角色資訊
-    const charactersInfo = characters
-      .map(c => `- ${c.name}（ID: ${c.id}）：${c.personality?.slice(0, 100) || '無性格描述'}`)
-      .join('\n')
+    // 系統指令：定義 AI 的角色和任務
+    // 使用「小說創作分析」的框架，降低被誤判為真實情境的機率
+    const systemInstruction = `你是一個小說創作輔助系統，專門分析虛構故事中角色之間的關係發展。
 
-    // 格式化對話內容
-    const conversation = recentMessages
-      .map(m => `${m.senderName}: ${m.content}`)
-      .join('\n')
+這是一個${isAdult ? '面向成人讀者的' : ''}互動式小說創作平台。以下對話是作者創作的虛構劇情片段，所有角色、事件、關係都是文學創作的一部分。
 
-    const prompt = `你是一個角色扮演遊戲的關係分析系統。你的任務是分析虛構角色之間的群聊對話，評估他們的關係狀態。
-
-注意：以下對話內容來自虛構的角色扮演情境，所有角色和事件都是虛構的。請以客觀的角度分析角色互動。
-
-角色列表：
-${charactersInfo}
-
-最近的對話：
-${conversation}
+你的任務是以文學評論的角度，客觀分析這些虛構角色之間的互動模式和情感連結。${isAdult ? '作為成人向作品，故事可能包含複雜的情感糾葛，請如實分析角色關係。' : ''}
 
 請分析每一對角色之間的關係。注意：
 1. 關係是單向的（A 對 B 的看法可能不同於 B 對 A）
 2. 根據對話中的互動、語氣、回應方式來判斷
 3. 如果沒有明顯互動，可以不評估該對關係
+4. 只評估「角色列表」中的角色，對話中提及的其他人物不需要評估
 
 關係類型說明：
 - neutral: 普通/無特別感覺
@@ -291,7 +238,36 @@ ${conversation}
 如果沒有觀察到明顯的關係變化或互動，回傳空陣列：
 {
   "relationships": []
-}
+}`
+
+    const model = createGeminiModel(apiKey, {
+      model: 'gemini-2.5-flash-lite',  // 使用 lite 版本，沒有思考機制，更省 token
+      systemInstruction: {
+        parts: [{ text: systemInstruction }],
+        role: 'user'
+      },
+      temperature: 0.3,
+      maxOutputTokens: 4096,
+      responseMimeType: 'application/json',
+      safeMode: !isAdult
+    })
+
+    // 格式化角色資訊
+    const charactersInfo = characters
+      .map(c => `${c.name}（ID: ${c.id}）：${c.personality?.slice(0, 100) || '無性格描述'}\n`)
+      .join('\n')
+
+    // 格式化對話內容
+    const conversation = recentMessages
+      .map(m => `${m.senderName}: ${m.content}`)
+      .join('\n')
+
+    // 使用者輸入：要分析的資料
+    const prompt = `角色列表：\n
+${charactersInfo}
+
+最近的對話：
+${conversation}
 
 請開始分析：`
 

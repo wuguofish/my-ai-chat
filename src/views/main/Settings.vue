@@ -6,12 +6,15 @@ import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useMemoriesStore } from '@/stores/memories'
 import { useRelationshipsStore } from '@/stores/relationships'
+import { useModal } from '@/composables/useModal'
 import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService } from '@/services/googleDrive'
 import { fetchServerVersion, clearCacheAndReload, getVersionInfo, type VersionInfo } from '@/utils/version'
 import { validateApiKey } from '@/services/gemini'
 import { Eye, EyeOff } from 'lucide-vue-next'
 import PageHeader from '@/components/common/PageHeader.vue'
+
+const { alert, confirm, confirmDanger } = useModal()
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -45,7 +48,7 @@ loadVersionInfo()
 
 // 設定 token 失效回調
 googleAuthService.setTokenInvalidCallback(async () => {
-  return confirm('Google Drive 授權已失效，是否要重新授權？')
+  return await confirm('Google Drive 授權已失效，是否要重新授權？', { type: 'warning' })
 })
 
 const showApiKey = ref(false)
@@ -61,7 +64,8 @@ const editingProfile = ref({
   age: userStore.profile?.age || '',
   gender: userStore.profile?.gender || 'unset',
   profession: userStore.profile?.profession || '',
-  bio: userStore.profile?.bio || ''
+  bio: userStore.profile?.bio || '',
+  globalSystemPrompt: userStore.profile?.globalSystemPrompt || ''
 })
 
 const handleEditProfile = () => {
@@ -72,11 +76,12 @@ const handleEditProfile = () => {
     age: userStore.profile?.age || '',
     gender: userStore.profile?.gender || 'unset',
     profession: userStore.profile?.profession || '',
-    bio: userStore.profile?.bio || ''
+    bio: userStore.profile?.bio || '',
+    globalSystemPrompt: userStore.profile?.globalSystemPrompt || ''
   }
 }
 
-const handleSaveProfile = () => {
+const handleSaveProfile = async () => {
   userStore.updateProfile({
     ...userStore.profile!,
     nickname: editingProfile.value.nickname,
@@ -84,26 +89,27 @@ const handleSaveProfile = () => {
     age: editingProfile.value.age,
     gender: editingProfile.value.gender as any,
     profession: editingProfile.value.profession,
-    bio: editingProfile.value.bio
+    bio: editingProfile.value.bio,
+    globalSystemPrompt: editingProfile.value.globalSystemPrompt
   })
   showEditProfile.value = false
-  alert('個人資訊已更新')
+  await alert('個人資訊已更新', { type: 'success' })
 }
 
 const handleCancelEdit = () => {
   showEditProfile.value = false
 }
 
-const handleUpdateApiKey = () => {
+const handleUpdateApiKey = async () => {
   if (apiKeyInput.value.trim()) {
     userStore.updateApiKey(apiKeyInput.value.trim())
-    alert('API Key 已更新')
+    await alert('API Key 已更新', { type: 'success' })
   }
 }
 
 const handleValidateApiKey = async () => {
   if (!apiKeyInput.value.trim()) {
-    alert('請先輸入 API Key')
+    await alert('請先輸入 API Key', { type: 'warning' })
     return
   }
 
@@ -115,12 +121,12 @@ const handleValidateApiKey = async () => {
     apiKeyValidationResult.value = result
 
     if (result.valid) {
-      alert('✅ API Key 有效且可正常使用')
+      await alert('API Key 有效且可正常使用', { type: 'success' })
     } else {
-      alert(`❌ ${result.error || 'API Key 無效'}`)
+      await alert(result.error || 'API Key 無效', { type: 'danger' })
     }
   } catch (error) {
-    alert('檢測失敗，請稍後再試')
+    await alert('檢測失敗，請稍後再試', { type: 'danger' })
     console.error('API Key 檢測錯誤:', error)
   } finally {
     isValidatingApiKey.value = false
@@ -167,11 +173,11 @@ const handleImportData = (event: Event) => {
 
   if (file) {
     const reader = new FileReader()
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const data = JSON.parse(e.target?.result as string)
 
-        if (confirm('確定要匯入資料嗎？這會覆蓋現有資料！')) {
+        if (await confirm('確定要匯入資料嗎？這會覆蓋現有資料！', { type: 'warning' })) {
           // 還原使用者資料
           if (data.user) userStore.setProfile(data.user)
 
@@ -223,20 +229,20 @@ const handleImportData = (event: Event) => {
           // 為沒有作息設定的角色加上預設作息
           characterStore.migrateCharacterSchedules()
 
-          alert('匯入成功！')
+          await alert('匯入成功！', { type: 'success' })
           window.location.reload()
         }
       } catch (error) {
-        alert('匯入失敗：檔案格式錯誤')
+        await alert('匯入失敗：檔案格式錯誤', { type: 'danger' })
       }
     }
     reader.readAsText(file)
   }
 }
 
-const handleClearData = () => {
-  if (confirm('確定要清除所有資料嗎？此操作無法復原！')) {
-    if (confirm('再次確認：真的要清除所有資料嗎？')) {
+const handleClearData = async () => {
+  if (await confirmDanger('確定要清除所有資料嗎？此操作無法復原！')) {
+    if (await confirmDanger('再次確認：真的要清除所有資料嗎？')) {
       characterStore.clearCharacters()
       chatRoomStore.clearAllData()
       userStore.clearProfile()
@@ -250,18 +256,18 @@ const handleGoogleConnect = async () => {
   try {
     await googleAuthService.requestAuth()
     checkGoogleConnection()
-    alert('Google Drive 連線成功！')
+    await alert('Google Drive 連線成功！', { type: 'success' })
   } catch (error) {
     console.error('Google Drive 連線失敗:', error)
-    alert('Google Drive 連線失敗，請稍後再試')
+    await alert('Google Drive 連線失敗，請稍後再試', { type: 'danger' })
   }
 }
 
-const handleGoogleDisconnect = () => {
-  if (confirm('確定要中斷 Google Drive 連線嗎？')) {
+const handleGoogleDisconnect = async () => {
+  if (await confirm('確定要中斷 Google Drive 連線嗎？')) {
     googleAuthService.signOut()
     checkGoogleConnection()
-    alert('已中斷 Google Drive 連線')
+    await alert('已中斷 Google Drive 連線', { type: 'success' })
   }
 }
 
@@ -302,18 +308,18 @@ const handleGoogleBackup = async () => {
 
     // 上傳到 Google Drive
     await googleDriveService.uploadBackup(data)
-    alert('備份到 Google Drive 成功！')
+    await alert('備份到 Google Drive 成功！', { type: 'success' })
   } catch (error) {
     console.error('備份失敗:', error)
 
-    alert('備份失敗：' + (error as Error).message)
+    await alert('備份失敗：' + (error as Error).message, { type: 'danger' })
 
     // 標記為連線中斷
     isSyncing.value = false
     isGoogleConnected.value = false;
 
     // 詢問使用者是否要重新授權
-    const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續備份？')
+    const shouldReauth = await confirm('Google Drive 授權已失效，是否要重新授權並繼續備份？', { type: 'warning' })
     if (shouldReauth) {
       try {
         googleAuthService.signOut()
@@ -321,15 +327,15 @@ const handleGoogleBackup = async () => {
         checkGoogleConnection()
         // 重新授權成功，重試備份
         if (isGoogleConnected.value) {
-          alert('重新授權成功！即將重新執行備份。')
+          await alert('重新授權成功！即將重新執行備份。', { type: 'success' })
           await handleGoogleBackup()
           return  // 避免 finally 再次設定 isSyncing = false
         }
       } catch (reauthError) {
-        alert('重新授權失敗：' + (reauthError as Error).message)
+        await alert('重新授權失敗：' + (reauthError as Error).message, { type: 'danger' })
       }
     }
-    
+
   } finally {
     isSyncing.value = false
   }
@@ -344,7 +350,7 @@ const handleGoogleRestore = async () => {
       await handleGoogleConnect()
     }
 
-    if (!confirm('確定要從 Google Drive 還原資料嗎？這會覆蓋現有資料！')) {
+    if (!await confirm('確定要從 Google Drive 還原資料嗎？這會覆蓋現有資料！', { type: 'warning' })) {
       return
     }
 
@@ -394,17 +400,17 @@ const handleGoogleRestore = async () => {
       }
     }
 
-    alert('從 Google Drive 還原成功！')
+    await alert('從 Google Drive 還原成功！', { type: 'success' })
     window.location.reload()
   } catch (error) {
     console.error('還原失敗:', error)
-    
+
     // 標記為連線中斷
     isSyncing.value = false
     isGoogleConnected.value = false;
 
     // 詢問使用者是否要重新授權
-    const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權並繼續備份？')
+    const shouldReauth = await confirm('Google Drive 授權已失效，是否要重新授權並繼續還原？', { type: 'warning' })
     if (shouldReauth) {
       try {
         googleAuthService.signOut()
@@ -413,15 +419,15 @@ const handleGoogleRestore = async () => {
 
         // 重新授權成功，重試還原
         if (isGoogleConnected.value) {
-          alert('重新授權成功！即將重新執行還原。')
+          await alert('重新授權成功！即將重新執行還原。', { type: 'success' })
           await handleGoogleRestore()
           return  // 避免 finally 再次設定 isSyncing = false
         }
       } catch (reauthError) {
-        alert('重新授權失敗：' + (reauthError as Error).message)
+        await alert('重新授權失敗：' + (reauthError as Error).message, { type: 'danger' })
       }
     }
-    
+
   } finally {
     isSyncing.value = false
   }
@@ -466,7 +472,14 @@ const handleGoogleRestore = async () => {
         </div>
         <div class="form-group">
           <label>年齡（選填）</label>
-          <input v-model="editingProfile.age" class="input-field" placeholder="年齡" />
+          <input
+            v-model="editingProfile.age"
+            type="number"
+            min="1"
+            max="9999"
+            class="input-field"
+            placeholder="請輸入數字"
+          />
         </div>
         <div class="form-group">
           <label>性別（選填）</label>
@@ -484,6 +497,18 @@ const handleGoogleRestore = async () => {
           <label>簡介（選填，最多250字）</label>
           <textarea v-model="editingProfile.bio" class="input-field" placeholder="簡介" maxlength="250" rows="3" />
           <div class="char-count">{{ editingProfile.bio.length }}/250</div>
+        </div>
+        <div class="form-group">
+          <label>全域自訂 Prompt（選填）</label>
+          <textarea
+            v-model="editingProfile.globalSystemPrompt"
+            class="input-field"
+            placeholder="這裡的內容會附加在所有角色的 System Prompt 後面，例如：回覆時使用繁體中文、每次回覆不超過100字..."
+            rows="4"
+            maxlength="1000"
+          />
+          <div class="char-count">{{ editingProfile.globalSystemPrompt.length }}/1000</div>
+          <p class="form-hint">此設定會套用到所有角色對話，無需在每個角色單獨設定</p>
         </div>
         <div class="button-group">
           <button class="btn-primary" @click="handleSaveProfile">儲存</button>

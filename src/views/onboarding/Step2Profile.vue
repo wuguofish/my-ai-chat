@@ -203,10 +203,11 @@ const getDefaultAvatar = (name: string) => {
         <input
           id="age"
           v-model="age"
-          type="text"
-          placeholder="例如：25"
+          type="number"
+          min="1"
+          max="9999"
+          placeholder="請輸入數字"
           class="input-field"
-          maxlength="3"
         >
       </div>
 

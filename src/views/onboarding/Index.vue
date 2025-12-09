@@ -6,11 +6,14 @@ import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useMemoriesStore } from '@/stores/memories'
 import { useRelationshipsStore } from '@/stores/relationships'
+import { useModal } from '@/composables/useModal'
 import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService, TokenInvalidError } from '@/services/googleDrive'
 import Step1ApiKey from './Step1ApiKey.vue'
 import Step2Profile from './Step2Profile.vue'
 import Step3Character from './Step3Character.vue'
+
+const { alert, confirm } = useModal()
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -82,10 +85,10 @@ const handleImportLocalFile = (event: Event) => {
           })
         }
 
-        alert('匯入成功！')
+        await alert('匯入成功！', { type: 'success' })
         router.push('/main')
       } catch (error) {
-        alert('匯入失敗：檔案格式錯誤')
+        await alert('匯入失敗：檔案格式錯誤', { type: 'danger' })
       } finally {
         isImporting.value = false
       }
@@ -138,27 +141,27 @@ const handleImportFromGoogleDrive = async () => {
       })
     }
 
-    alert('從 Google Drive 匯入成功！')
+    await alert('從 Google Drive 匯入成功！', { type: 'success' })
     router.push('/main')
   } catch (error) {
     console.error('匯入失敗:', error)
 
     // 處理 token 無效錯誤
     if (error instanceof TokenInvalidError) {
-      const shouldReauth = confirm('Google Drive 授權已失效，是否要重新授權？')
+      const shouldReauth = await confirm('Google Drive 授權已失效，是否要重新授權？', { type: 'warning' })
       if (shouldReauth) {
         try {
           await googleAuthService.handleTokenInvalid()
           // 重新授權成功，重試匯入
-          alert('重新授權成功！請再次點擊 Google Drive 匯入按鈕。')
+          await alert('重新授權成功！請再次點擊 Google Drive 匯入按鈕。', { type: 'success' })
         } catch (reauthError) {
-          alert('重新授權失敗：' + (reauthError as Error).message)
+          await alert('重新授權失敗：' + (reauthError as Error).message, { type: 'danger' })
         }
       }
     } else if ((error as Error).message === '找不到備份檔案') {
-      alert('Google Drive 中沒有找到備份檔案，請先在設定頁面進行備份')
+      await alert('Google Drive 中沒有找到備份檔案，請先在設定頁面進行備份', { type: 'warning' })
     } else {
-      alert('匯入失敗：' + (error as Error).message)
+      await alert('匯入失敗：' + (error as Error).message, { type: 'danger' })
     }
   } finally {
     isImporting.value = false

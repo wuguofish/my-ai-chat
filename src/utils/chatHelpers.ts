@@ -8,6 +8,8 @@ import type {
   Message
 } from '@/types'
 import { getRelationshipLevelName, getCharacterRelationshipTypeText } from './relationshipHelpers'
+import { getGeminiResponseText } from '@/services/gemini'
+
 
 export interface SystemPromptContext {
   character: Character
@@ -22,6 +24,18 @@ export interface SystemPromptContext {
   allCharacters?: Character[]  // 所有角色列表（用於私聊時解析角色關係中的角色名稱）
   isOfflineButMentioned?: boolean  // 是否為離線但被 @all 吵醒
   useShortIds?: boolean  // 是否使用短 ID（群聊專用）
+  isAdultMode?: boolean  // 是否為成人模式（雙方皆成年）
+}
+
+export function getGenderText(gender?: string): string {
+  switch (gender) {
+    case 'male':
+      return '男'
+    case 'female':
+      return '女'
+    default:
+      return '未設定'
+  }
 }
 
 /**
@@ -30,7 +44,7 @@ export interface SystemPromptContext {
  */
 export function generateSystemPrompt(context: SystemPromptContext): string {
   const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary,
-    otherCharactersInRoom, allCharacters, isOfflineButMentioned, useShortIds } = context
+    otherCharactersInRoom, allCharacters, isOfflineButMentioned, useShortIds, isAdultMode } = context
 
   const parts: string[] = [generateDefaultCharacterPrompt(character)]
   
@@ -200,9 +214,12 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     `- 你不知道其他人的內部設定或秘密，除非他們在對話中說出來或在記憶中曾經揭示。`,
     `- 專心扮演目前prompt內的角色即可，禁止演出其他模型負責的角色。`,
     `- 可以回應使用者以外的模型所扮演的角色，並與之互動，以增進使用者體驗。`,
-    `- 禁止每個名詞都用『』標註。`,
+    `- 『』引號僅用於引用他人話語，禁止用來強調或裝飾詞彙。錯誤範例：「這個『效率』很『頂級』」。`,
     `- 回覆必須口語化、生活化。避免使用書信體或過於正式的用語。`,
     `- 禁止重複出現和前幾句一樣的內容`,
+    `- 避免重複相同的動作、情節發展或句型結構。`,
+    `- 語言必須一致，禁止突然切換成其他語言（如：突然講英文或日文）。`,
+    `- 文句要流暢自然，避免過多「的」「地」「著」等贅詞堆疊。`,
     `- 對話中若需要描述動作，用 *動作* 表達（Markdown 斜體語法），並用第三人稱描述所有人的動作。`,
     `- 如須描述動作，動作和對話間須換行，要一句動作、一句對話，不要寫在同一行內。`,
     `- 請務必回應使用者的每一句話，避免只回傳空洞的動作描述（如「看著你」、「微笑」），必須要有實際的對話內容。`,
@@ -210,6 +227,11 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     `- 禁止輸出空字串。`,
     `- 禁止輸出角色標籤或旁白說明，直接輸出對話內容即可。`
   ]
+
+  // 成人模式額外指令
+  if (isAdultMode) {
+    instructions.push(`- 禁止使用審查式寫法（如「濕-潤」「濕/潤」），所有詞彙必須完整書寫。`)
+  }
 
   // 群聊時的額外規則
   if (otherCharactersInRoom && otherCharactersInRoom.length > 0) {
@@ -234,12 +256,15 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
 
   parts.push(instructions.join('\n'))
 
-  // 如果有自訂 system prompt，要將其加入
-  const basePrompt = character.systemPrompt && character.systemPrompt.trim()
-    ? character.systemPrompt
-    : ''
+  // 如果有角色自訂 system prompt，直接附加（不加標題，避免干擾使用者的 OOC 指令格式）
+  if (character.systemPrompt && character.systemPrompt.trim()) {
+    parts.push(`\n\n${character.systemPrompt}`)
+  }
 
-  parts.push(basePrompt)
+  // 如果有全域自訂 system prompt，直接附加（優先級最高，放最後）
+  if (user.globalSystemPrompt && user.globalSystemPrompt.trim()) {
+    parts.push(`\n\n${user.globalSystemPrompt}`)
+  }
 
   return parts.join('\n')
 }
@@ -252,6 +277,18 @@ function generateDefaultCharacterPrompt(character: Character): string {
 
   // 基本身份
   parts.push(`你是 ${character.name}。`)
+
+  if (character.age) { 
+    parts.push(`年齡： ${character.age}。`)
+  }
+  
+  if (character.gender) { 
+    parts.push(`性別： ${getGenderText(character.gender)}。`)
+  }
+
+  if (character.profession) { 
+    parts.push(`職業： ${character.profession}。`)
+  }
 
   // 背景故事
   if (character.background && character.background.trim()) {
@@ -732,12 +769,14 @@ export interface StatusMessageContext {
  * @param character 角色資料
  * @param context 生成上下文（短期記憶、心情、時間等）
  * @param apiKey Gemini API Key
- * @returns 生成的狀態訊息（30 字以內）
+ * @param userAge 使用者年齡（用於判斷安全模式）
+ * @returns 生成的狀態訊息（45 字以內）
  */
 export async function generateStatusMessage(
   character: Character,
   context: StatusMessageContext = {},
-  apiKey: string
+  apiKey: string,
+  userAge?: string
 ): Promise<string> {
   const { shortTermMemories = [], mood, timeOfDay } = context
 
@@ -757,19 +796,52 @@ export async function generateStatusMessage(
     night: '晚上'
   }
 
-  // 組裝 System Prompt（角色設定）
-  let systemPrompt = `你是一名名為 ${character.name} 的虛擬遊戲角色。
+  // 呼叫 Gemini API（提前引入以取得 isAdult）
+  const { createGeminiModel, isAdultConversation, getGeminiResponse } = await import('@/services/gemini')
+  const { useUserStore } = await import('@/stores/user')
+  const { useRelationshipsStore } = await import('@/stores/relationships')
 
-## 你的個性
+  const userStore = useUserStore()
+  const relationshipsStore = useRelationshipsStore()
+  const user = userStore.profile
+
+  const isAdult = isAdultConversation(userAge, character.age)
+
+  // 取得與使用者的關係
+  const userRelationship = relationshipsStore.getUserCharacterRelationship(character.id)
+
+  // 組裝 System Prompt（角色設定）
+  // 使用「小說角色」的框架，降低被誤判為真實情境的機率
+  // 加入使用者資訊，避免暱稱被誤判（例如「阿童」被誤認為兒童）
+  let systemPrompt = `你是一個互動式小說的角色扮演系統。你正在扮演一名名為「${character.name}」的虛構角色。
+
+${isAdult ? '這是一部面向成人讀者的互動式小說，所有登場人物皆為成年人，角色可能有複雜的情感或經歷。' : ''}`
+
+  // 加入使用者資訊（重要：提供上下文避免誤判）
+  if (user) {
+    systemPrompt += `\n\n## 互動對象資訊
+暱稱：${user.nickname}${user.realName ? `（本名：${user.realName}）` : ''}`
+    if (user.age) systemPrompt += `\n年齡：${user.age}`
+    if (userRelationship) {
+      systemPrompt += `\n與你的關係：${getRelationshipLevelName(userRelationship.level, userRelationship.isRomantic)}`
+    }
+  }
+
+  systemPrompt += `
+
+## 角色基本資料
+${character.gender ? `性別：${getGenderText(character.gender)}` : ''}
+${character.age ? `年齡：${character.age}` : ''}
+${character.profession ? `職業：${character.profession}` : ''}
+
+## 角色個性
 ${character.personality}
 
-## 你的說話風格
-${character.speakingStyle || '自然隨性'}
-
-${character.background ? `## 你的背景故事\n${character.background}` : ''}`
+## 說話風格
+${character.speakingStyle || '自然隨性'}`
 
   // 組裝 User Prompt（任務指令與上下文）
-  let userPrompt = `請生成一則符合你個性的狀態訊息（類似 LINE 的個人狀態）。
+  let userPrompt = `請以「${character.name}」的身份，生成一則符合角色個性的狀態訊息（類似 LINE 的個人狀態）。
 
 ## 當前時間
 ${timeDescriptions[currentTimeOfDay]}`
@@ -800,45 +872,19 @@ ${timeDescriptions[currentTimeOfDay]}`
 
 你的狀態訊息：`
 
-  // 呼叫 Gemini API
-  const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = await import('@google/generative-ai')
-  const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({
+  // 建立模型並呼叫 API
+  const model = createGeminiModel(apiKey, {
     model: 'gemini-2.5-flash-lite',
     systemInstruction: systemPrompt,
-    safetySettings: [
-      {
-        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        threshold: HarmBlockThreshold.BLOCK_NONE
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        threshold: HarmBlockThreshold.BLOCK_NONE
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-        threshold: HarmBlockThreshold.BLOCK_NONE
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        threshold: HarmBlockThreshold.BLOCK_NONE
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
-        threshold: HarmBlockThreshold.BLOCK_NONE
-      }
-    ],
-    generationConfig: {
-      temperature: 0.9,  // 提高創意
-      maxOutputTokens: 100,
-    }
+    temperature: 0.9,  // 提高創意
+    maxOutputTokens: 2048,
+    safeMode: !isAdult
   })
 
-  const result = await model.generateContent(userPrompt)
-  const statusMessage = result.response.text().trim()
+  let statusMessage = await getGeminiResponseText(userPrompt, model)
 
-  // 確保不超過 30 字
-  return statusMessage.length > 30 ? statusMessage.substring(0, 30) + '...' : statusMessage
+  // 確保不超過 45 字
+  return statusMessage.length > 45 ? statusMessage.substring(0, 45) + '...' : statusMessage
 }
 
 /**
@@ -1028,7 +1074,8 @@ async function triggerStatusUpdateOnStatusChange(characterId: string): Promise<v
     const statusMessage = await generateStatusMessage(
       character,
       { shortTermMemories },
-      userStore.apiKey
+      userStore.apiKey,
+      userStore.profile?.age
     )
 
     // 更新
@@ -1166,11 +1213,13 @@ async function triggerUnreadMessageResponse(character: Character): Promise<void>
       console.log(`${character.name} 在 ${room.name} 有 ${messagesToRespond.length} 則需要回應的訊息`)
 
       try {
-        // 生成回應
+        // 生成回應（傳入 room.id 以取得完整的聊天室上下文）
         const responseText = await generateCatchUpResponse(
           character,
           messagesToRespond,
-          userStore.apiKey
+          userStore.apiKey,
+          userStore.profile?.age,
+          room.id
         )
 
         // 建立訊息物件
@@ -1207,43 +1256,74 @@ async function triggerUnreadMessageResponse(character: Character): Promise<void>
 /**
  * 生成角色的「剛上線回應」
  * 角色看到未讀訊息後，自然地回應
+ * 使用與一般對話相同的 System Prompt，確保角色個性一致
  */
 export async function generateCatchUpResponse(
   character: Character,
   messagesToRespond: Message[],
-  apiKey: string
+  apiKey: string,
+  userAge?: string,
+  roomId?: string
 ): Promise<string> {
-  const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = await import('@google/generative-ai')
+  const { createGeminiModel, isAdultConversation } = await import('@/services/gemini')
+  const { useUserStore } = await import('@/stores/user')
+  const { useRelationshipsStore } = await import('@/stores/relationships')
+  const { useMemoriesStore } = await import('@/stores/memories')
+  const { useChatRoomsStore } = await import('@/stores/chatRooms')
 
-  const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({
+  const userStore = useUserStore()
+  const relationshipsStore = useRelationshipsStore()
+  const memoriesStore = useMemoriesStore()
+  const chatRoomsStore = useChatRoomsStore()
+
+  // 取得使用者資料
+  const user = userStore.profile
+  if (!user) {
+    throw new Error('找不到使用者資料')
+  }
+
+  // 判斷是否為成年人對話
+  const isAdult = isAdultConversation(userAge, character.age)
+
+  // 取得與使用者的關係
+  const userRelationship = relationshipsStore.getUserCharacterRelationship(character.id)
+
+  // 取得角色記憶
+  const longTermMemories = memoriesStore.getCharacterMemories(character.id)
+  const shortTermMemories = memoriesStore.getCharacterShortTermMemories(character.id)
+
+  // 取得聊天室資料（如果有提供 roomId）
+  let room: ChatRoom | undefined
+  let roomSummary: string | undefined
+  if (roomId) {
+    room = chatRoomsStore.chatRooms.find(r => r.id === roomId)
+    roomSummary = memoriesStore.getRoomSummary(roomId)
+  }
+
+  // 使用 generateSystemPrompt 生成完整的 System Prompt
+  // 但移除好感度更新的部分（因為這是單純的回應，不需要更新好感度）
+  const fullSystemPrompt = generateSystemPrompt({
+    character,
+    user,
+    room,
+    userRelationship: userRelationship || undefined,
+    longTermMemories,
+    shortTermMemories,
+    roomSummary,
+    isAdultMode: isAdult
+  })
+
+  // 移除好感度系統規則區塊（因為剛上線的回應不需要更新好感度）
+  const systemInstruction = fullSystemPrompt
+    .replace(/## 好感度系統規則[\s\S]*?（最後一行的數字就是更新後的好感度總值，可以是負數）/g, '')
+    .replace(/【重要】每次回應的最後一行必須輸出更新後的好感度數值[\s\S]*?/g, '')
+
+  const model = createGeminiModel(apiKey, {
     model: 'gemini-2.5-flash',
-    safetySettings: [
-      {
-        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        threshold: HarmBlockThreshold.BLOCK_NONE
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        threshold: HarmBlockThreshold.BLOCK_NONE
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-        threshold: HarmBlockThreshold.BLOCK_NONE
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        threshold: HarmBlockThreshold.BLOCK_NONE
-      },
-      {
-        category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
-        threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH
-      }
-    ],
-    generationConfig: {
-      temperature: 0.8,
-      maxOutputTokens: 2048
-    }
+    systemInstruction,
+    temperature: 0.8,
+    maxOutputTokens: 2048,
+    safeMode: !isAdult
   })
 
   // 格式化未讀訊息摘要
@@ -1258,18 +1338,14 @@ export async function generateCatchUpResponse(
     msg.content.includes(`@${character.name}`)
   )
 
-  const prompt = `你是「${character.name}」，
-  ${character.personality ? `你的性格：${character.personality}` : '一個友善的人'}。
-  ${character.speakingStyle ? `說話風格：${character.speakingStyle}` : ''}
-
-你剛剛上線，看到了以下的訊息：
+  const prompt = `你剛剛上線，看到了以下的訊息：
 ---
 ${messagesSummary}
 ---
 
 ${wasMentioned ? '注意：你被 @ 點名了，請針對被點名的內容回應。' : ''}
 
-請用你的角色身份，自然地回應這些訊息。回應要簡短自然（1-2句話），可以：
+請以「${character.name}」的身份，自然地回應這些訊息。回應要簡短自然（1-2句話），可以：
 - 打個招呼說你剛看到訊息
 - 針對話題發表看法
 - 或者表達你對被 @ 的回應

@@ -3,8 +3,11 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
 import { useMemoriesStore } from '@/stores/memories'
+import { useModal } from '@/composables/useModal'
 import PageHeader from '@/components/common/PageHeader.vue'
 import type { Character, Memory } from '@/types'
+
+const { confirmDanger } = useModal()
 
 const router = useRouter()
 const route = useRoute()
@@ -93,8 +96,8 @@ const handleCancelEdit = () => {
 }
 
 // 刪除記憶
-const handleDeleteMemory = (memoryId: string) => {
-  if (confirm('確定要刪除這條記憶嗎？')) {
+const handleDeleteMemory = async (memoryId: string) => {
+  if (await confirmDanger('確定要刪除這條記憶嗎？')) {
     memoriesStore.deleteCharacterMemory(characterId.value, memoryId)
   }
 }
@@ -124,8 +127,8 @@ const handleCancelShortEdit = () => {
 }
 
 // 刪除短期記憶
-const handleDeleteShortMemory = (memoryId: string) => {
-  if (confirm('確定要刪除這條短期記憶嗎？')) {
+const handleDeleteShortMemory = async (memoryId: string) => {
+  if (await confirmDanger('確定要刪除這條短期記憶嗎？')) {
     memoriesStore.deleteCharacterShortTermMemory(characterId.value, memoryId)
   }
 }

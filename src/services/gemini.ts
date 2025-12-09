@@ -2,9 +2,229 @@
  * Gemini AI 服務
  */
 
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai'
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, type GenerativeModel, type Content, type EnhancedGenerateContentResponse } from '@google/generative-ai'
 import type { Character, Message, UserProfile, ChatRoom } from '@/types'
 import { generateSystemPrompt, convertToShortIds, convertToLongIds, type SystemPromptContext } from '@/utils/chatHelpers'
+
+/**
+ * 法定成年年齡（大多數國家標準）
+ */
+const LEGAL_ADULT_AGE = 18
+
+/**
+ * 安全模式的設定（保護未成年人）
+ * 使用 BLOCK_MEDIUM_AND_ABOVE 過濾中等以上有害內容
+ */
+export const SAFE_MODE_SAFETY_SETTINGS = [
+  {
+    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+    threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+    threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH
+  }
+]
+
+/**
+ * 寬鬆模式的設定（僅限成年人對話）
+ * 所有類別都不封鎖，CIVIC_INTEGRITY 使用 BLOCK_ONLY_HIGH
+ */
+export const UNRESTRICTED_SAFETY_SETTINGS = [
+  {
+    category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+    threshold: HarmBlockThreshold.BLOCK_NONE
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+    threshold: HarmBlockThreshold.BLOCK_NONE
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+    threshold: HarmBlockThreshold.BLOCK_NONE
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+    threshold: HarmBlockThreshold.BLOCK_NONE
+  },
+  {
+    category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+    threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH
+  }
+]
+
+/**
+ * 解析年齡字串，回傳數字
+ * 支援格式：「25」、「25歲」、「二十五」等
+ * 無法解析或未填寫時回傳 null
+ */
+function parseAge(ageStr?: string): number | null {
+  if (!ageStr || !ageStr.trim()) {
+    return null
+  }
+
+  // 移除「歲」等後綴
+  const cleaned = ageStr.trim().replace(/歲|岁|years?\s*old/gi, '').trim()
+
+  // 嘗試直接解析數字
+  const num = parseInt(cleaned, 10)
+  if (!isNaN(num) && num > 0 && num < 150) {
+    return num
+  }
+
+  return null
+}
+
+/**
+ * 判斷是否為成年人對話情境
+ * 只有當玩家和角色都是成年人時才回傳 true
+ * 未填寫年齡一律視為未成年
+ */
+export function isAdultConversation(userAge?: string, characterAge?: string): boolean {
+  const userAgeNum = parseAge(userAge)
+  const charAgeNum = parseAge(characterAge)
+
+  // 未填寫年齡 → 視為未成年
+  if (userAgeNum === null || charAgeNum === null) {
+    return false
+  }
+
+  // 雙方都必須 >= 18 歲
+  return userAgeNum >= LEGAL_ADULT_AGE && charAgeNum >= LEGAL_ADULT_AGE
+}
+
+/**
+ * 根據年齡取得適當的安全設定
+ */
+export function getSafetySettings(userAge?: string, characterAge?: string) {
+  return isAdultConversation(userAge, characterAge)
+    ? UNRESTRICTED_SAFETY_SETTINGS
+    : SAFE_MODE_SAFETY_SETTINGS
+}
+
+export interface CreateModelOptions {
+  model?: 'gemini-2.5-flash' | 'gemini-2.5-flash-lite'
+  systemInstruction?: string | { parts: { text: string }[]; role: string }
+  temperature?: number
+  maxOutputTokens?: number
+  topP?: number
+  topK?: number
+  responseMimeType?: string
+  /** 使用安全模式（保護未成年），預設為 true */
+  safeMode?: boolean
+}
+
+/**
+ * 建立 Gemini 模型的共用函數
+ * 封裝了安全設定，讓呼叫端只需關心核心參數
+ */
+export function createGeminiModel(
+  apiKey: string,
+  options: CreateModelOptions = {}
+): GenerativeModel {
+  const {
+    model = 'gemini-2.5-flash',
+    systemInstruction,
+    temperature = 0.7,
+    maxOutputTokens = 2048,
+    topP,
+    topK,
+    responseMimeType,
+    safeMode = true  // 預設使用安全模式
+  } = options
+
+  const genAI = new GoogleGenerativeAI(apiKey)
+
+  const generationConfig: Record<string, unknown> = {
+    temperature,
+    maxOutputTokens
+  }
+
+  if (topP !== undefined) {
+    generationConfig.topP = topP
+  }
+  if (topK !== undefined) {
+    generationConfig.topK = topK
+  }
+  if (responseMimeType) {
+    generationConfig.responseMimeType = responseMimeType
+  }
+
+  // 根據安全模式選擇適當的設定
+  const safetySettings = safeMode
+    ? SAFE_MODE_SAFETY_SETTINGS
+    : UNRESTRICTED_SAFETY_SETTINGS
+
+  return genAI.getGenerativeModel({
+    model,
+    ...(systemInstruction && { systemInstruction }),
+    safetySettings,
+    generationConfig
+  })
+}
+
+export async function getGeminiResponseText(userPrompt: string, model: GenerativeModel): Promise<string> { 
+  let history: Content[] = []
+
+  history.push({
+    role: 'user',
+    parts: [{ text: userPrompt }]
+
+  })
+
+  history.push({
+    role: 'model',
+    parts: [{ text: '好的，我知道了，我已經依據你的說明產生內容，如下：' }]
+  })
+
+  const chat = model.startChat({ history: history })
+  let msg = (await chat.sendMessage('請繼續，已經輸出的內容不必再輸出。')).response.text();
+
+  return getActuallyContent(msg)
+
+}
+
+export async function getGeminiResponse(userPrompt: string, model: GenerativeModel): Promise<EnhancedGenerateContentResponse> {
+  let history: Content[] = []
+
+  history.push({
+    role: 'user',
+    parts: [{ text: userPrompt }]
+
+  })
+
+  history.push({
+    role: 'model',
+    parts: [{ text: '好的，我知道了，我已經依據你的說明產生內容，如下：' }]
+  })
+
+  const chat = model.startChat({ history: history })
+  return (await chat.sendMessage('請繼續，已經輸出的內容不必再輸出。')).response;
+
+}
+
+export function getActuallyContent(msg: string): string { 
+  // 清理可能的前綴文字（例如「讓我想想⋯⋯「xxx」」）
+  // 如果有引號包裹的內容，只取引號內的文字
+  const quotedMatch = msg.match(/[「""](.+?)[」""]/)
+  if (quotedMatch && quotedMatch[1]) {
+    msg = quotedMatch[1]
+  }
+
+  return msg
+}
 
 export interface GetCharacterResponseParams {
   apiKey: string
@@ -19,6 +239,7 @@ export interface GetCharacterResponseParams {
 export interface CharacterResponse {
   text: string
   newAffection?: number
+  silentUpdate?: boolean  // AI 只回傳好感度，無實際對話內容時為 true
 }
 
 /**
@@ -61,12 +282,12 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
   const { apiKey, character, user, room, messages, userMessage, context } = params
 
   try {
-    // 初始化 Gemini AI
-    const genAI = new GoogleGenerativeAI(apiKey)
-
     // 判斷是否為群聊，群聊時使用短 ID
     const isGroupChat = room?.type === 'group'
     const useShortIds = isGroupChat && context?.otherCharactersInRoom && context.otherCharactersInRoom.length > 0
+
+    // 判斷是否為成年人對話（雙方都 >= 18 歲）
+    const isAdult = isAdultConversation(user.age, character.age)
 
     // 產生 system prompt（包含完整情境資訊）
     const systemPrompt = generateSystemPrompt({
@@ -74,44 +295,22 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
       user,
       room,
       ...context,
-      useShortIds
+      useShortIds,
+      isAdultMode: isAdult
     })
 
     // 建立模型配置
-    const model = genAI.getGenerativeModel({
+    const model = createGeminiModel(apiKey, {
       model: 'gemini-2.5-flash',
       systemInstruction: {
         parts: [{ text: systemPrompt }],
         role: 'user'
       },
-      safetySettings: [
-        {
-          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
-          threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH
-        }
-      ],
-      generationConfig: {
-        temperature: 0.8,
-        topP: 0.8,
-        topK: 40,
-        maxOutputTokens: character.maxOutputTokens || 2048
-      }
+      temperature: 0.8,
+      topP: 0.8,
+      topK: 40,
+      maxOutputTokens: character.maxOutputTokens || 2048,
+      safeMode: !isAdult  // 非成年人對話使用安全模式
     })
 
     // 建立對話歷史
@@ -354,8 +553,16 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
       // 移除最後一行的數字，保留對話內容
       const cleanText = lines.slice(0, -1).join('\n').trim()
 
-      // 檢查移除數字後是否變成空字串
-      checkEmptyResponseAndThrow(cleanText)
+      // 如果移除數字後變成空字串，代表 AI 只回傳了好感度
+      // 這種情況下靜默更新好感度，不顯示訊息
+      if (!cleanText) {
+        console.warn('⚠️ AI 只回傳了好感度，無實際對話內容，靜默更新好感度')
+        return {
+          text: '',  // 空字串，呼叫端會判斷是否要顯示
+          newAffection: parsedAffection,
+          silentUpdate: true  // 標記為靜默更新
+        }
+      }
 
       return {
         text: cleanText,

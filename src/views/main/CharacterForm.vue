@@ -288,8 +288,16 @@ const getDefaultAvatar = (name: string) => {
 
         <div class="form-group">
           <label for="age">年齡（選填）</label>
-          <input id="age" v-model="age" type="text" placeholder="例如：25" class="input-field" maxlength="10"
-            :readonly="isPrivate">
+          <input
+            id="age"
+            v-model="age"
+            type="number"
+            min="1"
+            max="9999"
+            placeholder="請輸入數字"
+            class="input-field"
+            :readonly="isPrivate"
+          >
         </div>
 
         <div class="form-group">

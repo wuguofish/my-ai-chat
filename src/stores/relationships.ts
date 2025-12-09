@@ -121,7 +121,8 @@ export const useRelationshipsStore = defineStore('relationships', {
         const statusMessage = await generateStatusMessage(
           character,
           { shortTermMemories },
-          userStore.apiKey
+          userStore.apiKey,
+          userStore.profile?.age
         )
 
         // 更新

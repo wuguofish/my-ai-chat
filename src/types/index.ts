@@ -16,6 +16,7 @@ export interface UserProfile {
   profession?: string   // 職業
   bio?: string          // 簡介（最多250字）
   avatar: string
+  globalSystemPrompt?: string  // 全域自訂 System Prompt（會附加在所有角色的 prompt 後面）
   apiConfig: {
     geminiApiKey: string
   }
