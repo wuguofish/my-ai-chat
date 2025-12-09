@@ -749,8 +749,13 @@ textarea {
 }
 
 .text-white {
-  color: white;
+  color: white!important;
 }
+
+.text-red {
+  color: red!important;
+}
+
 
 /* 角色狀態文字顏色 */
 .text-status-online {

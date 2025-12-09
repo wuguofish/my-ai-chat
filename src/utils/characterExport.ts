@@ -52,6 +52,7 @@ export async function exportCharacterCard(
     avatar: character.avatar,
     age: character.age,
     gender: character.gender,
+    birthday: character.birthday,
     profession: character.profession,
     // 如果隱藏設定，這些欄位設為空字串或省略
     personality: hidePrivateSettings ? '' : character.personality,
@@ -98,6 +99,7 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
       avatar: string
       age?: string
       gender?: Character['gender']
+      birthday?: string
       profession?: string
       personality: string
       speakingStyle: string
@@ -151,6 +153,7 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
       avatar: data.avatar || '', // 使用 JSON 中儲存的原始頭像，或留空
       age: data.age || undefined,
       gender: data.gender || undefined,
+      birthday: data.birthday || undefined,
       profession: data.profession || undefined,
       personality: data.personality,
       speakingStyle: data.speakingStyle || '', // 允許為空

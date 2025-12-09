@@ -492,7 +492,7 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
         <div class="section-header">
           <h2 class="section-title">作息表</h2>
           <span v-if="scheduleInfo.type !== 'none'" class="schedule-day-indicator">
-            {{ scheduleInfo.isHoliday ? '🎉 今天是假日' : '💼 今天是平日' }}
+            {{ scheduleInfo.isHoliday ? '<span class="text-red">🎉 今天是假日</span>' : '💼 今天是平日' }}
           </span>
         </div>
         <div v-if="scheduleInfo.type === 'none'" class="schedule-empty">
@@ -526,7 +526,7 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
 
           <!-- 假日作息 -->
           <div class="schedule-section">
-            <div class="schedule-section-title">假日作息</div>
+            <div class="schedule-section-title text-red">假日作息</div>
             <div class="schedule-periods">
               <div v-for="(period, index) in scheduleInfo.holidayPeriods" :key="'holiday-' + index" class="schedule-period-item">
                 <div class="period-time">

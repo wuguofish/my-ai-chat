@@ -22,6 +22,7 @@ const isAdvancedMode = ref(false)
 const name = ref('')
 const gender = ref<Gender>('unset')
 const age = ref('')
+const birthday = ref('')
 const profession = ref('')
 const personality = ref('')
 const speakingStyle = ref('')
@@ -63,6 +64,7 @@ onMounted(() => {
       name.value = character.name
       gender.value = character.gender || 'unset'
       age.value = character.age || ''
+      birthday.value = character.birthday || ''
       profession.value = character.profession || ''
       personality.value = character.personality || ''
       speakingStyle.value = character.speakingStyle || ''
@@ -128,6 +130,7 @@ const handleSubmit = () => {
     name: name.value.trim(),
     gender: gender.value !== 'unset' ? gender.value : undefined,
     age: age.value.trim() || undefined,
+    birthday: birthday.value.trim() || undefined,
     profession: profession.value.trim() || undefined,
     personality: personality.value.trim(),
     speakingStyle: speakingStyle.value.trim() || undefined,
@@ -303,6 +306,20 @@ const getDefaultAvatar = (name: string) => {
             class="input-field"
             :readonly="isPrivate"
           >
+        </div>
+
+        <div class="form-group">
+          <label for="birthday">生日（選填）</label>
+          <input
+            id="birthday"
+            v-model="birthday"
+            type="text"
+            placeholder="MM-DD（例如：03-14）"
+            class="input-field"
+            maxlength="5"
+            :readonly="isPrivate"
+          >
+          <div class="help-text">格式：月-日，例如 03-14 代表 3 月 14 日</div>
         </div>
 
         <div class="form-group">

@@ -79,6 +79,7 @@ export interface Character {
   avatar: string
   age?: string
   gender?: Gender
+  birthday?: string     // 生日 (MM-DD 格式，只記錄月日)
   profession?: string
   personality: string
   speakingStyle?: string
