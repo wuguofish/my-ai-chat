@@ -509,18 +509,6 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
             自訂作息
           </div>
 
-          <!-- 平日/假日分頁顯示 -->
-          <div class="schedule-tabs">
-            <div class="schedule-tab-group">
-              <div :class="['schedule-tab', { active: !scheduleInfo.isHoliday }]">
-                💼 平日
-              </div>
-              <div :class="['schedule-tab', { active: scheduleInfo.isHoliday }]">
-                🎉 假日
-              </div>
-            </div>
-          </div>
-
           <!-- 平日作息 -->
           <div class="schedule-section">
             <div class="schedule-section-title">平日作息</div>
@@ -1451,28 +1439,6 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
   color: var(--color-text-secondary);
   margin-bottom: var(--spacing-lg);
   font-weight: 600;
-}
-
-.schedule-tabs {
-  margin-bottom: var(--spacing-lg);
-}
-
-.schedule-tab-group {
-  display: flex;
-  gap: var(--spacing-sm);
-}
-
-.schedule-tab {
-  padding: var(--spacing-sm) var(--spacing-lg);
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius);
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-}
-
-.schedule-tab.active {
-  background: var(--color-primary);
-  color: var(--color-text-white);
 }
 
 .schedule-section {
