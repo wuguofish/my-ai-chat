@@ -306,8 +306,8 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
         parts: [{ text: systemPrompt }],
         role: 'user'
       },
-      temperature: 0.8,
-      topP: 0.8,
+      temperature: 0.95,
+      topP: 0.95,
       topK: 40,
       maxOutputTokens: character.maxOutputTokens || 2048,
       safeMode: !isAdult  // 非成年人對話使用安全模式
