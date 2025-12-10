@@ -6,6 +6,7 @@
  */
 
 import { createGeminiModel, getGeminiResponseText } from './gemini'
+import { enqueueGeminiRequest } from './apiQueue'
 import type { Character, UserProfile, ChatRoom, UserCharacterRelationship } from '@/types'
 import { getRelationshipLevelName } from '@/utils/relationshipHelpers'
 
@@ -107,7 +108,12 @@ ${relationship.note ? `- 關係備註：${relationship.note}` : ''}
       maxOutputTokens: 256
     })
 
-    const response = await getGeminiResponseText(prompt, model)
+    // 透過佇列發送請求
+    const response = await enqueueGeminiRequest(
+      () => getGeminiResponseText(prompt, model),
+      'gemini-2.5-flash-lite',
+      `生日祝福：${character.name}`
+    )
     return response.trim()
   } catch (error) {
     console.error('生成生日祝福失敗:', error)

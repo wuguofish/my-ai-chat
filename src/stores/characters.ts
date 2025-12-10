@@ -82,8 +82,20 @@ export const useCharacterStore = defineStore('characters', () => {
   function updateCharacterMood(characterId: string, mood: string) {
     const character = characters.value.find(c => c.id === characterId)
     if (character) {
+      const previousMood = character.mood
       character.mood = mood
       character.moodUpdatedAt = Date.now()
+
+      // 動態牆：情緒改變時觸發發文（只有當情緒真的改變時）
+      if (previousMood !== mood) {
+        import('@/services/feedService').then(({ onCharacterMoodChange }) => {
+          onCharacterMoodChange(character, mood).catch((err: unknown) => {
+            console.warn(`${character.name} 情緒改變時觸發動態失敗:`, err)
+          })
+        }).catch((err: unknown) => {
+          console.warn('載入 feedService 失敗:', err)
+        })
+      }
     }
   }
 

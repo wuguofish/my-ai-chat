@@ -4,14 +4,17 @@
 
 import { ref } from 'vue'
 
+export type ToastType = 'success' | 'error' | 'info' | 'warning' | 'feed_like' | 'feed_comment' | 'feed_mention'
+
 export interface Toast {
   id: string
   message: string
-  type: 'success' | 'error' | 'info' | 'warning'
+  type: ToastType
   duration: number
-  characterId?: string  // 如果是角色上線通知，記錄角色 ID（可點擊跳轉）
+  characterId?: string  // 如果是角色相關通知，記錄角色 ID（可點擊跳轉）
   characterName?: string
   characterAvatar?: string
+  postId?: string       // 動態牆相關通知的動態 ID
 }
 
 const toasts = ref<Toast[]>([])
@@ -29,6 +32,7 @@ export function useToast() {
       characterId?: string
       characterName?: string
       characterAvatar?: string
+      postId?: string
     }
   ) => {
     const id = `toast-${++toastId}`
@@ -105,6 +109,64 @@ export function useToast() {
     )
   }
 
+  /**
+   * 動態牆按讚通知
+   */
+  const feedLike = (
+    characterId: string,
+    characterName: string,
+    characterAvatar?: string,
+    postId?: string,
+    duration: number = 4000
+  ) => {
+    return showToast(
+      `${characterName} 對你的動態按讚`,
+      'feed_like',
+      duration,
+      { characterId, characterName, characterAvatar, postId }
+    )
+  }
+
+  /**
+   * 動態牆留言通知
+   */
+  const feedComment = (
+    characterId: string,
+    characterName: string,
+    commentPreview: string,
+    characterAvatar?: string,
+    postId?: string,
+    duration: number = 5000
+  ) => {
+    const preview = commentPreview.length > 20 ? commentPreview.slice(0, 20) + '...' : commentPreview
+    return showToast(
+      `${characterName} 留言：${preview}`,
+      'feed_comment',
+      duration,
+      { characterId, characterName, characterAvatar, postId }
+    )
+  }
+
+  /**
+   * 動態牆 @ 提及通知
+   */
+  const feedMention = (
+    characterId: string,
+    characterName: string,
+    contentPreview: string,
+    characterAvatar?: string,
+    postId?: string,
+    duration: number = 5000
+  ) => {
+    const preview = contentPreview.length > 20 ? contentPreview.slice(0, 20) + '...' : contentPreview
+    return showToast(
+      `${characterName} 在動態中提到了你：${preview}`,
+      'feed_mention',
+      duration,
+      { characterId, characterName, characterAvatar, postId }
+    )
+  }
+
   return {
     toasts,
     showToast,
@@ -114,6 +176,9 @@ export function useToast() {
     error,
     info,
     warning,
-    characterOnline
+    characterOnline,
+    feedLike,
+    feedComment,
+    feedMention
   }
 }

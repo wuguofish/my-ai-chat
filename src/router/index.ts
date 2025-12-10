@@ -63,6 +63,11 @@ const routes: RouteRecordRaw[] = [
         path: 'settings',
         name: 'Settings',
         component: () => import('@/views/main/Settings.vue')
+      },
+      {
+        path: 'feed',
+        name: 'Feed',
+        component: () => import('@/views/main/Feed.vue')
       }
     ]
   }

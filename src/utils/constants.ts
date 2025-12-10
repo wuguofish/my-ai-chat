@@ -2,7 +2,7 @@
  * 應用程式常數定義
  */
 
-import type { AppSettings, RelationshipLevel, RelationshipLevelInfo, ActivePeriod, ScheduleConfig } from '@/types'
+import type { AppSettings, RelationshipLevel, RelationshipLevelInfo, ActivePeriod, ScheduleConfig, PostTriggerEvent } from '@/types'
 
 // ==========================================
 // 限制
@@ -21,6 +21,10 @@ export const LIMITS = {
   MAX_CHARACTER_BACKGROUND_LENGTH: 1500,
   MAX_CHARACTER_EVENT_LENGTH: 1000,
   MAX_SYSTEM_PROMPT_LENGTH: 2000,
+  // 動態牆相關限制
+  MAX_POSTS: 120,
+  MAX_COMMENTS_PER_POST: 48,
+  MAX_NOTIFICATIONS: 50,
 } as const
 
 // ==========================================
@@ -113,7 +117,58 @@ export const DATA_VERSION = '1.0.0'
 export const STORAGE_KEYS = {
   APP_DATA: 'ai-chat-app-data',
   USER_PROFILE: 'ai-chat-user-profile',
-  SETTINGS: 'ai-chat-settings'
+  SETTINGS: 'ai-chat-settings',
+  FEED: 'ai-chat-feed'
+} as const
+
+// ==========================================
+// 動態牆事件觸發機率與冷卻時間
+// ==========================================
+
+/** 事件觸發發文的機率（0~1） */
+export const FEED_POST_PROBABILITY: Partial<Record<PostTriggerEvent, number>> = {
+  mood_change: 0.30,
+  relationship_change: 0.50,
+  new_memory: 0.20,
+  come_online: 0.15,
+  birthday: 1.00,
+  holiday: 0.40,
+  daily_catchup: 0.22,  // 20~25% 取中間值
+} as const
+
+/** 事件冷卻時間（毫秒） */
+export const FEED_EVENT_COOLDOWN: Partial<Record<PostTriggerEvent, number>> = {
+  mood_change: 2 * 60 * 60 * 1000,      // 2 小時
+  new_memory: 4 * 60 * 60 * 1000,       // 4 小時
+  come_online: 8 * 60 * 60 * 1000,      // 8 小時
+} as const
+
+/** 各關係等級的按讚/留言/留言按讚機率 */
+export const FEED_INTERACTION_PROBABILITY: Record<RelationshipLevel, { like: number; comment: number; commentLike: number }> = {
+  enemy: { like: 0, comment: 0, commentLike: 0 },
+  dislike: { like: 0.05, comment: 0, commentLike: 0 },
+  stranger: { like: 0.10, comment: 0, commentLike: 0.05 },
+  acquaintance: { like: 0.30, comment: 0.10, commentLike: 0.15 },
+  friend: { like: 0.50, comment: 0.25, commentLike: 0.25 },
+  close_friend: { like: 0.70, comment: 0.40, commentLike: 0.35 },
+  soulmate: { like: 0.85, comment: 0.55, commentLike: 0.45 },
+} as const
+
+/** 即時互動的延遲時間範圍（毫秒） */
+export const FEED_INTERACTION_DELAY = {
+  like: { min: 1 * 1000, max: 5 * 60 * 1000 },         // 1 秒 ~ 5 分鐘
+  comment: { min: 30 * 1000, max: 10 * 60 * 1000 },    // 30 秒 ~ 10 分鐘
+  reply: { min: 15 * 1000, max: 3 * 60 * 1000 },       // 15 秒 ~ 3 分鐘（回覆較快）
+} as const
+
+/** 留言回覆機制設定 */
+export const FEED_COMMENT_REPLY = {
+  /** 每篇動態最大 AI 回覆輪次（使用者留言會重置） */
+  maxRounds: 3,
+  /** 動態作者回覆自己動態下留言的額外機率加成 */
+  authorReplyBonus: 0.3,
+  /** 被回覆者回覆的額外機率加成 */
+  repliedToBonus: 0.2,
 } as const
 
 // ==========================================

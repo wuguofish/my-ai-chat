@@ -3,6 +3,7 @@
  */
 
 import { createGeminiModel, isAdultConversation, getGeminiResponse, getActuallyContent } from '@/services/gemini'
+import { enqueueGeminiRequest } from '@/services/apiQueue'
 import type { Message, Memory, Character, CharacterRelationType } from '@/types'
 
 /**
@@ -85,7 +86,12 @@ export async function generateMemorySummary(
     const prompt = `對話內容：
 ${conversation}`
 
-    const response = await getGeminiResponse(prompt, model)
+    // 透過佇列發送請求
+    const response = await enqueueGeminiRequest(
+      () => getGeminiResponse(prompt, model),
+      'gemini-2.5-flash-lite',
+      '短期記憶摘要'
+    )
     const summary = response.text().trim()
 
     // 檢查是否為空回應（可能是安全封鎖）
@@ -163,7 +169,12 @@ ${conversation}
 
 請分析並回傳 JSON：`
 
-    const response = await getGeminiResponse(prompt, model)
+    // 透過佇列發送請求
+    const response = await enqueueGeminiRequest(
+      () => getGeminiResponse(prompt, model),
+      'gemini-2.5-flash-lite',
+      '短期記憶摘要（含情緒）'
+    )
     const responseText = response.text().trim()
 
     // 檢查是否為空回應
@@ -248,7 +259,12 @@ ${memoriesText}
 
 請開始分析：`
 
-    const response = await getGeminiResponse(prompt, model)
+    // 透過佇列發送請求
+    const response = await enqueueGeminiRequest(
+      () => getGeminiResponse(prompt, model),
+      'gemini-2.5-flash-lite',
+      '長期記憶提取'
+    )
     const responseText = response.text().trim()
 
     // 檢查是否為空回應（可能是安全封鎖）
@@ -395,7 +411,12 @@ ${conversation}
 
 請開始分析：`
 
-    const result = await model.generateContent(prompt)
+    // 透過佇列發送請求
+    const result = await enqueueGeminiRequest(
+      () => model.generateContent(prompt),
+      'gemini-2.5-flash-lite',
+      '群聊關係評估'
+    )
     const response = result.response
     const responseText = response.text().trim()
 

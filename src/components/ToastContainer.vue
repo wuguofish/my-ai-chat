@@ -1,14 +1,21 @@
 <script setup lang="ts">
 import { useToast } from '@/composables/useToast'
 import { useRouter } from 'vue-router'
-import { CheckCircle, XCircle, Info, AlertTriangle } from 'lucide-vue-next'
+import { CheckCircle, XCircle, Info, AlertTriangle, Heart, MessageCircle } from 'lucide-vue-next'
 
 const { toasts, removeToast } = useToast()
 const router = useRouter()
 
 const handleToastClick = (toast: typeof toasts.value[0]) => {
+  // 動態牆通知：跳轉到動態牆
+  if (toast.type === 'feed_like' || toast.type === 'feed_comment') {
+    router.push('/main/feed')
+    removeToast(toast.id)
+    return
+  }
+
+  // 角色上線通知：跳轉到聊天室
   if (toast.characterId) {
-    // 點擊角色上線通知，跳轉到該角色的聊天室
     router.push(`/chat/${toast.characterId}`)
     removeToast(toast.id)
   }
@@ -22,9 +29,26 @@ const getIcon = (type: string) => {
       return XCircle
     case 'warning':
       return AlertTriangle
+    case 'feed_like':
+      return Heart
+    case 'feed_comment':
+      return MessageCircle
     default:
       return Info
   }
+}
+
+// 判斷是否為角色相關通知（有頭像顯示）
+const isCharacterToast = (toast: typeof toasts.value[0]) => {
+  return toast.characterId && (toast.type === 'info' || toast.type === 'feed_like' || toast.type === 'feed_comment')
+}
+
+// 取得提示文字
+const getHintText = (toast: typeof toasts.value[0]) => {
+  if (toast.type === 'feed_like' || toast.type === 'feed_comment') {
+    return '點擊查看動態'
+  }
+  return '點擊開始聊天'
 }
 </script>
 
@@ -34,11 +58,11 @@ const getIcon = (type: string) => {
       <div
         v-for="toast in toasts"
         :key="toast.id"
-        :class="['toast', `toast-${toast.type}`, { 'toast-clickable': toast.characterId }]"
+        :class="['toast', `toast-${toast.type}`, { 'toast-clickable': isCharacterToast(toast) }]"
         @click="handleToastClick(toast)"
       >
-        <!-- 角色上線通知樣式 -->
-        <template v-if="toast.characterId">
+        <!-- 角色相關通知樣式（上線通知、動態牆通知） -->
+        <template v-if="isCharacterToast(toast)">
           <div class="toast-character">
             <img
               v-if="toast.characterAvatar"
@@ -51,7 +75,7 @@ const getIcon = (type: string) => {
             </div>
             <div class="toast-content">
               <p class="toast-message">{{ toast.message }}</p>
-              <p class="toast-hint">點擊開始聊天</p>
+              <p class="toast-hint">{{ getHintText(toast) }}</p>
             </div>
           </div>
         </template>
@@ -118,6 +142,14 @@ const getIcon = (type: string) => {
 }
 
 .toast-info {
+  border-left-color: var(--color-primary);
+}
+
+.toast-feed_like {
+  border-left-color: #e74c3c;
+}
+
+.toast-feed_comment {
   border-left-color: var(--color-primary);
 }
 

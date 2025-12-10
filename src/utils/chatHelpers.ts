@@ -879,9 +879,11 @@ export async function generateStatusMessage(
   const { createGeminiModel, isAdultConversation, getGeminiResponseText } = await import('@/services/gemini')
   const { useUserStore } = await import('@/stores/user')
   const { useRelationshipsStore } = await import('@/stores/relationships')
+  const { useCharacterStore } = await import('@/stores/characters')
 
   const userStore = useUserStore()
   const relationshipsStore = useRelationshipsStore()
+  const characterStore = useCharacterStore()
   const user = userStore.profile
 
   const isAdult = isAdultConversation(userAge, character.age)
@@ -895,16 +897,6 @@ export async function generateStatusMessage(
   let systemPrompt = `你是一個互動式小說的角色扮演系統。你正在扮演一名名為「${character.name}」的虛構角色。
 
 ${isAdult ? '這是一部面向成人讀者的互動式小說，所有登場人物皆為成年人，角色可能有複雜的情感或經歷。' : ''}`
-
-  // 加入使用者資訊（重要：提供上下文避免誤判）
-  if (user) {
-    systemPrompt += `\n\n## 互動對象資訊
-暱稱：${user.nickname}${user.realName ? `（本名：${user.realName}）` : ''}`
-    if (user.age) systemPrompt += `\n年齡：${user.age}`
-    if (userRelationship) {
-      systemPrompt += `\n與你的關係：${getRelationshipLevelName(userRelationship.level, userRelationship.isRomantic)}`
-    }
-  }
 
   systemPrompt += `
 
@@ -933,6 +925,36 @@ ${timeDescriptions[currentTimeOfDay]}`
     })
   }
 
+  // 加入你認識的人（使用者 + 其他角色）
+  const knownPeople: string[] = []
+
+  // 加入使用者（如果關係不是 stranger）
+  if (user && userRelationship && userRelationship.level !== 'stranger') {
+    const userName = user.nickname + (user.realName ? `（${user.realName}）` : '')
+    const relName = getRelationshipLevelName(userRelationship.level, userRelationship.isRomantic)
+    knownPeople.push(`- ${userName}：${relName}`)
+  }
+
+  // 加入其他角色（只加入非 neutral 的關係）
+  const charRelationships = relationshipsStore.getCharacterRelationships(character.id)
+    .filter(rel => rel.fromCharacterId === character.id && rel.relationshipType !== 'neutral')
+
+  for (const rel of charRelationships) {
+    const otherChar = characterStore.getCharacterById(rel.toCharacterId)
+    if (otherChar) {
+      const relDesc = rel.description || getCharacterRelationshipTypeText(rel.relationshipType)
+      let entry = `- ${otherChar.name}：${relDesc}`
+      if (rel.state) {
+        entry += `（${rel.state}）`
+      }
+      knownPeople.push(entry)
+    }
+  }
+
+  if (knownPeople.length > 0) {
+    systemPrompt += `\n\n## 你認識的人\n${knownPeople.join('\n')}`
+  }
+
   // 加入心情
   if (mood) {
     userPrompt += `\n\n## 目前心情\n${mood}`
@@ -951,7 +973,9 @@ ${timeDescriptions[currentTimeOfDay]}`
 
 你的狀態訊息：`
 
-  // 建立模型並呼叫 API
+  // 建立模型並呼叫 API（透過佇列）
+  const { enqueueGeminiRequest } = await import('@/services/apiQueue')
+
   const model = createGeminiModel(apiKey, {
     model: 'gemini-2.5-flash-lite',
     systemInstruction: systemPrompt,
@@ -960,7 +984,11 @@ ${timeDescriptions[currentTimeOfDay]}`
     safeMode: !isAdult
   })
 
-  let statusMessage = await getGeminiResponseText(userPrompt, model)
+  let statusMessage = await enqueueGeminiRequest(
+    () => getGeminiResponseText(userPrompt, model),
+    'gemini-2.5-flash-lite',
+    `狀態訊息：${character.name}`
+  )
 
   // 確保不超過 45 字
   return statusMessage.length > 45 ? statusMessage.substring(0, 45) + '...' : statusMessage
@@ -976,6 +1004,7 @@ interface CharacterStatusCache {
 
 let statusCache: CharacterStatusCache = {}
 let monitoringIntervalId: number | null = null
+let monitoringTimeoutId: number | null = null
 
 /**
  * 檢查並更新所有角色的狀態
@@ -1017,6 +1046,15 @@ async function checkAndUpdateAllCharacterStatus() {
         triggerUnreadMessageResponse(character).catch((err: unknown) => {
           console.warn(`${character.name} 上線時檢查未讀訊息失敗:`, err)
         })
+
+        // 動態牆：角色上線時觸發發文和補看動態
+        import('@/services/feedService').then(({ onCharacterComeOnline }) => {
+          onCharacterComeOnline(character).catch((err: unknown) => {
+            console.warn(`${character.name} 上線時動態牆處理失敗:`, err)
+          })
+        }).catch((err: unknown) => {
+          console.warn('載入 feedService 失敗:', err)
+        })
       }
 
       // 更新 cache
@@ -1046,8 +1084,8 @@ function getMillisecondsUntilNextHour(): number {
  * 2. 每個整點（因為作息時段精確度只到小時）
  */
 export function startStatusMonitoring() {
-  // 避免重複啟動
-  if (monitoringIntervalId) {
+  // 避免重複啟動（檢查 timeout 和 interval）
+  if (monitoringIntervalId || monitoringTimeoutId) {
     console.warn('作息監控已在執行中')
     return
   }
@@ -1061,7 +1099,10 @@ export function startStatusMonitoring() {
   const msUntilNextHour = getMillisecondsUntilNextHour()
   console.log(`⏰ 下次檢查時間：${Math.round(msUntilNextHour / 1000 / 60)} 分鐘後（整點）`)
 
-  setTimeout(() => {
+  monitoringTimeoutId = window.setTimeout(() => {
+    // 清除 timeout ID（已執行完畢）
+    monitoringTimeoutId = null
+
     // 到達整點，立即檢查
     checkAndUpdateAllCharacterStatus()
 
@@ -1077,12 +1118,16 @@ export function startStatusMonitoring() {
  * 停止作息狀態監控
  */
 export function stopStatusMonitoring() {
+  if (monitoringTimeoutId) {
+    clearTimeout(monitoringTimeoutId)
+    monitoringTimeoutId = null
+  }
   if (monitoringIntervalId) {
     clearInterval(monitoringIntervalId)
     monitoringIntervalId = null
-    statusCache = {}
-    console.log('⏹️ 已停止作息狀態監控系統')
   }
+  statusCache = {}
+  console.log('⏹️ 已停止作息狀態監控系統')
 }
 
 /**
@@ -1431,6 +1476,12 @@ ${wasMentioned ? '注意：你被 @ 點名了，請針對被點名的內容回�
 
 只輸出回應內容，不要加任何前綴或說明：`
 
-  const result = await model.generateContent(prompt)
+  // 透過佇列發送請求
+  const { enqueueGeminiRequest } = await import('@/services/apiQueue')
+  const result = await enqueueGeminiRequest(
+    () => model.generateContent(prompt),
+    'gemini-2.5-flash',
+    `群聊回應：${character.name}`
+  )
   return result.response.text().trim()
 }

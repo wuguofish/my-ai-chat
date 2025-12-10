@@ -5,6 +5,7 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, type GenerativeModel, type Content, type EnhancedGenerateContentResponse } from '@google/generative-ai'
 import type { Character, Message, UserProfile, ChatRoom } from '@/types'
 import { generateSystemPrompt, convertToShortIds, convertToLongIds, type SystemPromptContext } from '@/utils/chatHelpers'
+import { enqueueGeminiRequest } from './apiQueue'
 
 /**
  * 法定成年年齡（大多數國家標準）
@@ -178,12 +179,13 @@ export function createGeminiModel(
 export async function getGeminiResponseText(userPrompt: string, model: GenerativeModel): Promise<string> { 
 
   let msg = (await getGeminiResponse(userPrompt, model)).text()
+  let processedMsg = getActuallyContent(msg)
 
-  if (msg.length > 30) { 
-    return getActuallyContent(msg)
+  if (processedMsg.length < 5) { 
+    return msg
   }
 
-  return msg
+  return processedMsg
 
 }
 
@@ -349,7 +351,8 @@ export interface CharacterResponse {
 
 /**
  * 驗證 API Key 是否有效
- * 使用 countTokens 方法，不會消耗 API 額度
+ * 會發送一個極短的測試請求來確認生成功能正常運作
+ * 注意：驗證請求會進入佇列排隊
  */
 export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; error?: string }> {
   try {
@@ -358,10 +361,26 @@ export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; 
     }
 
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: {
+        maxOutputTokens: 5  // 極短的回應，減少額度消耗
+      }
+    })
 
-    // 使用 countTokens 來驗證，不會消耗額度
-    await model.countTokens('test')
+    // 發送一個真實的生成請求來驗證（透過佇列）
+    // 這樣可以確保不只是 API Key 有效，連生成額度也是正常的
+    const result = await enqueueGeminiRequest(
+      () => model.generateContent('回覆 OK'),
+      'gemini-2.5-flash',
+      'API Key 驗證'
+    )
+    const response = result.response
+
+    // 檢查是否有有效回應
+    if (!response || !response.text()) {
+      return { valid: false, error: '無法取得回應' }
+    }
 
     return { valid: true }
   } catch (error: any) {
@@ -371,7 +390,7 @@ export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; 
     if (error.message?.includes('API_KEY_INVALID') || error.message?.includes('invalid')) {
       return { valid: false, error: 'API Key 無效' }
     } else if (error.message?.includes('quota') || error.message?.includes('RESOURCE_EXHAUSTED')) {
-      return { valid: false, error: 'API Key 額度已用盡' }
+      return { valid: false, error: 'API 額度已用盡，請稍後再試或至 Google AI Studio 查看配額' }
     } else if (error.message?.includes('permission') || error.message?.includes('PERMISSION_DENIED')) {
       return { valid: false, error: 'API Key 權限不足' }
     } else {
@@ -481,7 +500,13 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
         parts: [{ text: `[${character.name}]:` }]
       })
       const chat = model.startChat({ history: chatHistory })
-      const result = await chat.sendMessage('')
+
+      // 透過佇列發送請求，避免超過 RPM 限制
+      const result = await enqueueGeminiRequest(
+        () => chat.sendMessage(''),
+        'gemini-2.5-flash',
+        `對話：${character.name}`
+      )
       const response = result.response
 
       // 檢查回應是否被封鎖（即使 API 沒有拋出錯誤）

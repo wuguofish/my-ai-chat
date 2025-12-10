@@ -20,6 +20,7 @@ import {
 } from '@/utils/chatHelpers'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import { useCharacterStatus, getCharacterStatusInfo } from '@/composables/useCharacterStatus'
+import { useMentionInput, type MentionOption } from '@/composables/useMentionInput'
 import { getCharacterResponse } from '@/services/gemini'
 import {
   generateMemorySummary,
@@ -80,8 +81,8 @@ const getAgeContextForMemory = (targetCharacter?: Character | null) => {
 }
 
 // @ 選單可選擇的對象
-const mentionOptions = computed(() => {
-  const options: Array<{ id: string; name: string; type: 'all' | 'user' | 'character'; avatar?: string }> = []
+const mentionOptions = computed((): MentionOption[] => {
+  const options: MentionOption[] = []
 
   // 只在群聊時顯示 @ 選單
   if (room.value?.type !== 'group') return options
@@ -192,10 +193,20 @@ const messageInputRef = ref<HTMLTextAreaElement | null>(null)
 const messagesContainer = ref<HTMLElement | null>(null)
 const isLoading = ref(false)
 
-// @ 選單
-const showMentionMenu = ref(false)
-const mentionMenuPosition = ref({ top: 0, left: 0 })
-const mentionCursorPosition = ref(0) // 記錄 @ 符號的位置
+// @ 選單（使用共用 composable）
+const isGroupChat = computed(() => room.value?.type === 'group')
+const {
+  showMentionMenu,
+  mentionMenuPosition,
+  handleInputChange,
+  selectMention,
+  handleMentionKeydown
+} = useMentionInput({
+  inputRef: messageInputRef,
+  inputValue: messageInput,
+  mentionOptions: mentionOptions,
+  enabled: isGroupChat
+})
 
 // 訊息選單與多選刪除
 const showMessageMenu = ref(false)
@@ -1169,63 +1180,12 @@ const isTouchDevice = () => {
   return 'ontouchstart' in window || navigator.maxTouchPoints > 0
 }
 
-// 處理輸入框變化（偵測 @ 符號）
-const handleInputChange = () => {
-  if (room.value?.type !== 'group') return
-
-  const textarea = messageInputRef.value
-  if (!textarea) return
-
-  const cursorPos = textarea.selectionStart
-  const textBeforeCursor = messageInput.value.substring(0, cursorPos)
-
-  // 檢查游標前最後一個字元是否為 @
-  if (textBeforeCursor.endsWith('@')) {
-    // 顯示選單
-    showMentionMenu.value = true
-    mentionCursorPosition.value = cursorPos
-
-    // 計算選單位置（在游標下方）
-    // 簡化版：固定在輸入框上方
-    const rect = textarea.getBoundingClientRect()
-    mentionMenuPosition.value = {
-      left: rect.left + 20,
-      top: rect.top - 10
-    }
-  } else {
-    // 隱藏選單
-    showMentionMenu.value = false
-  }
-}
-
-// 選擇 @ 對象
-const selectMention = (option: { id: string; name: string; type: string }) => {
-  const textarea = messageInputRef.value
-  if (!textarea) return
-
-  const cursorPos = mentionCursorPosition.value
-  const beforeAt = messageInput.value.substring(0, cursorPos - 1) // 移除 @
-  const afterCursor = messageInput.value.substring(cursorPos)
-
-  // 插入選擇的名字
-  messageInput.value = beforeAt + option.id + ' ' + afterCursor
-
-  // 設定游標位置到插入文字後
-  nextTick(() => {
-    const newCursorPos = (beforeAt + option.id + ' ').length
-    textarea.setSelectionRange(newCursorPos, newCursorPos)
-    textarea.focus()
-  })
-
-  // 隱藏選單
-  showMentionMenu.value = false
-}
+// 舊的 handleInputChange 和 selectMention 已移至 useMentionInput composable
 
 // 處理 Enter 送出
 const handleKeydown = (event: KeyboardEvent) => {
-  // 如果選單開啟，Escape 關閉選單
-  if (showMentionMenu.value && event.key === 'Escape') {
-    showMentionMenu.value = false
+  // 如果 mention 選單開啟，Escape 關閉選單
+  if (handleMentionKeydown(event)) {
     event.preventDefault()
     return
   }

@@ -14,6 +14,7 @@ import {
   generateBirthdayWish,
   markWishSent
 } from '@/services/birthdayService'
+import { triggerDailyCatchup } from '@/services/feedService'
 import ToastContainer from '@/components/ToastContainer.vue'
 import GlobalModal from '@/components/GlobalModal.vue'
 
@@ -133,6 +134,11 @@ onMounted(async () => {
   // 檢查並發送生日祝福（非阻塞，在背景執行）
   checkAndSendBirthdayWishes().catch(err => {
     console.error('生日祝福檢查失敗:', err)
+  })
+
+  // 動態牆：每日首次開 App 時觸發角色發文（非阻塞，在背景執行）
+  triggerDailyCatchup().catch(err => {
+    console.error('動態牆每日觸發失敗:', err)
   })
 
   // 初始版本檢查

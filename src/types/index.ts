@@ -274,3 +274,62 @@ export interface RelationshipLevelInfo {
   color: string
   description?: string
 }
+
+// ==========================================
+// 動態牆系統
+// ==========================================
+
+export type PostTriggerEvent =
+  | 'mood_change'           // 情緒改變
+  | 'relationship_change'   // 關係等級變化
+  | 'new_memory'            // 新的長期記憶
+  | 'come_online'           // 角色上線
+  | 'birthday'              // 生日
+  | 'holiday'               // 特殊節日
+  | 'daily_catchup'         // 每日首次開啟 App
+  | 'user_post'             // 使用者發文
+
+export interface PostLike {
+  oderId: string            // 'user' 或 characterId
+  timestamp: number
+}
+
+export interface PostComment {
+  id: string
+  authorId: string          // 'user' 或 characterId
+  authorName: string
+  content: string
+  timestamp: number
+  floor?: number            // 樓層編號（從 1 開始）
+  replyTo?: string[]        // 回覆的留言 ID（可多個）
+  replyToFloors?: number[]  // 回覆的樓層編號（可多個，用於顯示「回 #1 #2」）
+  likes?: PostLike[]        // 留言按讚列表
+}
+
+export interface Post {
+  id: string
+  authorId: string          // 'user' 或 characterId
+  authorName: string
+  content: string
+  timestamp: number
+
+  // 觸發來源（用於 debug 和統計）
+  triggerEvent?: PostTriggerEvent
+
+  // 互動數據
+  likes: PostLike[]
+  comments: PostComment[]
+}
+
+export type FeedNotificationType = 'like' | 'comment' | 'mention' | 'comment_like'
+
+export interface FeedNotification {
+  id: string
+  type: FeedNotificationType
+  postId: string
+  postPreview: string       // 動態內容預覽（前 30 字）
+  actorId: string           // 觸發者 ID
+  actorName: string
+  timestamp: number
+  read: boolean
+}

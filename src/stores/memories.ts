@@ -158,6 +158,24 @@ export const useMemoriesStore = defineStore('memories', () => {
       triggerStatusUpdate(characterId).catch((err: unknown) => {
         console.warn('自動生成狀態訊息失敗:', err)
       })
+
+      // 動態牆：新增長期記憶時觸發發文
+      import('@/services/feedService').then(async ({ onNewMemory }) => {
+        const { useCharacterStore } = await import('@/stores/characters')
+        const characterStore = useCharacterStore()
+        const character = characterStore.getCharacterById(characterId)
+        if (character) {
+          // 只取第一筆記憶作為觸發內容
+          const firstMemory = contents[0]
+          if (firstMemory) {
+            onNewMemory(character, firstMemory).catch((err: unknown) => {
+              console.warn(`${character.name} 新增記憶時觸發動態失敗:`, err)
+            })
+          }
+        }
+      }).catch((err: unknown) => {
+        console.warn('載入 feedService 失敗:', err)
+      })
     }
 
     return memories

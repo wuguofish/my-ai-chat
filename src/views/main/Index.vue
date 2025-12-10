@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { MessageCircleMore, UsersRound, Settings } from 'lucide-vue-next'
+import { MessageCircleMore, UsersRound, Settings, Newspaper } from 'lucide-vue-next'
 
 
 const route = useRoute()
@@ -11,6 +11,7 @@ const currentTab = computed(() => {
   const path = route.path
   if (path.includes('/characters')) return 'characters'
   if (path.includes('/settings')) return 'settings'
+  if (path.includes('/feed')) return 'feed'
   return 'chats'
 })
 
@@ -42,6 +43,11 @@ const navigateTo = (tab: string) => {
       <button :class="['nav-item', { active: isActive('characters') }]" @click="navigateTo('characters')">
         <UsersRound :fill="getIconFill('characters')" />
         <span class="nav-label">好友</span>
+      </button>
+
+      <button :class="['nav-item', { active: isActive('feed') }]" @click="navigateTo('feed')">
+        <Newspaper :fill="getIconFill('feed')" />
+        <span class="nav-label">動態</span>
       </button>
 
       <button :class="['nav-item', { active: isActive('settings') }]" @click="navigateTo('settings')">

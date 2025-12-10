@@ -88,6 +88,26 @@ export const useRelationshipsStore = defineStore('relationships', {
           this.triggerStatusUpdateOnRelationshipChange(characterId).catch((err: unknown) => {
             console.warn('關係等級變化時自動生成狀態訊息失敗:', err)
           })
+
+          // 動態牆：只有關係等級「提升」時才觸發發文
+          // 判斷是否為升級：比較等級順序
+          const levelOrder: RelationshipLevel[] = ['enemy', 'dislike', 'stranger', 'acquaintance', 'friend', 'close_friend', 'soulmate']
+          const oldIndex = levelOrder.indexOf(oldLevel)
+          const newIndex = levelOrder.indexOf(newLevel)
+          if (newIndex > oldIndex) {
+            import('@/services/feedService').then(async ({ onRelationshipLevelUp }) => {
+              const { useCharacterStore } = await import('./characters')
+              const characterStore = useCharacterStore()
+              const character = characterStore.getCharacterById(characterId)
+              if (character) {
+                onRelationshipLevelUp(character, newLevel).catch((err: unknown) => {
+                  console.warn(`${character.name} 關係提升時觸發動態失敗:`, err)
+                })
+              }
+            }).catch((err: unknown) => {
+              console.warn('載入 feedService 失敗:', err)
+            })
+          }
         }
       }
     },
@@ -130,6 +150,34 @@ export const useRelationshipsStore = defineStore('relationships', {
         console.log(`✨ 已為 ${character.name} 因關係變化生成狀態訊息: ${statusMessage}`)
       } catch (error) {
         console.error('關係變化時生成狀態訊息失敗:', error)
+        throw error
+      }
+    },
+
+    /**
+     * 觸發動態牆發文（角色間關係變化時）
+     */
+    async triggerFeedPostOnRelationshipChange(
+      fromId: string,
+      toId: string,
+      newType: string,
+      isNewRelationship: boolean
+    ): Promise<void> {
+      try {
+        const { useCharacterStore } = await import('./characters')
+        const { onCharacterRelationshipChange } = await import('@/services/feedService')
+
+        const characterStore = useCharacterStore()
+        const fromCharacter = characterStore.getCharacterById(fromId)
+        const toCharacter = characterStore.getCharacterById(toId)
+
+        if (!fromCharacter || !toCharacter) return
+
+        // 雙方都有機率發文
+        await onCharacterRelationshipChange(fromCharacter, toCharacter.name, newType, isNewRelationship)
+        await onCharacterRelationshipChange(toCharacter, fromCharacter.name, newType, isNewRelationship)
+      } catch (error) {
+        console.error('角色間關係變化時觸發動態失敗:', error)
         throw error
       }
     },
@@ -253,7 +301,7 @@ export const useRelationshipsStore = defineStore('relationships', {
       const existing = this.characterToCharacter.find(
         r => r.fromCharacterId === fromId && r.toCharacterId === toId
       )
-
+      
       if (existing) {
         const oldType = existing.relationshipType
         // 更新現有關係
@@ -274,6 +322,13 @@ export const useRelationshipsStore = defineStore('relationships', {
           this.triggerStatusUpdateOnRelationshipChange(toId).catch((err: unknown) => {
             console.warn('角色間關係變化時自動生成狀態訊息失敗:', err)
           })
+
+          // 動態牆：角色間關係改變時，觸發雙方發文（只有非 neutral 時）
+          if (type !== 'neutral') {
+            this.triggerFeedPostOnRelationshipChange(fromId, toId, type, false).catch((err: unknown) => {
+              console.warn('角色間關係變化時觸發動態失敗:', err)
+            })
+          }
         }
       } else {
         // 建立新關係
@@ -295,8 +350,14 @@ export const useRelationshipsStore = defineStore('relationships', {
           this.triggerStatusUpdateOnRelationshipChange(toId).catch((err: unknown) => {
             console.warn('新關係建立時自動生成狀態訊息失敗:', err)
           })
-        }
+
+          // 動態牆：新建立關係時，觸發雙方發文
+          this.triggerFeedPostOnRelationshipChange(fromId, toId, type, true).catch((err: unknown) => {
+            console.warn('新關係建立時觸發動態失敗:', err)
+          })
+        }        
       }
+
     },
 
     // 刪除角色關係的 LLM 狀態（只刪除 state，保留關係本身）
