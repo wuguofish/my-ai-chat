@@ -6,6 +6,7 @@ import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useMemoriesStore } from '@/stores/memories'
 import { useRelationshipsStore } from '@/stores/relationships'
+import { useFeedStore } from '@/stores/feed'
 import { useModal } from '@/composables/useModal'
 import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService } from '@/services/googleDrive'
@@ -22,6 +23,7 @@ const characterStore = useCharacterStore()
 const chatRoomStore = useChatRoomsStore()
 const memoriesStore = useMemoriesStore()
 const relationshipsStore = useRelationshipsStore()
+const feedStore = useFeedStore()
 
 // 版本資訊
 const currentVersion = ref('')
@@ -173,6 +175,14 @@ const handleExportData = () => {
     tracking: {
       memory: memoryTracking ? JSON.parse(memoryTracking) : {},
       context: contextTracking ? JSON.parse(contextTracking) : {}
+    },
+    // 動態牆資料
+    feed: {
+      posts: feedStore.posts,
+      notifications: feedStore.notifications,
+      lastDailyCatchup: feedStore.lastDailyCatchup,
+      characterLastFeedCheck: feedStore.characterLastFeedCheck,
+      lastEventTrigger: feedStore.lastEventTrigger
     }
   }
 
@@ -239,6 +249,17 @@ const handleImportData = (event: Event) => {
             if (data.tracking.context) {
               localStorage.setItem('ai-chat-context-tracking', JSON.stringify(data.tracking.context))
             }
+          }
+
+          // 還原動態牆資料
+          if (data.feed) {
+            feedStore.$patch({
+              posts: data.feed.posts || [],
+              notifications: data.feed.notifications || [],
+              lastDailyCatchup: data.feed.lastDailyCatchup || null,
+              characterLastFeedCheck: data.feed.characterLastFeedCheck || {},
+              lastEventTrigger: data.feed.lastEventTrigger || {}
+            })
           }
 
           // 遷移舊版本的記憶資料（如果有）
@@ -320,6 +341,14 @@ const handleGoogleBackup = async () => {
       tracking: {
         memory: memoryTracking ? JSON.parse(memoryTracking) : {},
         context: contextTracking ? JSON.parse(contextTracking) : {}
+      },
+      // 動態牆資料
+      feed: {
+        posts: feedStore.posts,
+        notifications: feedStore.notifications,
+        lastDailyCatchup: feedStore.lastDailyCatchup,
+        characterLastFeedCheck: feedStore.characterLastFeedCheck,
+        lastEventTrigger: feedStore.lastEventTrigger
       },
       timestamp: new Date().toISOString()
     }
@@ -416,6 +445,17 @@ const handleGoogleRestore = async () => {
       if (data.tracking.context) {
         localStorage.setItem('ai-chat-context-tracking', JSON.stringify(data.tracking.context))
       }
+    }
+
+    // 還原動態牆資料
+    if (data.feed) {
+      feedStore.$patch({
+        posts: data.feed.posts || [],
+        notifications: data.feed.notifications || [],
+        lastDailyCatchup: data.feed.lastDailyCatchup || null,
+        characterLastFeedCheck: data.feed.characterLastFeedCheck || {},
+        lastEventTrigger: data.feed.lastEventTrigger || {}
+      })
     }
 
     await alert('從 Google Drive 還原成功！', { type: 'success' })

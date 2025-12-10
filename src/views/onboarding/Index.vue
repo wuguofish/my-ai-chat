@@ -6,6 +6,7 @@ import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useMemoriesStore } from '@/stores/memories'
 import { useRelationshipsStore } from '@/stores/relationships'
+import { useFeedStore } from '@/stores/feed'
 import { useModal } from '@/composables/useModal'
 import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService, TokenInvalidError } from '@/services/googleDrive'
@@ -21,6 +22,7 @@ const characterStore = useCharacterStore()
 const chatRoomStore = useChatRoomsStore()
 const memoriesStore = useMemoriesStore()
 const relationshipsStore = useRelationshipsStore()
+const feedStore = useFeedStore()
 
 const currentStep = ref(0)
 const isImporting = ref(false)
@@ -85,6 +87,17 @@ const handleImportLocalFile = (event: Event) => {
           })
         }
 
+        // 還原動態牆資料
+        if (data.feed) {
+          feedStore.$patch({
+            posts: data.feed.posts || [],
+            notifications: data.feed.notifications || [],
+            lastDailyCatchup: data.feed.lastDailyCatchup || null,
+            characterLastFeedCheck: data.feed.characterLastFeedCheck || {},
+            lastEventTrigger: data.feed.lastEventTrigger || {}
+          })
+        }
+
         await alert('匯入成功！', { type: 'success' })
         router.push('/main')
       } catch (error) {
@@ -138,6 +151,17 @@ const handleImportFromGoogleDrive = async () => {
       relationshipsStore.$patch({
         userToCharacter: data.relationships.userToCharacter || [],
         characterToCharacter: data.relationships.characterToCharacter || []
+      })
+    }
+
+    // 還原動態牆資料
+    if (data.feed) {
+      feedStore.$patch({
+        posts: data.feed.posts || [],
+        notifications: data.feed.notifications || [],
+        lastDailyCatchup: data.feed.lastDailyCatchup || null,
+        characterLastFeedCheck: data.feed.characterLastFeedCheck || {},
+        lastEventTrigger: data.feed.lastEventTrigger || {}
       })
     }
 
