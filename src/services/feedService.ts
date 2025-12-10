@@ -493,7 +493,9 @@ ${relationshipWithAuthor ? `你與作者的關係：${relationshipWithAuthor}` :
     userPrompt += `\n\n## 目前的留言區（最近 ${recentComments.length} 則）`
     for (const comment of recentComments) {
       const floorTag = comment.floor ? `#${comment.floor}` : ''
-      const replyInfo = comment.replyToFloor ? ` (回 #${comment.replyToFloor})` : ''
+      const replyInfo = comment.replyToFloors && comment.replyToFloors.length > 0
+        ? ` (回 ${comment.replyToFloors.map(f => `#${f}`).join(' ')})`
+        : ''
       userPrompt += `\n${floorTag} ${comment.authorName}${replyInfo}：「${comment.content}」`
     }
   }
@@ -1154,28 +1156,30 @@ export async function triggerCommentReplies(
   }
 
   // 2. 檢查被回覆的角色（如果有 replyTo）
-  if (triggerComment.replyTo) {
-    const repliedComment = post.comments.find(c => c.id === triggerComment.replyTo)
-    if (repliedComment && repliedComment.authorId !== 'user' && repliedComment.authorId !== triggerComment.authorId) {
-      const repliedChar = characterStore.getCharacterById(repliedComment.authorId)
-      if (repliedChar) {
-        const status = getCharacterStatus(repliedChar)
-        const isMentioned = mentionAll || mentionedIds.includes(repliedChar.id)
-        if (status === 'online' || (isMentioned && status === 'away')) {
-          // 避免重複加入
-          if (!potentialRepliers.some(r => r.character.id === repliedChar.id)) {
-            potentialRepliers.push({
-              character: repliedChar,
-              isPostAuthor: false,
-              isRepliedTo: true,
-              isMentioned
-            })
-          } else {
-            // 如果已經在列表中，標記為被回覆
-            const existing = potentialRepliers.find(r => r.character.id === repliedChar.id)
-            if (existing) {
-              existing.isRepliedTo = true
-              existing.isMentioned = existing.isMentioned || isMentioned
+  if (triggerComment.replyTo && triggerComment.replyTo.length > 0) {
+    const repliedComments = post.comments.filter(c => triggerComment.replyTo!.includes(c.id))
+    for (const repliedComment of repliedComments) {
+      if (repliedComment.authorId !== 'user' && repliedComment.authorId !== triggerComment.authorId) {
+        const repliedChar = characterStore.getCharacterById(repliedComment.authorId)
+        if (repliedChar) {
+          const status = getCharacterStatus(repliedChar)
+          const isMentioned = mentionAll || mentionedIds.includes(repliedChar.id)
+          if (status === 'online' || (isMentioned && status === 'away')) {
+            // 避免重複加入
+            if (!potentialRepliers.some(r => r.character.id === repliedChar.id)) {
+              potentialRepliers.push({
+                character: repliedChar,
+                isPostAuthor: false,
+                isRepliedTo: true,
+                isMentioned
+              })
+            } else {
+              // 如果已經在列表中，標記為被回覆
+              const existing = potentialRepliers.find(r => r.character.id === repliedChar.id)
+              if (existing) {
+                existing.isRepliedTo = true
+                existing.isMentioned = existing.isMentioned || isMentioned
+              }
             }
           }
         }
