@@ -135,7 +135,7 @@ const handleSubmit = () => {
     id: isEditMode.value ? editingCharacterId.value : uuidv4(),
     name: name.value.trim(),
     gender: gender.value !== 'unset' ? gender.value : undefined,
-    age: age.value.trim() || undefined,
+    age: age.value ? String(age.value).trim() : undefined,
     birthday: birthday.value.trim() || undefined,
     profession: profession.value.trim() || undefined,
     personality: personality.value.trim(),
