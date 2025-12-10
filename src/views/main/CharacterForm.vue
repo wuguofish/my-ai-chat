@@ -120,6 +120,12 @@ const handleSubmit = () => {
     return
   }
 
+  // 新增模式時，先檢查是否可以新增
+  if (!isEditMode.value && !characterStore.canAddMore) {
+    error.value = `好友數量已達上限（${LIMITS.MAX_CHARACTERS}位），請先刪除一些好友`
+    return
+  }
+
   // 取得原始角色資料（保留 isPrivate 和 importedMetadata）
   const originalCharacter = isEditMode.value
     ? characterStore.getCharacterById(editingCharacterId.value)
@@ -162,13 +168,18 @@ const handleSubmit = () => {
     updatedAt: new Date().toISOString()
   }
 
-  if (isEditMode.value) {
-    characterStore.updateCharacter(characterData)
-  } else {
-    characterStore.addCharacter(characterData)
-  }
+  try {
+    if (isEditMode.value) {
+      characterStore.updateCharacter(characterData)
+    } else {
+      characterStore.addCharacter(characterData)
+    }
 
-  router.push('/main/characters')
+    router.push('/main/characters')
+  } catch (err) {
+    // 處理可能的錯誤（例如達到上限）
+    error.value = err instanceof Error ? err.message : '新增好友時發生錯誤，請稍後再試'
+  }
 }
 
 const handleCancel = () => {
