@@ -5,8 +5,7 @@ import type {
   UserCharacterRelationship,
   CharacterRelationship,
   Memory,
-  Message,
-  FeedMemoryEntry
+  Message
 } from '@/types'
 import { getRelationshipLevelName, getCharacterRelationshipTypeText } from './relationshipHelpers'
 
@@ -65,27 +64,6 @@ export function isTodayHolidaySync(): boolean {
   return day === 0 || day === 6
 }
 
-/**
- * 將時間戳轉換為「多久前」的描述
- */
-function getTimeAgo(timestamp: number): string {
-  const now = Date.now()
-  const diff = now - timestamp
-  const minutes = Math.floor(diff / (1000 * 60))
-  const hours = Math.floor(diff / (1000 * 60 * 60))
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-
-  if (minutes < 60) {
-    return `${minutes}分鐘前`
-  } else if (hours < 24) {
-    return `${hours}小時前`
-  } else if (days === 1) {
-    return '昨天'
-  } else {
-    return `${days}天前`
-  }
-}
-
 export interface SystemPromptContext {
   character: Character
   user: UserProfile
@@ -94,7 +72,6 @@ export interface SystemPromptContext {
   characterRelationships?: CharacterRelationship[]
   longTermMemories?: Memory[]
   shortTermMemories?: Memory[]
-  feedMemories?: FeedMemoryEntry[]  // 動態牆互動記憶
   roomSummary?: string
   otherCharactersInRoom?: Character[]
   allCharacters?: Character[]  // 所有角色列表（用於私聊時解析角色關係中的角色名稱）
@@ -119,7 +96,7 @@ export function getGenderText(gender?: string): string {
  * 包含時間、使用者資料、關係、記憶等完整資訊
  */
 export function generateSystemPrompt(context: SystemPromptContext): string {
-  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, feedMemories, roomSummary,
+  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary,
     otherCharactersInRoom, allCharacters, isOfflineButMentioned, useShortIds, isAdultMode } = context
 
   const parts: string[] = [generateDefaultCharacterPrompt(character, isAdultMode||false)]
@@ -279,19 +256,6 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     parts.push(`\n\n## 近期記憶`)
     shortTermMemories.forEach(mem => {
       parts.push(`\n- ${mem.content}`)
-    })
-  }
-
-  // 8. 動態牆互動記憶
-  if (feedMemories && feedMemories.length > 0) {
-    parts.push(`\n\n## 你最近在動態牆的互動`)
-    feedMemories.forEach(mem => {
-      const timeAgo = getTimeAgo(mem.timestamp)
-      if (mem.type === 'post') {
-        parts.push(`\n- ${timeAgo}：發文「${mem.content}」`)
-      } else if (mem.type === 'comment') {
-        parts.push(`\n- ${timeAgo}：在${mem.postAuthor}的動態「${mem.postPreview}」留言「${mem.content}」`)
-      }
     })
   }
 

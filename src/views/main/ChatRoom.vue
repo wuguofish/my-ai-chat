@@ -6,7 +6,6 @@ import { useChatRoomsStore } from '@/stores/chatRooms'
 import { useUserStore } from '@/stores/user'
 import { useRelationshipsStore } from '@/stores/relationships'
 import { useMemoriesStore } from '@/stores/memories'
-import { useFeedStore } from '@/stores/feed'
 import { useToast } from '@/composables/useToast'
 import { useModal } from '@/composables/useModal'
 import type { Character } from '@/types'
@@ -38,7 +37,6 @@ const chatRoomStore = useChatRoomsStore()
 const userStore = useUserStore()
 const relationshipsStore = useRelationshipsStore()
 const memoriesStore = useMemoriesStore()
-const feedStore = useFeedStore()
 const { info } = useToast()
 const { alert, confirm } = useModal()
 
@@ -823,7 +821,6 @@ const handleSingleChatMessage = async (userMessage: string) => {
         allCharacters,
         longTermMemories,
         shortTermMemories,
-        feedMemories: feedStore.getCharacterFeedMemories(currentCharacter.id),
         roomSummary
       }
     }
@@ -1083,7 +1080,6 @@ const handleGroupChatMessage = async (userMessage: string) => {
             allCharacters,
             longTermMemories,
             shortTermMemories,
-            feedMemories: feedStore.getCharacterFeedMemories(currentCharacter.id),
             roomSummary,
             isOfflineButMentioned
           }

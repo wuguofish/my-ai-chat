@@ -1,29 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir:*)",
-      "Bash(npm create:*)",
-      "Bash(npm install)",
-      "Bash(npm install:*)",
-      "Bash(npm run dev:*)",
       "Bash(npm run build:*)",
-      "Bash(npm run type-check:*)",
-      "Bash(npm run:*)",
       "Bash(npx vue-tsc:*)",
-      "Bash(findstr:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git push)",
-      "Bash(del \"d:\\7755\\my-ai-chat\\TODO.md\")",
-      "Bash(cd:*)",
-      "Bash(git -C \"d:\\7755\\my-ai-chat\" status)",
-      "Bash(git -C \"d:\\7755\\my-ai-chat\" diff --stat)",
-      "Bash(git -C \"d:\\7755\\my-ai-chat\" log --oneline -5)",
-      "Bash(git -C \"d:\\7755\\my-ai-chat\" add -A)",
-      "Bash(git -C \"d:\\7755\\my-ai-chat\" push)",
-      "Bash(cat:*)",
-      "Bash(git -C \"d:\\7755\\my-ai-chat\" log --oneline -3)",
-      "Bash(git -C \"d:\\7755\\my-ai-chat\" commit -m \"$(cat <<''EOF''\nv1.7.0 - 動態牆留言樓層回覆系統\n\n✨ 新增功能：\n- 每則留言自動顯示樓層編號（#1、#2...）\n- 新增「回覆」按鈕，點擊後插入 回#N：到輸入框\n- 支援多樓層回覆（如 #2和#3）\n- 點擊「回 #N」可捲動並高亮對應樓層\n- AI 角色留言支援樓層格式回覆\n\n🔧 技術改進：\n- PostComment 新增 floor、replyTo[]、replyToFloors[] 欄位\n- 新增 parseFloorReply() 解析樓層引用\n- 動態牆完整功能實作（發文、按讚、留言、通知）\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: 動態牆互動記憶系統與多項優化\n\n- 新增動態牆互動記憶系統，角色會記住最近 5 筆發文/留言\n- 聊天時帶入「你最近在動態牆的互動」區塊\n- 動態牆留言上下文優化（最近 20 則，回覆時帶入前 10 則脈絡）\n- 角色關係資訊增強（帶入性別、年齡、職業）\n- 樓層回覆格式統一為可點擊連結\n- 修正引號誤判問題（70% 門檻）\n- 防止角色翻舊文（限制 36 小時內）\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push)"
     ],
     "deny": [],
     "ask": []

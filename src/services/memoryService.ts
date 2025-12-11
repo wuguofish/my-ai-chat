@@ -4,7 +4,7 @@
 
 import { createGeminiModel, isAdultConversation, getGeminiResponse, getActuallyContent } from '@/services/gemini'
 import { enqueueGeminiRequest } from '@/services/apiQueue'
-import type { Message, Memory, Character, CharacterRelationType } from '@/types'
+import type { Message, Memory, Character, CharacterRelationType, Post } from '@/types'
 
 /**
  * 記憶生成的年齡資訊
@@ -294,6 +294,91 @@ ${memoriesText}
   } catch (error) {
     console.error('提取長期記憶失敗:', error)
     throw new Error('無法提取長期記憶')
+  }
+}
+
+/**
+ * 生成動態牆貼文的摘要
+ * 用於將超過 36 小時的貼文互動整理成記憶，存入參與者的短期記憶
+ * @param post 要摘要的貼文
+ * @param userAge 使用者年齡（用於安全模式判斷）
+ * @returns 貼文摘要（1-2 句話）
+ */
+export async function generatePostSummary(
+  apiKey: string,
+  post: Post,
+  userAge?: string
+): Promise<string> {
+  try {
+    const isAdult = isAdultConversation(userAge, '18')
+
+    const systemInstruction = `你是一個社群媒體摘要系統，專門整理動態貼文和留言互動。
+
+這是一個${isAdult ? '面向成人的' : ''}虛擬社群平台。以下是一則動態貼文及其互動內容。
+
+你的任務是用 1-2 句話總結這則動態發生了什麼事，包括：
+- 原 PO 發了什麼內容
+- 主要的留言互動和討論
+- 重要的情緒或關係變化
+
+請用第三人稱客觀描述，例如：
+「小明分享了去日本旅遊的照片，小華表示也想去，兩人約定下次一起出遊」
+
+只輸出摘要內容，不要加任何前綴或說明。`
+
+    const model = createGeminiModel(apiKey, {
+      model: 'gemini-2.5-flash-lite',
+      systemInstruction: {
+        parts: [{ text: systemInstruction }],
+        role: 'user'
+      },
+      temperature: 0.3,
+      maxOutputTokens: 512,
+      safeMode: !isAdult
+    })
+
+    // 格式化貼文內容
+    let postContent = `【原 PO】${post.authorName}：${post.content}`
+
+    // 加入留言（如果有）
+    if (post.comments.length > 0) {
+      const commentsText = post.comments
+        .map(c => {
+          let commentLine = `${c.authorName}：${c.content}`
+          if (c.replyToFloors && c.replyToFloors.length > 0) {
+            commentLine = `${c.authorName}（回覆 #${c.replyToFloors.join(' #')}）：${c.content}`
+          }
+          return commentLine
+        })
+        .join('\n')
+      postContent += `\n\n【留言】\n${commentsText}`
+    }
+
+    // 加入按讚資訊（簡化）
+    if (post.likes.length > 0) {
+      postContent += `\n\n（共 ${post.likes.length} 人按讚）`
+    }
+
+    const prompt = `動態內容：
+${postContent}
+
+請總結這則動態：`
+
+    const response = await enqueueGeminiRequest(
+      () => getGeminiResponse(prompt, model),
+      'gemini-2.5-flash-lite',
+      '貼文摘要生成'
+    )
+    const summary = response.text().trim()
+
+    if (!summary) {
+      throw new Error('貼文摘要生成失敗：空回應')
+    }
+
+    return getActuallyContent(summary)
+  } catch (error) {
+    console.error('生成貼文摘要失敗:', error)
+    throw new Error('無法生成貼文摘要')
   }
 }
 

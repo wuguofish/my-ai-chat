@@ -685,12 +685,6 @@ export async function triggerCharacterPost(
     // 儲存動態
     feedStore.addPost(post)
 
-    // 記錄動態牆互動記憶
-    feedStore.addCharacterFeedMemory(character.id, {
-      type: 'post',
-      content: content.slice(0, 50)
-    })
-
     // 更新事件冷卻時間
     const cooldown = FEED_EVENT_COOLDOWN[event]
     if (cooldown) {
@@ -901,14 +895,6 @@ export async function characterCommentOnPost(
     // 儲存留言
     feedStore.addComment(postId, comment)
 
-    // 記錄動態牆互動記憶
-    feedStore.addCharacterFeedMemory(character.id, {
-      type: 'comment',
-      content: content.slice(0, 50),
-      postAuthor: post.authorName,
-      postPreview: post.content.slice(0, 30)
-    })
-
     console.log(`[Feed] ${character.name} 留言: ${content.slice(0, 20)}...`)
 
     // 如果是使用者的動態，建立通知
@@ -1085,14 +1071,6 @@ async function characterReplyToComment(
 
     // 儲存留言
     feedStore.addComment(postId, comment)
-
-    // 記錄動態牆互動記憶
-    feedStore.addCharacterFeedMemory(character.id, {
-      type: 'comment',
-      content: content.slice(0, 50),
-      postAuthor: post.authorName,
-      postPreview: post.content.slice(0, 30)
-    })
 
     console.log(`[Feed] ${character.name} 回覆 ${replyToComment.authorName}: ${content.slice(0, 20)}...`)
 
@@ -1570,7 +1548,12 @@ export async function triggerDailyCatchup(): Promise<void> {
 
   console.log('[Feed] 執行每日首次開 App 的角色發文檢查')
 
-  // 取得所有在線角色
+  // 1. 先處理舊貼文摘要（背景執行）
+  summarizeClosedPosts().catch(err => {
+    console.warn('[Feed] 舊貼文摘要失敗:', err)
+  })
+
+  // 2. 取得所有在線角色
   const onlineCharacters = characterStore.characters.filter(
     char => getCharacterStatus(char) === 'online'
   )
@@ -1652,4 +1635,103 @@ export async function onCharacterComeOnline(character: Character): Promise<void>
 
   // 2. 補看動態牆
   await characterCatchUpFeed(character)
+}
+
+// ==========================================
+// 貼文摘要系統
+// ==========================================
+
+/**
+ * 處理超過 36 小時的舊貼文，生成摘要並存入參與者的短期記憶
+ * 在使用者開 APP 時呼叫
+ */
+export async function summarizeClosedPosts(): Promise<number> {
+  const { useFeedStore } = await import('@/stores/feed')
+  const { useUserStore } = await import('@/stores/user')
+  const { useMemoriesStore } = await import('@/stores/memories')
+  const { generatePostSummary } = await import('@/services/memoryService')
+
+  const feedStore = useFeedStore()
+  const userStore = useUserStore()
+  const memoriesStore = useMemoriesStore()
+
+  // 檢查 API key
+  if (!userStore.apiKey) {
+    console.warn('無法摘要貼文：未設定 API key')
+    return 0
+  }
+
+  // 取得需要摘要的舊貼文
+  const oldPosts = feedStore.getUnsummarizedOldPosts(36)
+
+  if (oldPosts.length === 0) {
+    return 0
+  }
+
+  console.log(`🗂️ 找到 ${oldPosts.length} 則需要摘要的舊貼文`)
+
+  let summarizedCount = 0
+
+  for (const post of oldPosts) {
+    try {
+      // 收集參與者（原 PO + 所有留言者，排除 user）
+      const participantIds = new Set<string>()
+
+      // 原 PO（如果是角色）
+      if (post.authorId !== 'user') {
+        participantIds.add(post.authorId)
+      }
+
+      // 所有留言者（如果是角色）
+      for (const comment of post.comments) {
+        if (comment.authorId !== 'user') {
+          participantIds.add(comment.authorId)
+        }
+      }
+
+      // 如果沒有角色參與，直接標記為已處理
+      if (participantIds.size === 0) {
+        feedStore.markPostSummarized(post.id)
+        continue
+      }
+
+      // 生成摘要
+      const summary = await generatePostSummary(
+        userStore.apiKey,
+        post,
+        userStore.profile?.age
+      )
+
+      console.log(`📝 貼文摘要：${summary}`)
+
+      // 將摘要存入每個參與者的短期記憶
+      for (const characterId of participantIds) {
+        const addResult = memoriesStore.addCharacterShortTermMemory(
+          characterId,
+          `[動態牆] ${summary}`,
+          'auto',
+          undefined // 不綁定特定聊天室
+        )
+
+        if (addResult) {
+          console.log(`  ✅ 已存入角色 ${characterId} 的短期記憶`)
+        } else {
+          console.log(`  ⚠️ 角色 ${characterId} 的短期記憶已滿，需要先處理`)
+        }
+      }
+
+      // 標記貼文已摘要
+      feedStore.markPostSummarized(post.id)
+      summarizedCount++
+
+      // 加入延遲，避免 API 過載
+      await new Promise(resolve => setTimeout(resolve, 500))
+    } catch (error) {
+      console.error(`摘要貼文 ${post.id} 失敗:`, error)
+      // 繼續處理下一則
+    }
+  }
+
+  console.log(`✨ 已完成 ${summarizedCount} 則貼文的摘要`)
+  return summarizedCount
 }
