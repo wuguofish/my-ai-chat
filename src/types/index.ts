@@ -333,3 +333,15 @@ export interface FeedNotification {
   timestamp: number
   read: boolean
 }
+
+// 角色的動態牆互動記憶（用於聊天時提供上下文）
+export type FeedMemoryType = 'post' | 'comment'
+
+export interface FeedMemoryEntry {
+  type: FeedMemoryType
+  timestamp: number
+  content: string           // 自己發的內容或留言（限 50 字）
+  // 如果是留言，記錄原 PO 資訊
+  postAuthor?: string       // 原 PO 作者名
+  postPreview?: string      // 原 PO 內容預覽（限 30 字）
+}

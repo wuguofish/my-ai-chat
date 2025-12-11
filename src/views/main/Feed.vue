@@ -9,7 +9,7 @@ import { scheduleCharacterInteractions, triggerCommentReplies, formatFeedContent
 import { downloadFeedAsJson, downloadFeedAsMarkdown, readImportFile, parseFeedImportJson } from '@/utils/feedExport'
 import { useToast } from '@/composables/useToast'
 import { useMentionInput, type MentionOption } from '@/composables/useMentionInput'
-import type { Post } from '@/types'
+import type { Post, PostComment } from '@/types'
 
 const feedStore = useFeedStore()
 const userStore = useUserStore()
@@ -268,6 +268,28 @@ const formatContent = (content: string) => {
   )
 }
 
+// 格式化留言內容（處理 replyToFloors + @mentions + 樓層回覆格式）
+const formatCommentContent = (comment: PostComment, _postId: string) => {
+  let result = ''
+
+  // 如果有 replyToFloors 且內容開頭沒有「回#」格式，先加上樓層指引器
+  if (comment.replyToFloors && comment.replyToFloors.length > 0) {
+    // 檢查內容是否已經有樓層回覆格式開頭
+    const hasFloorPrefix = /^回\s*#\d+/.test(comment.content)
+    if (!hasFloorPrefix) {
+      const floorLinks = comment.replyToFloors.map((floor: number) =>
+        `<span class="reply-floor-link" data-floor="${floor}">#${floor}</span>`
+      ).join(' ')
+      result = `<span class="comment-reply-indicator">回 ${floorLinks}：</span>`
+    }
+  }
+
+  // 再處理內容本身（包含樓層格式轉換和 @mentions）
+  result += formatContent(comment.content)
+
+  return result
+}
+
 // 發布動態
 const handlePost = async () => {
   if (!newPostContent.value.trim() || isPosting.value) return
@@ -495,16 +517,26 @@ const handleHighlightFloor = (postId: string, floor: number) => {
   // 設定新的高亮
   highlightedFloor.value = `${postId}-${floor}`
 
-  // 捲動到對應樓層
-  const floorElement = document.querySelector(`[data-floor-id="${postId}-${floor}"]`)
-  if (floorElement) {
-    floorElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
-
-  // 2 秒後自動取消高亮
+  // 3 秒後自動取消高亮
   highlightTimeout = setTimeout(() => {
     highlightedFloor.value = null
-  }, 2000)
+  }, 3000)
+}
+
+/**
+ * 處理內容區塊的點擊事件（事件委派）
+ * 用於處理 v-html 渲染的樓層連結點擊
+ */
+const handleContentClick = (event: MouseEvent, postId: string) => {
+  const target = event.target as HTMLElement
+  // 檢查是否點擊了樓層連結
+  if (target.classList.contains('reply-floor-link') && target.dataset.floor) {
+    event.stopPropagation()
+    const floor = parseInt(target.dataset.floor, 10)
+    if (!isNaN(floor)) {
+      handleHighlightFloor(postId, floor)
+    }
+  }
 }
 
 /**
@@ -713,18 +745,11 @@ onUnmounted(() => {
                 </div>
                 <div class="comment-body">
                   <span class="comment-author">{{ comment.authorName }}</span>
-                  <template v-if="comment.replyToFloors && comment.replyToFloors.length > 0">
-                    <span class="comment-reply-indicator">
-                      回
-                      <span
-                        v-for="floor in comment.replyToFloors"
-                        :key="floor"
-                        class="reply-floor-link"
-                        @click.stop="handleHighlightFloor(post.id, floor)"
-                      >#{{ floor }}</span>
-                    </span>
-                  </template>
-                  <span class="comment-content" v-html="formatContent(comment.content)"></span>
+                  <span
+                    class="comment-content"
+                    v-html="formatCommentContent(comment, post.id)"
+                    @click="handleContentClick($event, post.id)"
+                  ></span>
                   <div class="comment-footer">
                     <span class="comment-time">{{ formatTime(comment.timestamp) }}</span>
                     <button
@@ -1102,7 +1127,7 @@ onUnmounted(() => {
   margin-right: var(--spacing-sm);
 }
 
-.comment-reply-indicator {
+:deep(.comment-reply-indicator) {
   font-size: var(--text-xs);
   color: var(--color-primary);
   background: rgba(102, 126, 234, 0.1);
@@ -1111,13 +1136,13 @@ onUnmounted(() => {
   margin-right: var(--spacing-sm);
 }
 
-.reply-floor-link {
+:deep(.reply-floor-link){
   cursor: pointer;
   margin-left: 2px;
   transition: all var(--transition);
 }
 
-.reply-floor-link:hover {
+:deep(.reply-floor-link:hover) {
   text-decoration: underline;
   color: var(--color-primary-dark, #5a6fd6);
 }

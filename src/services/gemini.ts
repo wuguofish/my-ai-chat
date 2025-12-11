@@ -181,9 +181,7 @@ export async function getGeminiResponseText(userPrompt: string, model: Generativ
   let msg = (await getGeminiResponse(userPrompt, model)).text()
   let processedMsg = getActuallyContent(msg)
 
-  if (processedMsg.length < 5) { 
-    return msg
-  }
+  console.debug('msg=' + msg + ', processedMsg=' + processedMsg)
 
   return processedMsg
 
@@ -204,19 +202,27 @@ export async function getGeminiResponse(userPrompt: string, model: GenerativeMod
   })
 
   const chat = model.startChat({ history: history })
-  return (await chat.sendMessage('請繼續，已經輸出的內容不必再輸出。')).response;
+  return (await chat.sendMessage('')).response;
 
 }
 
 export function getActuallyContent(msg: string): string {
   // 清理可能的前綴文字（例如「讓我想想⋯⋯「xxx」」）
-  // 如果有引號包裹的內容，只取引號內的文字
-  const quotedMatch = msg.match(/[「""](.+?)[」""]/)
+  // 只有當引號「包住大部分內容」時才取引號內的文字
+  // 避免誤判回覆中本身就包含引號的情況
+  let _msg = msg
+
+  // 使用貪婪匹配，找到最後一個結束引號
+  const quotedMatch = msg.match(/[「""](.+)[」""]/)
   if (quotedMatch && quotedMatch[1]) {
-    msg = quotedMatch[1]
+    const quotedContent = quotedMatch[1]
+    // 只有當引號內的內容佔原文 70% 以上時，才視為「包住大部分內容」
+    if (quotedContent.length >= msg.length * 0.7) {
+      _msg = quotedContent
+    }
   }
 
-  return msg
+  return _msg
 }
 
 /**

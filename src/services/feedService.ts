@@ -107,7 +107,7 @@ export function parseFloorReply(content: string): number[] {
 }
 
 /**
- * 移除留言內容開頭的樓層回覆格式
+ * 移除留言內容開頭的樓層回覆格式（完整格式）
  * 用於清理顯示（如果需要的話）
  */
 export function removeFloorReplyPrefix(content: string): string {
@@ -125,6 +125,15 @@ export function removeFloorReplyPrefix(content: string): string {
 }
 
 /**
+ * 移除 AI 打錯的不完整樓層回覆格式（如「回#：」「回 #：」「回#」）
+ * 保留完整格式（如「回#7：」「回 #1：」）
+ */
+export function removeIncompleteFloorReply(content: string): string {
+  // 只移除「回#」或「回 #」後面沒有數字的情況
+  return content.replace(/^回\s*#\s*(?!\d)[：:,，]?\s*/, '')
+}
+
+/**
  * 將動態/留言內容中的 @mentions 轉換為 HTML 顯示格式
  *
  * @param content 動態或留言內容
@@ -137,7 +146,26 @@ export function formatFeedContentForDisplay(
   characters: Character[],
   userName: string = '你'
 ): string {
-  let formatted = content
+  // 先清理 AI 打錯的不完整樓層回覆格式（如「回#：」），保留完整格式（如「回#7：」）
+  let formatted = removeIncompleteFloorReply(content)
+
+  // 處理樓層回覆格式（如「回#7：」「回 #1：」「回#2和#3：」）轉成可點擊的樓層連結
+  // 使用 data-floor 屬性，讓 Vue 可以綁定點擊事件
+  formatted = formatted.replace(
+    /回\s*((?:#\s*\d+[\s,，、和與及]*)+)[：:,，]?\s*/g,
+    (match, floorsStr) => {
+      // 解析所有樓層編號
+      const floors = floorsStr.match(/#(\d+)/g)
+      if (!floors || floors.length === 0) return match
+
+      const floorLinks = floors.map((f: string) => {
+        const num = f.slice(1) // 移除 #
+        return `<span class="reply-floor-link" data-floor="${num}">#${num}</span>`
+      }).join(' ')
+
+      return `<span class="comment-reply-indicator">回 ${floorLinks}：</span>`
+    }
+  )
 
   // 處理 @all（不區分大小寫）
   formatted = formatted.replace(/@all(?![\w])/gi, '<span class="mention">@all</span>')
@@ -369,7 +397,7 @@ ${additionalContext ? `\n補充資訊：${additionalContext}` : ''}`
   )
 
   // 確保不超過 200 字
-  return content.length > 200 ? content.substring(0, 200) : content
+  return content
 }
 
 /**
@@ -462,14 +490,27 @@ ${character.speakingStyle || '自然隨性'}`
         const userRel = relationshipsStore.getUserCharacterRelationship(character.id)
         if (userRel) {
           const userName = userStore.profile?.nickname || '使用者'
-          relationshipInfo.push(`- ${userName}：${getRelationshipLevelName(userRel.level, userRel.isRomantic)}`)
+          const userProfile = userStore.profile
+          // 組裝使用者基本資料
+          const userBasicInfo: string[] = []
+          if (userProfile?.gender) userBasicInfo.push(getGenderText(userProfile.gender))
+          if (userProfile?.age) userBasicInfo.push(`${userProfile.age}歲`)
+          if (userProfile?.profession) userBasicInfo.push(userProfile.profession)
+          const userInfoStr = userBasicInfo.length > 0 ? `（${userBasicInfo.join('、')}）` : ''
+          relationshipInfo.push(`- ${userName}${userInfoStr}：${getRelationshipLevelName(userRel.level, userRel.isRomantic)}`)
         }
       } else {
         const otherChar = characterStore.getCharacterById(participantId)
         if (otherChar) {
           const charRel = relationshipsStore.getRelationshipBetween(character.id, participantId)
           const relDesc = charRel?.description || charRel?.relationshipType || '認識'
-          relationshipInfo.push(`- ${otherChar.name}：${relDesc}`)
+          // 組裝角色基本資料
+          const charBasicInfo: string[] = []
+          if (otherChar.gender) charBasicInfo.push(getGenderText(otherChar.gender))
+          if (otherChar.age) charBasicInfo.push(`${otherChar.age}歲`)
+          if (otherChar.profession) charBasicInfo.push(otherChar.profession)
+          const charInfoStr = charBasicInfo.length > 0 ? `（${charBasicInfo.join('、')}）` : ''
+          relationshipInfo.push(`- ${otherChar.name}${charInfoStr}：${relDesc}`)
         }
       }
     }
@@ -558,8 +599,7 @@ ${replyToComment ? `- 這是回覆 #${replyToComment.floor || ''} ${replyToComme
     `動態牆留言：${character.name}`
   )
 
-  // 確保不超過 80 字
-  return content.length > 80 ? content.substring(0, 80) : content
+  return content
 }
 
 // ==========================================
@@ -644,6 +684,12 @@ export async function triggerCharacterPost(
 
     // 儲存動態
     feedStore.addPost(post)
+
+    // 記錄動態牆互動記憶
+    feedStore.addCharacterFeedMemory(character.id, {
+      type: 'post',
+      content: content.slice(0, 50)
+    })
 
     // 更新事件冷卻時間
     const cooldown = FEED_EVENT_COOLDOWN[event]
@@ -830,12 +876,17 @@ export async function characterCommentOnPost(
   if (!shouldComment) return null
 
   try {
+    // 取得目前的留言作為上下文（最多取最近 20 則，與群聊一致）
+    const recentComments = post.comments.slice(-20)
+
     // 生成留言內容
     const content = await generateCommentContent(
       character,
       post,
       userStore.apiKey,
-      userStore.profile?.age
+      userStore.profile?.age,
+      undefined,  // replyToComment
+      recentComments
     )
 
     // 建立留言
@@ -849,6 +900,15 @@ export async function characterCommentOnPost(
 
     // 儲存留言
     feedStore.addComment(postId, comment)
+
+    // 記錄動態牆互動記憶
+    feedStore.addCharacterFeedMemory(character.id, {
+      type: 'comment',
+      content: content.slice(0, 50),
+      postAuthor: post.authorName,
+      postPreview: post.content.slice(0, 30)
+    })
+
     console.log(`[Feed] ${character.name} 留言: ${content.slice(0, 20)}...`)
 
     // 如果是使用者的動態，建立通知
@@ -856,7 +916,7 @@ export async function characterCommentOnPost(
       feedStore.addNotification({
         type: 'comment',
         postId,
-        postPreview: post.content.slice(0, 30),
+        postPreview: post.content,
         actorId: character.id,
         actorName: character.name
       })
@@ -976,8 +1036,11 @@ async function characterReplyToComment(
   }
 
   try {
-    // 取得最近 5 則留言作為上下文
-    const recentComments = post.comments.slice(-5)
+    // 找到 replyToComment 在留言中的位置，取得該留言之前的脈絡
+    const replyIndex = replyToComment.floor ? replyToComment.floor - 1 : post.comments.length - 1
+    // 取得該留言之前的 10 則（包含 replyToComment 本身）
+    const startIndex = Math.max(0, replyIndex - 9)
+    const recentComments = post.comments.slice(startIndex, replyIndex + 1)
 
     // 生成回覆內容
     const content = await generateCommentContent(
@@ -1022,6 +1085,15 @@ async function characterReplyToComment(
 
     // 儲存留言
     feedStore.addComment(postId, comment)
+
+    // 記錄動態牆互動記憶
+    feedStore.addCharacterFeedMemory(character.id, {
+      type: 'comment',
+      content: content.slice(0, 50),
+      postAuthor: post.authorName,
+      postPreview: post.content.slice(0, 30)
+    })
+
     console.log(`[Feed] ${character.name} 回覆 ${replyToComment.authorName}: ${content.slice(0, 20)}...`)
 
     // 如果是回覆使用者的留言，建立通知
@@ -1338,9 +1410,13 @@ export async function characterCatchUpFeed(character: Character): Promise<void> 
   // 取得角色上次瀏覽時間
   const lastCheck = feedStore.characterLastFeedCheck[character.id] || 0
 
+  // 限制只看最近 36 小時內的動態（避免新角色去翻舊文，太 creepy）
+  const timeLimit = Date.now() - 36 * 60 * 60 * 1000
+  const effectiveLastCheck = Math.max(lastCheck, timeLimit)
+
   // 取得上次瀏覽後的新動態（不包含自己的）
   const newPosts = feedStore.posts.filter(
-    post => post.timestamp > lastCheck && post.authorId !== character.id
+    post => post.timestamp > effectiveLastCheck && post.authorId !== character.id
   )
 
   if (newPosts.length === 0) {

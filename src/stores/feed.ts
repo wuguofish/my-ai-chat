@@ -5,7 +5,7 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Post, PostComment, FeedNotification, PostTriggerEvent } from '@/types'
+import type { Post, PostComment, FeedNotification, PostTriggerEvent, FeedMemoryEntry } from '@/types'
 import { LIMITS, FEED_EVENT_COOLDOWN } from '@/utils/constants'
 
 export const useFeedStore = defineStore('feed', () => {
@@ -27,6 +27,9 @@ export const useFeedStore = defineStore('feed', () => {
 
   /** 各事件類型的最後觸發時間（用於冷卻判斷） */
   const lastEventTrigger = ref<Record<string, Record<PostTriggerEvent, number>>>({})
+
+  /** 角色的動態牆互動記憶（每個角色最多 5 筆） */
+  const characterFeedMemories = ref<Record<string, FeedMemoryEntry[]>>({})
 
   // ==========================================
   // Getters
@@ -59,6 +62,11 @@ export const useFeedStore = defineStore('feed', () => {
   const getUnreadPostsForCharacter = (characterId: string) => {
     const lastCheck = getCharacterLastCheck(characterId)
     return posts.value.filter(p => p.timestamp > lastCheck)
+  }
+
+  /** 取得角色的動態牆互動記憶 */
+  const getCharacterFeedMemories = (characterId: string): FeedMemoryEntry[] => {
+    return characterFeedMemories.value[characterId] || []
   }
 
   // ==========================================
@@ -377,6 +385,33 @@ export const useFeedStore = defineStore('feed', () => {
     return oldPostIds.length
   }
 
+  /** 動態牆互動記憶上限 */
+  const FEED_MEMORY_LIMIT = 5
+
+  /**
+   * 新增角色的動態牆互動記憶
+   * @param characterId 角色 ID
+   * @param entry 記憶內容
+   */
+  function addCharacterFeedMemory(characterId: string, entry: Omit<FeedMemoryEntry, 'timestamp'>) {
+    if (!characterFeedMemories.value[characterId]) {
+      characterFeedMemories.value[characterId] = []
+    }
+
+    const newEntry: FeedMemoryEntry = {
+      ...entry,
+      timestamp: Date.now()
+    }
+
+    // 加到最前面
+    characterFeedMemories.value[characterId].unshift(newEntry)
+
+    // 超過上限就移除舊的
+    if (characterFeedMemories.value[characterId].length > FEED_MEMORY_LIMIT) {
+      characterFeedMemories.value[characterId] = characterFeedMemories.value[characterId].slice(0, FEED_MEMORY_LIMIT)
+    }
+  }
+
   /**
    * 清除所有資料（用於重置）
    */
@@ -386,6 +421,7 @@ export const useFeedStore = defineStore('feed', () => {
     lastDailyCatchup.value = null
     characterLastFeedCheck.value = {}
     lastEventTrigger.value = {}
+    characterFeedMemories.value = {}
   }
 
   return {
@@ -395,6 +431,7 @@ export const useFeedStore = defineStore('feed', () => {
     lastDailyCatchup,
     characterLastFeedCheck,
     lastEventTrigger,
+    characterFeedMemories,
 
     // Getters
     sortedPosts,
@@ -403,6 +440,7 @@ export const useFeedStore = defineStore('feed', () => {
     getPostById,
     getCharacterLastCheck,
     getUnreadPostsForCharacter,
+    getCharacterFeedMemories,
 
     // Actions
     addPost,
@@ -426,7 +464,8 @@ export const useFeedStore = defineStore('feed', () => {
     isEventOnCooldown,
     setEventCooldown,
     clearOldPosts,
-    clearAll
+    clearAll,
+    addCharacterFeedMemory
   }
 }, {
   persist: {

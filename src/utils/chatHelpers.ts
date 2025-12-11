@@ -5,7 +5,8 @@ import type {
   UserCharacterRelationship,
   CharacterRelationship,
   Memory,
-  Message
+  Message,
+  FeedMemoryEntry
 } from '@/types'
 import { getRelationshipLevelName, getCharacterRelationshipTypeText } from './relationshipHelpers'
 
@@ -64,6 +65,27 @@ export function isTodayHolidaySync(): boolean {
   return day === 0 || day === 6
 }
 
+/**
+ * 將時間戳轉換為「多久前」的描述
+ */
+function getTimeAgo(timestamp: number): string {
+  const now = Date.now()
+  const diff = now - timestamp
+  const minutes = Math.floor(diff / (1000 * 60))
+  const hours = Math.floor(diff / (1000 * 60 * 60))
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+
+  if (minutes < 60) {
+    return `${minutes}分鐘前`
+  } else if (hours < 24) {
+    return `${hours}小時前`
+  } else if (days === 1) {
+    return '昨天'
+  } else {
+    return `${days}天前`
+  }
+}
+
 export interface SystemPromptContext {
   character: Character
   user: UserProfile
@@ -72,6 +94,7 @@ export interface SystemPromptContext {
   characterRelationships?: CharacterRelationship[]
   longTermMemories?: Memory[]
   shortTermMemories?: Memory[]
+  feedMemories?: FeedMemoryEntry[]  // 動態牆互動記憶
   roomSummary?: string
   otherCharactersInRoom?: Character[]
   allCharacters?: Character[]  // 所有角色列表（用於私聊時解析角色關係中的角色名稱）
@@ -96,7 +119,7 @@ export function getGenderText(gender?: string): string {
  * 包含時間、使用者資料、關係、記憶等完整資訊
  */
 export function generateSystemPrompt(context: SystemPromptContext): string {
-  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, roomSummary,
+  const { character, user, userRelationship, characterRelationships, longTermMemories, shortTermMemories, feedMemories, roomSummary,
     otherCharactersInRoom, allCharacters, isOfflineButMentioned, useShortIds, isAdultMode } = context
 
   const parts: string[] = [generateDefaultCharacterPrompt(character, isAdultMode||false)]
@@ -259,6 +282,19 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     })
   }
 
+  // 8. 動態牆互動記憶
+  if (feedMemories && feedMemories.length > 0) {
+    parts.push(`\n\n## 你最近在動態牆的互動`)
+    feedMemories.forEach(mem => {
+      const timeAgo = getTimeAgo(mem.timestamp)
+      if (mem.type === 'post') {
+        parts.push(`\n- ${timeAgo}：發文「${mem.content}」`)
+      } else if (mem.type === 'comment') {
+        parts.push(`\n- ${timeAgo}：在${mem.postAuthor}的動態「${mem.postPreview}」留言「${mem.content}」`)
+      }
+    })
+  }
+
   // 結尾指示
   const instructions = [
     `\n\n---`,
@@ -268,6 +304,7 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     `- 專心扮演目前prompt內的角色即可，禁止演出其他模型負責的角色。`,
     `- 可以回應使用者以外的模型所扮演的角色，並與之互動，以增進使用者體驗。`,
     `- 【嚴禁濫用『』引號】絕對禁止用『』來強調、裝飾、或突顯詞彙。錯誤示範：「讓我的『歌聲』不要讓你『當機』」「這個『效率』很『頂級』」「被『拋棄』的『AI』」。正確做法：直接寫出詞彙，不加任何引號。『』只能用於直接引述他人說過的完整句子。`,
+    `- 使用台灣的慣用詞彙（例如：早安、晚安等）`,
     `- 回覆必須口語化、生活化。避免使用書信體或過於正式的用語。`,
     `- 禁止重複出現和前幾句一樣的內容`,
     `- 避免重複相同的動作、情節發展或句型結構。`,
@@ -541,7 +578,7 @@ function getStatusFromPeriods(
  * 3. activeHours（最舊格式）：簡單的 online/offline 二分法
  *
  * @param character 角色物件
- * @param currentTime 當前時間（可選，預設為現在）
+ * @param currentTime 目前時間（可選，預設為現在）
  * @returns 角色狀態 'online' | 'away' | 'offline'
  */
 export function getCharacterStatus(character: Character, currentTime?: Date): 'online' | 'away' | 'offline' {
@@ -583,7 +620,7 @@ export function getCharacterStatus(character: Character, currentTime?: Date): 'o
  * 檢查角色目前是否在線（根據作息時間）
  * @deprecated 建議使用 getCharacterStatus()，此函數保留作為向後兼容
  * @param character 角色物件
- * @param currentTime 當前時間（可選，預設為現在）
+ * @param currentTime 目前時間（可選，預設為現在）
  * @returns 是否在線
  */
 export function isCharacterOnline(character: Character, currentTime?: Date): boolean {
@@ -859,7 +896,7 @@ export async function generateStatusMessage(
 ): Promise<string> {
   const { shortTermMemories = [], mood, timeOfDay } = context
 
-  // 判斷當前時間（如果沒有提供）
+  // 判斷目前時間（如果沒有提供）
   const currentTimeOfDay = timeOfDay || (() => {
     const hour = new Date().getHours()
     if (hour >= 5 && hour < 12) return 'morning'
@@ -914,7 +951,7 @@ ${character.speakingStyle || '自然隨性'}`
   // 組裝 User Prompt（任務指令與上下文）
   let userPrompt = `請以「${character.name}」的身份，生成一則符合角色個性的狀態訊息（類似 LINE 的個人狀態）。
 
-## 當前時間
+## 目前時間
 ${timeDescriptions[currentTimeOfDay]}`
 
   // 加入短期記憶
@@ -962,9 +999,10 @@ ${timeDescriptions[currentTimeOfDay]}`
 
   userPrompt += `\n\n請生成一則 **30 字以內** 的狀態訊息，要：
 - 符合你的個性和說話風格
-- 反映當前時間和最近經歷
+- 反映目前時間和最近經歷
 - 簡短有趣，像是你真的在更新個人狀態
 - 不要加引號或任何說明文字，直接輸出狀態訊息內容
+- 使用台灣的慣用詞彙（例如：早安、晚安、好棒、超讚、傻眼等）
 
 範例：
 - 「今天心情不錯，來杯咖啡 ☕」
