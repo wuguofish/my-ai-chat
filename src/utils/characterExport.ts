@@ -47,6 +47,7 @@ export async function exportCharacterCard(
   }
 
   // 準備要匯出的角色資料（移除好感度和記憶相關欄位）
+  // 注意：所有設定都完整匯出，isPrivate 只是告訴前端不要顯示這些設定
   const exportData = {
     name: character.name,
     avatar: character.avatar,
@@ -54,13 +55,12 @@ export async function exportCharacterCard(
     gender: character.gender,
     birthday: character.birthday,
     profession: character.profession,
-    // 如果隱藏設定，這些欄位設為空字串或省略
-    personality: hidePrivateSettings ? '' : character.personality,
-    speakingStyle: hidePrivateSettings ? '' : character.speakingStyle,
-    background: hidePrivateSettings ? '' : character.background,
-    likes: hidePrivateSettings ? '' : character.likes,
-    dislikes: hidePrivateSettings ? '' : character.dislikes,
-    events: hidePrivateSettings ? [] : ((character as any).events || []),
+    personality: character.personality,
+    speakingStyle: character.speakingStyle,
+    background: character.background,
+    likes: character.likes,
+    dislikes: character.dislikes,
+    events: (character as any).events || [],
     systemPrompt: character.systemPrompt,
     maxOutputTokens: character.maxOutputTokens,
     activeHours: character.activeHours,
@@ -74,7 +74,7 @@ export async function exportCharacterCard(
       appName: '愛茶的 AI Chat',
       author, // 原始創作者
       contributors: contributors.length > 0 ? contributors : undefined, // 貢獻者列表（如果有的話）
-      isPrivate: hidePrivateSettings // 標記是否為隱藏設定
+      isPrivate: hidePrivateSettings // 標記是否為隱藏設定（前端不顯示，但資料完整）
     }
   }
 
