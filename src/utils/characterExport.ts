@@ -65,6 +65,7 @@ export async function exportCharacterCard(
     maxOutputTokens: character.maxOutputTokens,
     activeHours: character.activeHours,
     activePeriods: character.activePeriods,
+    schedule: character.schedule,
     createdAt: character.createdAt,
     // 添加元資料
     _metadata: {
@@ -111,6 +112,7 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
       maxOutputTokens?: number
       activeHours?: Character['activeHours']
       activePeriods?: Character['activePeriods']
+      schedule?: Character['schedule']
       createdAt?: string
       _metadata?: {
         exportVersion: string
@@ -165,6 +167,7 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
       maxOutputTokens: data.maxOutputTokens || undefined,
       activeHours: data.activeHours || undefined,
       activePeriods: data.activePeriods || undefined,
+      schedule: data.schedule || undefined,
       createdAt: data.createdAt || undefined,
       // 標記是否為隱藏設定的名片
       isPrivate: data._metadata?.isPrivate || false,
