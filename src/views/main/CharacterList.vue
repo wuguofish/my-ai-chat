@@ -115,6 +115,9 @@ const handleImportCharacter = async (event: Event) => {
     // 添加到 store
     characterStore.addCharacter(newCharacter)
 
+    // 為沒有作息設定的角色執行 migration（處理舊版名片）
+    characterStore.migrateCharacterSchedules()
+
     // 根據是否有作者資訊，顯示不同的訊息
     const author = characterData.importedMetadata?.author
     const message = author
