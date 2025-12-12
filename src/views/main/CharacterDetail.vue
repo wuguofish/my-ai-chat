@@ -492,7 +492,8 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
         <div class="section-header">
           <h2 class="section-title">作息表</h2>
           <span v-if="scheduleInfo.type !== 'none'" class="schedule-day-indicator">
-            {{ scheduleInfo.isHoliday ? '<span class="text-red">🎉 今天是假日</span>' : '💼 今天是平日' }}
+            <span v-if="scheduleInfo.isHoliday" class="text-red">🎉 今天是假日</span>
+            <span v-else>💼 今天是平日</span>
           </span>
         </div>
         <div v-if="scheduleInfo.type === 'none'" class="schedule-empty">
