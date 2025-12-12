@@ -1,5 +1,25 @@
 # 更新履歷
 
+## [1.7.2] - 2025-12-12
+
+### 🐛 Bug 修正
+- **好友名片作息設定遺失問題**
+  - 修正名片匯出時遺漏 `schedule` 欄位（新版作息格式，區分平日/假日）
+  - 導致朋友匯入名片後，角色變成永久離線或被 migration 為預設作息
+  - 現在匯出的名片會完整包含 `schedule`、`activePeriods`、`activeHours` 三種作息格式
+
+- **舊版名片匯入後的作息處理**
+  - 匯入角色後自動執行 `migrateCharacterSchedules()`
+  - 確保缺少作息設定的舊版名片會被設為預設的「上班族」作息
+  - 不需等到下次重啟 App
+
+### 🔧 技術改進
+- 新增 `scripts/check-card-data.cjs` 檢查腳本
+  - 用於 debug 確認 PNG 名片中嵌入的作息資料
+  - 用法：`node scripts/check-card-data.cjs <PNG檔案路徑>`
+
+---
+
 ## [1.7.1] - 2025-12-11
 
 ### ✨ 新增功能
