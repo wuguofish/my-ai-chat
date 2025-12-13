@@ -1,5 +1,19 @@
 # 更新履歷
 
+## [1.7.4] - 2025-12-13
+
+### 🐛 Bug 修正
+- **API 回應異常時的錯誤處理**
+  - 修復 Gemini API 回應被封鎖或異常時，`response.text()` 返回 undefined 導致的 `TypeError: e.trim is not a function` 錯誤
+  - 影響範圍：角色對話、記憶生成、貼文摘要、關係評估等所有 AI 功能
+
+- **刪除好友後進入聊天室報錯**
+  - 修復 `Cannot read properties of undefined (reading 'id')` 錯誤
+  - 原因：`getCharacterById()` 找不到已刪除角色時返回 undefined，但過濾條件只檢查 null
+  - 現在正確過濾 null 和 undefined，刪除好友後可正常進入聊天室查看歷史記錄
+
+---
+
 ## [1.7.3] - 2025-12-13
 
 ### 🐛 Bug 修正
