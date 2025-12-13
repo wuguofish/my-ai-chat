@@ -353,10 +353,21 @@ const handleDeleteState = async (fromId: string, toId: string) => {
 }
 
 const handleDelete = async () => {
-  if (character.value && await confirmDanger(`確定要刪除好友「${character.value.name}」嗎？`)) {
-    // 同時刪除關係資料
+  if (character.value && await confirmDanger(`確定要刪除好友「${character.value.name}」嗎？\n\n與此好友的聊天記錄將會保留，但無法再發送新訊息。`)) {
+    // 1. 刪除關係資料
     relationshipsStore.deleteAllRelationshipsForCharacter(characterId.value)
+
+    // 2. 清理角色的記憶資料
+    const { useMemoriesStore } = await import('@/stores/memories')
+    const memoriesStore = useMemoriesStore()
+    memoriesStore.clearCharacterMemories(characterId.value)
+
+    // 3. 從群組聊天室中移除此角色（單人聊天室保留，變成「已刪除好友」狀態）
+    chatRoomStore.removeCharacterFromRooms(characterId.value)
+
+    // 4. 刪除角色本身
     characterStore.deleteCharacter(characterId.value)
+
     router.push('/main/characters')
   }
 }

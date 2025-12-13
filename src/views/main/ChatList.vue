@@ -151,6 +151,25 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
 
   return getCharacterStatus(character)
 }
+
+// 檢查單人聊天室的角色是否已被刪除
+const isDeletedFriendRoom = (room: ChatRoom): boolean => {
+  if (room.type !== 'single') return false
+  if (room.characterIds.length === 0) return true
+
+  const charId = room.characterIds[0]
+  if (!charId) return true
+
+  return !characterStore.getCharacterById(charId)
+}
+
+// 取得聊天室顯示名稱（已刪除好友會加上標記）
+const getRoomDisplayName = (room: ChatRoom): string => {
+  if (isDeletedFriendRoom(room)) {
+    return `${room.name}（已刪除的好友）`
+  }
+  return room.name
+}
 </script>
 
 <template>
@@ -165,17 +184,17 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
 
     <!-- 聊天室列表 -->
     <div v-if="chatRooms.length > 0" class="chat-rooms-container">
-      <div v-for="room in chatRooms" :key="room.id" class="chat-room-item" @click="handleOpenChatRoom(room.id)">
+      <div v-for="room in chatRooms" :key="room.id" :class="['chat-room-item', { 'deleted-friend': isDeletedFriendRoom(room) }]" @click="handleOpenChatRoom(room.id)">
         <div class="avatar-wrapper">
           <div class="avatar">
             <img :src="getChatRoomAvatar(room)" :alt="room.name">
           </div>
-          <!-- 狀態指示器（僅單人聊天） -->
-          <div v-if="getCharacterStatusForRoom(room)" :class="['status-indicator', getCharacterStatusForRoom(room)]" />
+          <!-- 狀態指示器（僅單人聊天，已刪除好友不顯示） -->
+          <div v-if="getCharacterStatusForRoom(room) && !isDeletedFriendRoom(room)" :class="['status-indicator', getCharacterStatusForRoom(room)]" />
         </div>
         <div class="chat-info">
           <div class="chat-header">
-            <h3 class="chat-name">{{ room.name }}</h3>
+            <h3 class="chat-name">{{ getRoomDisplayName(room) }}</h3>
             <span class="chat-time">{{ getLastMessageTime(room) }}</span>
           </div>
           <p class="last-message" v-html="getLastMessagePreview(room.id)"></p>
@@ -301,6 +320,19 @@ const getCharacterStatusForRoom = (room: ChatRoom) => {
   background: var(--color-bg-hover);
   transform: translateX(4px);
   box-shadow: var(--shadow);
+}
+
+/* 已刪除好友的聊天室樣式 */
+.chat-room-item.deleted-friend {
+  opacity: 0.7;
+}
+
+.chat-room-item.deleted-friend .chat-name {
+  color: var(--color-text-secondary);
+}
+
+.chat-room-item.deleted-friend .avatar {
+  filter: grayscale(50%);
 }
 
 .avatar-wrapper {
