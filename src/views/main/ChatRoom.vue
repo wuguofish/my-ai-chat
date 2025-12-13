@@ -67,7 +67,7 @@ const groupCharacters = computed(() => {
   if (!room.value || room.value.type !== 'group') return []
   return room.value.characterIds
     .map(id => characterStore.getCharacterById(id))
-    .filter((c): c is NonNullable<typeof c> => c !== null)
+    .filter((c): c is NonNullable<typeof c> => c != null)  // 使用 != null 同時過濾 null 和 undefined
 })
 
 // 使用者資訊
@@ -191,7 +191,7 @@ const formatMessageContent = (content: string) => {
   // 取得聊天室中的所有角色
   const allCharacters = room.value.characterIds
     .map(id => characterStore.getCharacterById(id))
-    .filter((c): c is NonNullable<typeof c> => c !== null)
+    .filter((c): c is NonNullable<typeof c> => c != null)  // 使用 != null 同時過濾 null 和 undefined
 
   return formatMessageForDisplay(content, allCharacters, userName.value)
 }
@@ -546,7 +546,7 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
       // 群聊：為所有參與的角色生成記憶
       const targetCharacters = targetRoom.characterIds
         .map(id => characterStore.getCharacterById(id))
-        .filter((c): c is NonNullable<typeof c> => c !== null)
+        .filter((c): c is NonNullable<typeof c> => c != null)  // 使用 != null 同時過濾 null 和 undefined
 
       // 群聊：找出最年輕的角色（用於判斷安全模式）
       const ages = targetCharacters.map(c => {
@@ -633,7 +633,7 @@ const handleRoomContextGeneration = async (targetRoomId?: string) => {
     // 取得群聊角色，找出最年輕的（用於判斷安全模式）
     const targetCharacters = targetRoom.characterIds
       .map(id => characterStore.getCharacterById(id))
-      .filter((c): c is NonNullable<typeof c> => c !== null)
+      .filter((c): c is NonNullable<typeof c> => c != null)  // 使用 != null 同時過濾 null 和 undefined
 
     const ages = targetCharacters.map(c => {
       const age = parseInt(c.age || '', 10)
@@ -928,7 +928,7 @@ const handleGroupChatMessage = async (userMessage: string) => {
   // 取得聊天室中的所有角色
   const allCharacters = currentRoom.characterIds
     .map(id => characterStore.getCharacterById(id))
-    .filter((c): c is NonNullable<typeof c> => c !== null)
+    .filter((c): c is NonNullable<typeof c> => c != null)  // 使用 != null 同時過濾 null 和 undefined
 
   if (allCharacters.length === 0) return
 
