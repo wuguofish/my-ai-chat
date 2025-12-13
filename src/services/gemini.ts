@@ -521,7 +521,9 @@ export async function getCharacterResponse(params: GetCharacterResponseParams): 
         throw new ContentBlockedError(blocked.reason, blocked.message)
       }
 
-      return { text: response.text(), response }
+      // 確保 text 是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
+      const responseText = response.text() ?? ''
+      return { text: responseText, response }
     }
 
     // 輔助函數：檢查錯誤是否為內容封鎖

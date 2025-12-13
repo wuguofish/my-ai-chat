@@ -1485,5 +1485,7 @@ ${wasMentioned ? '注意：你被 @ 點名了，請針對被點名的內容回�
     'gemini-2.5-flash',
     `群聊回應：${character.name}`
   )
-  return result.response.text().trim()
+  // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
+  const responseText = result.response.text() ?? ''
+  return responseText.trim()
 }

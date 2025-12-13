@@ -92,7 +92,8 @@ ${conversation}`
       'gemini-2.5-flash-lite',
       '短期記憶摘要'
     )
-    const summary = response.text().trim()
+    // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
+    const summary = (response.text() ?? '').trim()
 
     // 檢查是否為空回應（可能是安全封鎖）
     if (!summary) {
@@ -175,7 +176,8 @@ ${conversation}
       'gemini-2.5-flash-lite',
       '短期記憶摘要（含情緒）'
     )
-    const responseText = response.text().trim()
+    // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
+    const responseText = (response.text() ?? '').trim()
 
     // 檢查是否為空回應
     if (!responseText) {
@@ -265,7 +267,8 @@ ${memoriesText}
       'gemini-2.5-flash-lite',
       '長期記憶提取'
     )
-    const responseText = response.text().trim()
+    // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
+    const responseText = (response.text() ?? '').trim()
 
     // 檢查是否為空回應（可能是安全封鎖）
     if (!responseText) {
@@ -369,7 +372,8 @@ ${postContent}
       'gemini-2.5-flash-lite',
       '貼文摘要生成'
     )
-    const summary = response.text().trim()
+    // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
+    const summary = (response.text() ?? '').trim()
 
     if (!summary) {
       throw new Error('貼文摘要生成失敗：空回應')
@@ -503,7 +507,8 @@ ${conversation}
       '群聊關係評估'
     )
     const response = result.response
-    const responseText = response.text().trim()
+    // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
+    const responseText = (response.text() ?? '').trim()
 
     // 檢查是否為空回應（可能是安全封鎖）
     if (!responseText) {
