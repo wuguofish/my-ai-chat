@@ -227,6 +227,36 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     }
   }
 
+  /**
+   * 從所有群組聊天室中移除指定角色
+   * 用於角色被刪除時，保留聊天室但移除該角色的參與
+   * 單人聊天室不會被刪除，只會變成「已刪除好友」狀態
+   */
+  function removeCharacterFromRooms(characterId: string) {
+    chatRooms.value.forEach(room => {
+      // 只處理群組聊天室
+      if (room.type === 'group') {
+        const index = room.characterIds.indexOf(characterId)
+        if (index !== -1) {
+          room.characterIds.splice(index, 1)
+        }
+      }
+      // 單人聊天室保留 characterIds，讓前端可以判斷角色已被刪除
+    })
+  }
+
+  /**
+   * 檢查聊天室是否有已刪除的角色（用於單人聊天室）
+   */
+  function isRoomCharacterDeleted(roomId: string, getCharacterById: (id: string) => any): boolean {
+    const room = chatRooms.value.find(r => r.id === roomId)
+    if (!room || room.type !== 'single') return false
+    if (room.characterIds.length === 0) return true
+
+    const charId = room.characterIds[0]
+    return !charId || !getCharacterById(charId)
+  }
+
   function clearAllData() {
     chatRooms.value = []
     messages.value = {}
@@ -277,6 +307,8 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     clearMessages,
     addMemberToRoom,
     updateRoomName,
+    removeCharacterFromRooms,
+    isRoomCharacterDeleted,
     clearAllData,
     // 草稿相關
     getDraft,

@@ -53,6 +53,15 @@ const character = computed(() => {
   return characterStore.getCharacterById(charId) || null
 })
 
+// 檢查是否為已刪除好友的聊天室
+const isDeletedFriendRoom = computed(() => {
+  if (!room.value || room.value.type !== 'single') return false
+  if (room.value.characterIds.length === 0) return true
+  const charId = room.value.characterIds[0]
+  if (!charId) return true
+  return !characterStore.getCharacterById(charId)
+})
+
 // 群組中的所有角色
 const groupCharacters = computed(() => {
   if (!room.value || room.value.type !== 'group') return []
@@ -1501,7 +1510,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="room && (character || groupCharacters.length > 0)" class="chat-room page">
+  <div v-if="room && (character || groupCharacters.length > 0 || isDeletedFriendRoom)" class="chat-room page">
     <!-- Header -->
     <div class="chat-header">
       <button v-if="!isMultiSelectMode" class="back-btn" @click="handleBack">
@@ -1526,6 +1535,21 @@ onBeforeUnmount(() => {
           <h2 class="name">{{ character.name }}</h2>
           <p class="status" :class="statusColorClass">{{ characterStatusText }}</p>
           <p v-if="character.statusMessage" class="statusMsg">{{ character.statusMessage }}</p>
+        </div>
+      </div>
+
+      <!-- 已刪除好友的聊天室 Header -->
+      <div v-if="!isMultiSelectMode && isDeletedFriendRoom" class="chat-header-info deleted-friend-header">
+        <div class="avatar-wrapper">
+          <div class="avatar deleted-avatar">
+            <img
+              :src="`https://ui-avatars.com/api/?name=${encodeURIComponent(room.name)}&background=999&color=fff`"
+              :alt="room.name">
+          </div>
+        </div>
+        <div class="info">
+          <h2 class="name">{{ room.name }}</h2>
+          <p class="status deleted-status">已刪除的好友</p>
         </div>
       </div>
 
@@ -1936,7 +1960,10 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Input -->
-    <div class="input-container">
+    <div v-if="isDeletedFriendRoom" class="input-container deleted-friend-notice">
+      <p class="readonly-notice">此好友已被刪除，無法發送新訊息</p>
+    </div>
+    <div v-else class="input-container">
       <textarea ref="messageInputRef" v-model="messageInput" class="message-input"
         :placeholder="isTouchDevice() ? '輸入訊息...' : '輸入訊息... (Enter 送出，Shift+Enter 換行)'" rows="1" :disabled="isLoading"
         @input="handleInputChange" @keydown="handleKeydown"></textarea>
@@ -3542,6 +3569,28 @@ onBeforeUnmount(() => {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   margin-top: var(--spacing-xs);
+}
+
+/* 已刪除好友的聊天室樣式 */
+.deleted-friend-header .deleted-avatar {
+  filter: grayscale(100%);
+  opacity: 0.7;
+}
+
+.deleted-status {
+  color: var(--color-text-tertiary);
+}
+
+.deleted-friend-notice {
+  justify-content: center;
+  background: var(--color-bg-secondary);
+}
+
+.readonly-notice {
+  color: var(--color-text-secondary);
+  font-size: var(--text-base);
+  margin: 0;
+  text-align: center;
 }
 
 </style>
