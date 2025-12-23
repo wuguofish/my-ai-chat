@@ -144,6 +144,20 @@ const formatDate = (dateString: string) => {
     minute: '2-digit'
   })
 }
+
+// 取得記憶來源的顯示文字
+const getMemorySourceLabel = (memory: { source: string }) => {
+  switch (memory.source) {
+    case 'manual':
+      return '手動建立'
+    case 'auto_chat':
+      return '聊天室'
+    case 'auto_feed':
+      return '動態牆'
+    default:
+      return '聊天室' // 相容舊資料
+  }
+}
 </script>
 
 <template>
@@ -199,8 +213,8 @@ const formatDate = (dateString: string) => {
                   {{ memory.processed ? '已處理' : '未處理' }}
                 </span>
                 <span class="memory-date text-tertiary">{{ formatDate(memory.createdAt) }}</span>
-                <span v-if="memory.sourceRoomId" class="memory-room text-tertiary">
-                  來源：聊天室
+                <span class="memory-room text-tertiary">
+                  來源：{{ getMemorySourceLabel(memory) }}
                 </span>
               </div>
               <div class="memory-content">{{ memory.content }}</div>

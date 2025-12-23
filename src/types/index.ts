@@ -172,7 +172,7 @@ export interface Message {
 // ==========================================
 
 export type MemoryType = 'global' | 'context'
-export type MemorySource = 'manual' | 'auto'
+export type MemorySource = 'manual' | 'auto_chat' | 'auto_feed'
 
 export interface Memory {
   id: string

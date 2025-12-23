@@ -122,6 +122,9 @@ onMounted(async () => {
   // 遷移舊版本的記憶資料（需要傳入聊天室列表）
   memoriesStore.migrateLegacyRoomMemories(chatRoomsStore.chatRooms)
 
+  // 清理舊版本動態牆記憶的 [動態牆] 前綴
+  memoriesStore.cleanFeedMemoryPrefix()
+
   // 為沒有作息設定的舊角色加上預設作息
   characterStore.migrateCharacterSchedules()
 

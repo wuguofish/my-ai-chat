@@ -106,7 +106,7 @@ export const useMemoriesStore = defineStore('memories', () => {
     characterMemories.value[characterId].updatedAt = new Date().toISOString()
 
     // 觸發狀態訊息生成（背景執行，不阻塞）
-    if (source === 'auto') {
+    if (source.startsWith('auto')) {
       // 只有 AI 自動生成的長期記憶才觸發狀態更新
       triggerStatusUpdate(characterId).catch((err: unknown) => {
         console.warn('自動生成狀態訊息失敗:', err)
@@ -154,7 +154,7 @@ export const useMemoriesStore = defineStore('memories', () => {
     characterMemories.value[characterId].updatedAt = new Date().toISOString()
 
     // 批次新增完畢後，只觸發一次狀態更新
-    if (source === 'auto' && contents.length > 0) {
+    if (source.startsWith('auto') && contents.length > 0) {
       triggerStatusUpdate(characterId).catch((err: unknown) => {
         console.warn('自動生成狀態訊息失敗:', err)
       })
@@ -554,7 +554,7 @@ export const useMemoriesStore = defineStore('memories', () => {
               addCharacterShortTermMemory(
                 characterId,
                 oldMemory.content,
-                oldMemory.source || 'auto',
+                (oldMemory.source === 'manual' ? 'manual' : 'auto_chat'),
                 roomId
               )
             })
@@ -584,6 +584,46 @@ export const useMemoriesStore = defineStore('memories', () => {
         }
       }
     })
+  }
+
+  /**
+   * 清理短期記憶中的 [動態牆] 前綴
+   * 舊版本的動態牆記憶會在內容前加上 [動態牆] 前綴
+   * 現在改用 source: 'auto_feed' 來標記，所以清理掉舊的前綴
+   */
+  function cleanFeedMemoryPrefix() {
+    let cleanedCount = 0
+
+    Object.keys(characterMemories.value).forEach(characterId => {
+      const charMem = characterMemories.value[characterId]
+      if (charMem?.shortTermMemories) {
+        charMem.shortTermMemories.forEach(memory => {
+          if (memory.content.startsWith('[動態牆] ')) {
+            memory.content = memory.content.replace('[動態牆] ', '')
+            // 同時把 source 改成 auto_feed
+            if (memory.source !== 'auto_feed') {
+              memory.source = 'auto_feed'
+            }
+            cleanedCount++
+          }
+        })
+      }
+      if (charMem?.importantMemories) {
+        charMem.importantMemories.forEach(memory => {
+          if (memory.content.startsWith('[動態牆] ')) {
+            memory.content = memory.content.replace('[動態牆] ', '')
+            if (memory.source !== 'auto_feed') {
+              memory.source = 'auto_feed'
+            }
+            cleanedCount++
+          }
+        })
+      }
+    })
+
+    if (cleanedCount > 0) {
+      console.log(`已清理 ${cleanedCount} 筆記憶的 [動態牆] 前綴`)
+    }
   }
 
   // ==========================================
@@ -630,6 +670,7 @@ export const useMemoriesStore = defineStore('memories', () => {
 
     // Migration
     migrateLegacyRoomMemories,
+    cleanFeedMemoryPrefix,
 
     // Clear All
     clearAllData

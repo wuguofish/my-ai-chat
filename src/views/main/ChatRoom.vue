@@ -512,7 +512,7 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
       const result = memoriesStore.addCharacterShortTermMemory(
         targetCharacterId,
         summary,
-        'auto',
+        'auto_chat',
         processRoomId
       )
 
@@ -525,7 +525,7 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
         memoriesStore.addCharacterShortTermMemory(
           targetCharacterId,
           summary,
-          'auto',
+          'auto_chat',
           processRoomId
         )
       }
@@ -565,7 +565,7 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
         const result = memoriesStore.addCharacterShortTermMemory(
           char.id,
           summary,
-          'auto',
+          'auto_chat',
           processRoomId
         )
 
@@ -578,7 +578,7 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
           memoriesStore.addCharacterShortTermMemory(
             char.id,
             summary,
-            'auto',
+            'auto_chat',
             processRoomId
           )
         }

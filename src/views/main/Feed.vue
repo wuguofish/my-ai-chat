@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { Heart, MessageCircle, Send, Bell, MoreVertical, FileJson, FileText, Upload, Trash2, X, Users, Reply } from 'lucide-vue-next'
 import PageHeader from '@/components/common/PageHeader.vue'
 import { useFeedStore } from '@/stores/feed'
@@ -15,6 +16,7 @@ const feedStore = useFeedStore()
 const userStore = useUserStore()
 const characterStore = useCharacterStore()
 const toast = useToast()
+const route = useRoute()
 
 // 發文輸入
 const newPostContent = ref('')
@@ -270,6 +272,12 @@ const formatContent = (content: string) => {
 
 // 格式化留言內容（處理 replyToFloors + @mentions + 樓層回覆格式）
 const formatCommentContent = (comment: PostComment, _postId: string) => {
+  comment.content = comment.content.trim()
+
+  if (comment.content.startsWith('---')) { 
+    comment.content = comment.content.substring(3).trim()
+  }
+
   let result = ''
 
   // 如果有 replyToFloors 且內容開頭沒有「回#」格式，先加上樓層指引器
@@ -388,6 +396,12 @@ const toggleNotificationPanel = () => {
     // 打開時標記全部已讀
     feedStore.markAllNotificationsRead()
   }
+}
+
+// 點擊通知項目：關閉面板並滾動到對應貼文
+const handleNotificationClick = (notif: { postId: string }) => {
+  showNotificationPanel.value = false
+  scrollToPost(notif.postId)
 }
 
 // 留言按讚/取消按讚
@@ -569,8 +583,36 @@ const handleClickOutside = (event: MouseEvent) => {
   }
 }
 
+// 滾動到指定貼文並高亮
+const scrollToPost = (postId: string) => {
+  nextTick(() => {
+    const element = document.getElementById(`post-${postId}`)
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // 高亮效果
+      element.classList.add('post-highlight')
+      setTimeout(() => {
+        element.classList.remove('post-highlight')
+      }, 2000)
+    }
+  })
+}
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+
+  // 檢查是否有指定要滾動的貼文
+  const postId = route.query.postId as string
+  if (postId) {
+    scrollToPost(postId)
+  }
+})
+
+// 監聽 route query 變化（同頁面內跳轉）
+watch(() => route.query.postId, (newPostId) => {
+  if (newPostId) {
+    scrollToPost(newPostId as string)
+  }
 })
 
 onUnmounted(() => {
@@ -678,7 +720,7 @@ onUnmounted(() => {
           <p class="empty-hint">發布第一則動態，或等待好友們分享吧！</p>
         </div>
 
-        <article v-for="post in posts" :key="post.id" class="post-card">
+        <article v-for="post in posts" :key="post.id" :id="`post-${post.id}`" class="post-card">
           <!-- 動態頭部 -->
           <div class="post-header">
             <div class="post-avatar">
@@ -817,7 +859,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 通知面板（暫時簡易版，Phase 3 會完善） -->
+    <!-- 通知面板 -->
     <div v-if="showNotificationPanel" class="notification-panel-overlay" @click="toggleNotificationPanel">
       <div class="notification-panel" @click.stop>
         <div class="panel-header">
@@ -832,6 +874,7 @@ onUnmounted(() => {
             v-for="notif in feedStore.notifications"
             :key="notif.id"
             :class="['notification-item', { unread: !notif.read }]"
+            @click="handleNotificationClick(notif)"
           >
             <img :src="getAuthorAvatar(notif.actorId)" :alt="notif.actorName" class="notif-avatar" />
             <div class="notif-content">
@@ -978,6 +1021,21 @@ onUnmounted(() => {
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
   box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.post-card.post-highlight {
+  box-shadow: 0 0 0 3px var(--color-primary), var(--shadow-md);
+  animation: pulse-highlight 0.5s ease-in-out 2;
+}
+
+@keyframes pulse-highlight {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.01);
+  }
 }
 
 .post-header {
@@ -1426,6 +1484,7 @@ onUnmounted(() => {
   padding: var(--spacing-md) var(--spacing-lg);
   border-bottom: 1px solid var(--color-border);
   transition: background var(--transition);
+  cursor: pointer;
 }
 
 .notification-item:hover {

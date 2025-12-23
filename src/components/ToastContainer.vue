@@ -7,9 +7,10 @@ const { toasts, removeToast } = useToast()
 const router = useRouter()
 
 const handleToastClick = (toast: typeof toasts.value[0]) => {
-  // 動態牆通知：跳轉到動態牆
+  // 動態牆通知：跳轉到動態牆並滾動到指定貼文
   if (toast.type === 'feed_like' || toast.type === 'feed_comment') {
-    router.push('/main/feed')
+    const path = toast.postId ? `/main/feed?postId=${toast.postId}` : '/main/feed'
+    router.push(path)
     removeToast(toast.id)
     return
   }

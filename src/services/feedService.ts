@@ -146,6 +146,13 @@ export function formatFeedContentForDisplay(
   characters: Character[],
   userName: string = '你'
 ): string {
+
+  content = content.trim()
+
+  if (content.startsWith('---')) {
+    content = content.substring(3).trim()
+  }
+
   // 先清理 AI 打錯的不完整樓層回覆格式（如「回#：」），保留完整格式（如「回#7：」）
   let formatted = removeIncompleteFloorReply(content)
 
@@ -1708,8 +1715,8 @@ export async function summarizeClosedPosts(): Promise<number> {
       for (const characterId of participantIds) {
         const addResult = memoriesStore.addCharacterShortTermMemory(
           characterId,
-          `[動態牆] ${summary}`,
-          'auto',
+          summary,
+          'auto_feed',
           undefined // 不綁定特定聊天室
         )
 

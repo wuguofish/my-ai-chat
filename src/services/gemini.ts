@@ -178,10 +178,8 @@ export function createGeminiModel(
 
 export async function getGeminiResponseText(userPrompt: string, model: GenerativeModel): Promise<string> { 
 
-  let msg = (await getGeminiResponse(userPrompt, model)).text()
+  let msg = (await getGeminiResponse(userPrompt, model)).text().trim()
   let processedMsg = getActuallyContent(msg)
-
-  console.debug('msg=' + msg + ', processedMsg=' + processedMsg)
 
   return processedMsg
 
@@ -208,17 +206,45 @@ export async function getGeminiResponse(userPrompt: string, model: GenerativeMod
 
 export function getActuallyContent(msg: string): string {
   // 清理可能的前綴文字（例如「讓我想想⋯⋯「xxx」」）
-  // 只有當引號「包住大部分內容」時才取引號內的文字
-  // 避免誤判回覆中本身就包含引號的情況
-  let _msg = msg
+  // 只有當「整個訊息被單一引號包住」時才取引號內的文字
+  // 避免誤判回覆中本身就包含多個引號的情況
+  let _msg = msg.trim()
 
-  // 使用貪婪匹配，找到最後一個結束引號
-  const quotedMatch = msg.match(/[「""](.+)[」""]/)
-  if (quotedMatch && quotedMatch[1]) {
-    const quotedContent = quotedMatch[1]
-    // 只有當引號內的內容佔原文 70% 以上時，才視為「包住大部分內容」
-    if (quotedContent.length >= msg.length * 0.7) {
-      _msg = quotedContent
+  // 檢查是否整個訊息被引號包住（開頭是引號，結尾是引號）
+  // 或者是「前綴文字「內容」」的格式（結尾是引號，且只有一對引號）
+  const quotePairs: Array<[string, string]> = [['「', '」'], ['"', '"'], ['"', '"']]
+
+  // 情況1：整個訊息被引號包住
+  for (const [openQuote, closeQuote] of quotePairs) {
+    if (_msg.startsWith(openQuote) && _msg.endsWith(closeQuote)) {
+      // 確認中間沒有其他同類型的引號對（避免「A」B「C」這種情況）
+      const inner = _msg.slice(1, -1)
+      const hasNestedQuotes = inner.includes(openQuote) && inner.includes(closeQuote)
+      if (!hasNestedQuotes) {
+        return inner
+      }
+    }
+  }
+
+  // 情況2：前綴文字 + 引號包住的內容（例如「讓我想想...「實際內容」」）
+  // 只有當訊息以引號結尾，且只有一對引號時才處理
+  for (const [openQuote, closeQuote] of quotePairs) {
+    if (_msg.endsWith(closeQuote)) {
+      const openIndex = _msg.indexOf(openQuote)
+      const closeIndex = _msg.lastIndexOf(closeQuote)
+
+      // 確認有開始引號，且開始引號不在開頭（有前綴）
+      if (openIndex > 0 && closeIndex > openIndex) {
+        const quotedContent = _msg.slice(openIndex + 1, closeIndex)
+
+        // 確認引號內沒有其他同類型的引號（表示這是唯一一對）
+        if (!quotedContent.includes(openQuote) && !quotedContent.includes(closeQuote)) {
+          // 額外確認：引號內的內容應該佔原文的大部分
+          if (quotedContent.length >= _msg.length * 0.7) {
+            return quotedContent
+          }
+        }
+      }
     }
   }
 
