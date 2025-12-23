@@ -724,7 +724,7 @@ const processShortTermMemoriesForCharacter = async (characterId: string) => {
     await memoriesStore.addCharacterMemories(
       characterId,
       longTermMemoryContents,
-      'auto',
+      'auto_chat',
       roomId.value
     )
 

@@ -138,8 +138,8 @@ const handleCommentKeydown = (postId: string, event: KeyboardEvent) => {
     return
   }
 
-  // Enter 送出留言
-  if (event.key === 'Enter' && !event.shiftKey) {
+  // Ctrl+Enter 送出
+  if (event.ctrlKey && event.key === 'Enter') {
     event.preventDefault()
     const post = feedStore.posts.find(p => p.id === postId)
     if (post) {
