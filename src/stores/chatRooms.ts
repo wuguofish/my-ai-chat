@@ -6,6 +6,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import type { ChatRoom, Message } from '@/types'
+import { useCharacterStore } from './characters'
+import { useUserStore } from './user'
 
 export const useChatRoomsStore = defineStore('chatRooms', () => {
   // State
@@ -86,24 +88,129 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
   }
 
   /**
-   * 清理訊息中重複的 @ 提及（同一則訊息內，同樣的 @ID 只保留第一筆）
+   * 清理訊息中的 @ 提及
+   * 1. 移除無效的 @ID
+   * 2. 同一則訊息內，同樣的 @ID 只保留第一筆
+   * 3. 第二次以上出現時，如果後面沒有名字則替換成名字
+   * 4. 第一次出現時，如果後面有冗餘的名字則移除名字
+   *
+   * @param content 訊息內容
+   * @param idToName ID 對應名字的 Map（包含 user, all, 和角色 ID）
+   * @returns 處理後的訊息
    */
-  function deduplicateMentions(content: string): string {
+  /**
+   * 檢查名字後面是否為「獨立結尾」（空白、標點、或字串結尾）
+   * 用於判斷 @ID 後面的名字是否為冗餘（例如 "@all 大家好" 中的 "大家" 不是冗餘）
+   */
+  function isStandaloneName(afterMatch: string, name: string): boolean {
+    if (!afterMatch.startsWith(name)) return false
+
+    const charAfterName = afterMatch[name.length]
+    // 名字後面是空白、標點符號、或字串結尾，才算獨立
+    if (charAfterName === undefined) return true // 字串結尾
+    // 空白或常見標點
+    return /[\s，。！？、；：""''「」【】（）,.!?;:()\[\]@]/.test(charAfterName)
+  }
+
+  function cleanMentions(content: string, idToName: Map<string, string>): string {
     const mentionedIds = new Set<string>()
 
-    // 使用正則表達式找到所有 @ 提及
-    // 匹配 @user, @all, @數字, @UUID（包含所有字母、數字、連字符）
-    return content.replace(/@([a-zA-Z0-9-]+)/g, (match, id) => {
-      const normalizedId = id.toLowerCase() // ID 不分大小寫
-      if (mentionedIds.has(normalizedId)) {
-        // 如果已經提到過這個 ID，移除整個 @ 提及
-        return ''
-      } else {
-        // 第一次提到，保留並記錄
-        mentionedIds.add(normalizedId)
-        return match
+    // 使用 while 迴圈逐一處理，避免 replace 的 offset 問題
+    const atPattern = /@([a-zA-Z0-9-]+)(\s*)/g
+    let lastIndex = 0
+    let newResult = ''
+    let match
+
+    while ((match = atPattern.exec(content)) !== null) {
+      const fullMatch = match[0]
+      const id = match[1] || ''
+      const normalizedId = id.toLowerCase()
+      const name = idToName.get(id)
+      const matchStart = match.index
+      const matchEnd = matchStart + fullMatch.length
+
+      // 加入 match 之前的文字
+      newResult += content.slice(lastIndex, matchStart)
+
+      // 無效的 ID，直接移除
+      if (!name) {
+        lastIndex = matchEnd
+        continue
       }
-    }).replace(/ {2,}/g, ' ').trim() // 清理多餘空格（只清理連續空格，保留換行）
+
+      // @all 和 @user 是特殊標記，只做去重，不處理冗餘名字
+      const isSpecialId = normalizedId === 'all' || normalizedId === 'user'
+
+      if (mentionedIds.has(normalizedId)) {
+        // 已經提到過這個 ID，移除重複的 @ID
+        // 不加任何東西
+      } else {
+        // 第一次提到
+        mentionedIds.add(normalizedId)
+
+        if (!isSpecialId) {
+          // 一般角色：檢查是否有冗餘名字
+          const afterMatch = content.slice(matchEnd)
+          const hasStandaloneName = isStandaloneName(afterMatch, name)
+
+          if (hasStandaloneName) {
+            // @ID 後面有冗餘的獨立名字，保留 @ID 但移除後面的名字
+            newResult += fullMatch
+            // 跳過後面的名字
+            atPattern.lastIndex = matchEnd + name.length
+            lastIndex = matchEnd + name.length
+            continue
+          }
+        }
+
+        // 保留原始的 @ID
+        newResult += fullMatch
+      }
+
+      lastIndex = matchEnd
+    }
+
+    // 加入剩餘的文字
+    newResult += content.slice(lastIndex)
+
+    return newResult.replace(/ {2,}/g, ' ').trim()
+  }
+
+  /**
+   * 建立聊天室的 ID → 名字對照表
+   * @param roomId 聊天室 ID
+   * @returns ID 對應名字的 Map
+   */
+  function buildIdToNameMap(roomId: string): Map<string, string> {
+    const characterStore = useCharacterStore()
+    const userStore = useUserStore()
+    const room = chatRooms.value.find(r => r.id === roomId)
+
+    const idToName = new Map<string, string>()
+    idToName.set('user', userStore.profile?.nickname || '使用者')
+    idToName.set('all', '大家')
+
+    if (room) {
+      room.characterIds.forEach(charId => {
+        const char = characterStore.getCharacterById(charId)
+        if (char) {
+          idToName.set(char.id, char.name)
+        }
+      })
+    }
+
+    return idToName
+  }
+
+  /**
+   * 清理訊息中的 @ 提及（對外 API）
+   * @param content 訊息內容
+   * @param roomId 聊天室 ID
+   * @returns 處理後的訊息
+   */
+  function cleanMessageMentions(content: string, roomId: string): string {
+    const idToName = buildIdToNameMap(roomId)
+    return cleanMentions(content, idToName)
   }
 
   function addMessage(roomId: string, message: Omit<Message, 'id' | 'timestamp'>) {
@@ -111,9 +218,9 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
       messages.value[roomId] = []
     }
 
-    // 清理訊息內容中重複的 @ 提及（只處理角色的訊息，不處理使用者的訊息）
+    // 清理訊息內容中的 @ 提及（只處理角色的訊息，不處理使用者的訊息）
     const cleanedContent = message.senderId !== 'user'
-      ? deduplicateMentions(message.content)
+      ? cleanMessageMentions(message.content, roomId)
       : message.content
 
     const newMessage: Message = {
@@ -313,7 +420,10 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     // 草稿相關
     getDraft,
     setDraft,
-    clearDraft
+    clearDraft,
+    // @ 提及處理
+    cleanMessageMentions,
+    buildIdToNameMap
   }
 }, {
   persist: {

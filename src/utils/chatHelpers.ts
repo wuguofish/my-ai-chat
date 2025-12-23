@@ -877,7 +877,9 @@ export async function generateStatusMessage(
   }
 
   // 呼叫 Gemini API（提前引入以取得 isAdult）
-  const { createGeminiModel, isAdultConversation, getGeminiResponseText } = await import('@/services/gemini')
+  const { getGeminiResponseText } = await import('@/services/gemini')
+  const { createGeminiModel } = await import('@/services/llm/adapters/gemini')
+  const { isAdultConversation } = await import('@/services/llm/utils')
   const { useUserStore } = await import('@/stores/user')
   const { useRelationshipsStore } = await import('@/stores/relationships')
   const { useCharacterStore } = await import('@/stores/characters')
@@ -979,7 +981,7 @@ ${timeDescriptions[currentTimeOfDay]}`
   const { enqueueGeminiRequest } = await import('@/services/apiQueue')
 
   const model = createGeminiModel(apiKey, {
-    model: 'gemini-2.5-flash-lite',
+    modelType: 'lite',
     systemInstruction: systemPrompt,
     temperature: 0.9,  // 提高創意
     maxOutputTokens: 2048,
