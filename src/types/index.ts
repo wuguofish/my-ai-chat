@@ -6,6 +6,26 @@
 // 使用者相關
 // ==========================================
 
+/**
+ * 支援的 LLM 服務商
+ */
+export type LLMProviderType = 'gemini' | 'openai' | 'claude' | 'grok'
+
+/**
+ * LLM 設定
+ */
+export interface LLMSettings {
+  /** 預設服務商 */
+  defaultProvider: LLMProviderType
+  /** 各服務商的 API Key */
+  apiKeys: {
+    gemini?: string
+    openai?: string
+    claude?: string
+    grok?: string
+  }
+}
+
 export interface UserProfile {
   id: 'user'
   nickname: string      // 暱稱
@@ -17,9 +37,15 @@ export interface UserProfile {
   bio?: string          // 簡介（最多250字）
   avatar: string
   globalSystemPrompt?: string  // 全域自訂 System Prompt（會附加在所有角色的 prompt 後面）
+
+  /** @deprecated 使用 llmSettings.apiKeys.gemini 替代 */
   apiConfig: {
     geminiApiKey: string
   }
+
+  /** LLM 服務設定 */
+  llmSettings?: LLMSettings
+
   createdAt: string
   updatedAt: string
 }
@@ -117,6 +143,10 @@ export interface Character {
 
   // 是否為隱藏設定的名片（匯入時不顯示詳細設定）
   isPrivate?: boolean
+
+  // LLM 服務商設定
+  llmProvider?: LLMProviderType            // 角色使用的服務商（未設定時使用全域預設）
+  recommendedProvider?: LLMProviderType    // 名片匯入時保留的原作者建議
 
   // 各聊天室的最後已讀狀態（用於未讀訊息回應系統）
   lastReadMessages?: {

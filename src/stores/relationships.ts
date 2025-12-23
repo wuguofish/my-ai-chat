@@ -173,9 +173,18 @@ export const useRelationshipsStore = defineStore('relationships', {
 
         if (!fromCharacter || !toCharacter) return
 
+        // 如果是自訂類型，嘗試取得關係描述作為顯示名稱
+        let displayType = newType
+        if (newType === 'custom') {
+          const relationship = this.getRelationshipBetween(fromId, toId)
+          if (relationship?.description) {
+            displayType = relationship.description
+          }
+        }
+
         // 雙方都有機率發文
-        await onCharacterRelationshipChange(fromCharacter, toCharacter.name, newType, isNewRelationship)
-        await onCharacterRelationshipChange(toCharacter, fromCharacter.name, newType, isNewRelationship)
+        await onCharacterRelationshipChange(fromCharacter, toCharacter.name, displayType, isNewRelationship)
+        await onCharacterRelationshipChange(toCharacter, fromCharacter.name, displayType, isNewRelationship)
       } catch (error) {
         console.error('角色間關係變化時觸發動態失敗:', error)
         throw error

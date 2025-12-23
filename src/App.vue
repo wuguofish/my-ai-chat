@@ -128,6 +128,9 @@ onMounted(async () => {
   // 為沒有作息設定的舊角色加上預設作息
   characterStore.migrateCharacterSchedules()
 
+  // 遷移舊版 apiConfig 到 llmSettings
+  userStore.migrateApiConfig()
+
   // 初始化假日快取（用於角色作息判斷）
   await syncHolidayCache()
 

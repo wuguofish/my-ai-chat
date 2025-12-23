@@ -5,8 +5,7 @@
  * 會自動發送生日祝福訊息到聊天室
  */
 
-import { createGeminiModel, getGeminiResponseText } from './gemini'
-import { enqueueGeminiRequest } from './apiQueue'
+import { getDefaultAdapter } from '@/services/llm'
 import type { Character, UserProfile, ChatRoom, UserCharacterRelationship } from '@/types'
 import { getRelationshipLevelName } from '@/utils/relationshipHelpers'
 
@@ -102,19 +101,24 @@ ${relationship.note ? `- 關係備註：${relationship.note}` : ''}
 請直接輸出祝福訊息：`
 
   try {
-    const model = createGeminiModel(apiKey, {
-      model: 'gemini-2.5-flash-lite',
-      temperature: 0.9,
-      maxOutputTokens: 256
-    })
-
-    // 透過佇列發送請求
-    const response = await enqueueGeminiRequest(
-      () => getGeminiResponseText(prompt, model),
-      'gemini-2.5-flash-lite',
-      `生日祝福：${character.name}`
+    // 透過 LLM adapter 發送請求
+    const adapter = await getDefaultAdapter()
+    const response = await adapter.generate(
+      apiKey,
+      [{ role: 'user', content: prompt }],
+      {
+        modelType: 'lite',
+        temperature: 0.9,
+        maxOutputTokens: 256,
+        queueDescription: `生日祝福：${character.name}`
+      }
     )
-    return response.trim()
+
+    if (response.blocked || !response.text) {
+      throw new Error('生日祝福生成失敗：' + (response.blockReason || '空回應'))
+    }
+
+    return response.text.trim()
   } catch (error) {
     console.error('生成生日祝福失敗:', error)
     // Fallback：根據關係等級選擇不同的模板

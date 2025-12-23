@@ -714,10 +714,12 @@ const processShortTermMemoriesForCharacter = async (characterId: string) => {
     // 取得角色資訊用於年齡判斷
     const targetCharacter = characterStore.getCharacterById(characterId)
 
-    // 呼叫 AI 提取長期記憶
+    // 呼叫 AI 提取長期記憶（帶入角色資訊以便 LLM 理解人物關係）
     const longTermMemoryContents = await extractLongTermMemories(apiKey, shortTermMemories, {
       userAge: userAge.value,
-      characterAge: targetCharacter?.age
+      characterAge: targetCharacter?.age,
+      characterId: characterId,
+      characterName: targetCharacter?.name
     })
 
     // 批次新增長期記憶（只會觸發一次狀態更新）
@@ -1889,7 +1891,7 @@ onBeforeUnmount(() => {
           @contextmenu.prevent="handleMessageLongPress(message.id, $event)"
           @touchstart="handleTouchStart(message.id, $event)" @touchend="handleTouchEnd" @touchmove="handleTouchMove">
           <!-- 多選模式的 checkbox -->
-          <div v-if="isMultiSelectMode" class="message-checkbox">
+          <div v-if="isMultiSelectMode" class="message-checkbox" @click.stop>
             <input type="checkbox" :checked="selectedMessagesForDelete.has(message.id)"
               @change="toggleMessageSelection(message.id)">
           </div>

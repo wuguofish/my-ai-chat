@@ -268,6 +268,9 @@ const handleImportData = (event: Event) => {
           // 為沒有作息設定的角色加上預設作息
           characterStore.migrateCharacterSchedules()
 
+          // 遷移舊版 apiConfig 到 llmSettings
+          userStore.migrateApiConfig()
+
           await alert('匯入成功！', { type: 'success' })
           window.location.reload()
         }
@@ -457,6 +460,9 @@ const handleGoogleRestore = async () => {
         lastEventTrigger: data.feed.lastEventTrigger || {}
       })
     }
+
+    // 遷移舊版 apiConfig 到 llmSettings
+    userStore.migrateApiConfig()
 
     await alert('從 Google Drive 還原成功！', { type: 'success' })
     window.location.reload()

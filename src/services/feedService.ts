@@ -11,9 +11,8 @@ import {
   FEED_INTERACTION_DELAY,
   FEED_COMMENT_REPLY
 } from '@/utils/constants'
-import { createGeminiModel, isAdultConversation, getGeminiResponseText } from '@/services/gemini'
-import { enqueueGeminiRequest } from '@/services/apiQueue'
-import { getRelationshipLevelName } from '@/utils/relationshipHelpers'
+import { getDefaultAdapter, isAdultConversation } from '@/services/llm'
+import { getRelationshipLevelName, getCharacterRelationshipTypeText } from '@/utils/relationshipHelpers'
 import { getCharacterStatus, getGenderText } from '@/utils/chatHelpers'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -388,23 +387,27 @@ ${additionalContext ? `\n補充資訊：${additionalContext}` : ''}`
 
 你的動態：`
 
-  // 建立模型並呼叫 API（透過佇列）
-  const model = createGeminiModel(apiKey, {
-    model: 'gemini-2.5-flash-lite',
-    systemInstruction: systemPrompt,
-    temperature: 0.9,
-    maxOutputTokens: 1024,
-    safeMode: !isAdult
-  })
-
-  const content = await enqueueGeminiRequest(
-    () => getGeminiResponseText(userPrompt, model),
-    'gemini-2.5-flash-lite',
-    `動態牆發文：${character.name}`
+  // 透過 LLM adapter 發送請求
+  const adapter = await getDefaultAdapter()
+  const response = await adapter.generate(
+    apiKey,
+    [{ role: 'user', content: userPrompt }],
+    {
+      modelType: 'lite',
+      systemInstruction: systemPrompt,
+      temperature: 0.9,
+      maxOutputTokens: 1024,
+      safeMode: !isAdult,
+      queueDescription: `動態牆發文：${character.name}`
+    }
   )
 
+  if (response.blocked || !response.text) {
+    throw new Error('動態生成失敗：' + (response.blockReason || '空回應'))
+  }
+
   // 確保不超過 200 字
-  return content
+  return response.text
 }
 
 /**
@@ -591,22 +594,26 @@ ${replyToComment ? `- 這是回覆 #${replyToComment.floor || ''} ${replyToComme
 
 你的留言：`
 
-  // 建立模型並呼叫 API（透過佇列）
-  const model = createGeminiModel(apiKey, {
-    model: 'gemini-2.5-flash-lite',
-    systemInstruction: systemPrompt,
-    temperature: 0.9,
-    maxOutputTokens: 256,
-    safeMode: !isAdult
-  })
-
-  const content = await enqueueGeminiRequest(
-    () => getGeminiResponseText(userPrompt, model),
-    'gemini-2.5-flash-lite',
-    `動態牆留言：${character.name}`
+  // 透過 LLM adapter 發送請求
+  const adapter = await getDefaultAdapter()
+  const response = await adapter.generate(
+    apiKey,
+    [{ role: 'user', content: userPrompt }],
+    {
+      modelType: 'lite',
+      systemInstruction: systemPrompt,
+      temperature: 0.9,
+      maxOutputTokens: 256,
+      safeMode: !isAdult,
+      queueDescription: `動態牆留言：${character.name}`
+    }
   )
 
-  return content
+  if (response.blocked || !response.text) {
+    throw new Error('留言生成失敗：' + (response.blockReason || '空回應'))
+  }
+
+  return response.text
 }
 
 // ==========================================
@@ -1617,9 +1624,10 @@ export async function onCharacterRelationshipChange(
   newRelationType: string,
   isNewRelationship: boolean
 ): Promise<void> {
+  const translatedType = getCharacterRelationshipTypeText(newRelationType)
   const context = isNewRelationship
-    ? `和 ${otherCharacterName} 成為了「${newRelationType}」的關係`
-    : `和 ${otherCharacterName} 的關係變成了「${newRelationType}」`
+    ? `和 ${otherCharacterName} 成為了「${translatedType}」的關係`
+    : `和 ${otherCharacterName} 的關係變成了「${translatedType}」`
   await triggerCharacterPost(character, 'relationship_change', context)
 }
 

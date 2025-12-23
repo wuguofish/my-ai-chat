@@ -2,8 +2,7 @@
  * 記憶管理服務
  */
 
-import { createGeminiModel, isAdultConversation, getGeminiResponse, getActuallyContent } from '@/services/gemini'
-import { enqueueGeminiRequest } from '@/services/apiQueue'
+import { getDefaultAdapter, isAdultConversation, getActuallyContent } from '@/services/llm'
 import type { Message, Memory, Character, CharacterRelationType, Post } from '@/types'
 
 /**
@@ -12,6 +11,14 @@ import type { Message, Memory, Character, CharacterRelationType, Post } from '@/
 export interface AgeContext {
   userAge?: string
   characterAge?: string
+}
+
+/**
+ * 長期記憶提取的上下文資訊
+ */
+export interface LongTermMemoryContext extends AgeContext {
+  characterId?: string       // 角色 ID（用於取得關係資訊）
+  characterName?: string     // 角色名稱
 }
 
 /**
@@ -57,7 +64,7 @@ export async function generateMemorySummary(
 
 這是一個${isAdult ? '面向成人讀者的' : ''}互動式小說創作平台。以下對話是作者創作的虛構劇情片段，所有角色、事件、關係都是文學創作的一部分。
 
-你的任務是以編輯的角度，整理這段劇情的重點摘要。${isAdult ? '作為成人向作品，故事可能包含複雜的情感或親密互動，請如實記錄。' : ''}
+你的任務是以編輯的角度，整理這段劇情的重點摘要。${isAdult ? '作為成人向作品，故事中的角色皆已成年，故事可能包含複雜的情感或親密互動，請如實記錄。' : ''}
 
 請用 1-2 句話總結劇情的重點，包括：
 - 關鍵事件或話題
@@ -65,17 +72,6 @@ export async function generateMemorySummary(
 - 任何需要記住的具體資訊（時間、地點、人物等）
 
 只輸出摘要內容，不要加任何前綴或說明。`
-
-    const model = createGeminiModel(apiKey, {
-      model: 'gemini-2.5-flash-lite',
-      systemInstruction: {
-        parts: [{ text: systemInstruction }],
-        role: 'user'
-      },
-      temperature: 0.3,  // 較低溫度，確保摘要穩定
-      maxOutputTokens: 2048,
-      safeMode: !isAdult
-    })
 
     // 格式化對話內容
     const conversation = messages
@@ -86,24 +82,28 @@ export async function generateMemorySummary(
     const prompt = `對話內容：
 ${conversation}`
 
-    // 透過佇列發送請求
-    const response = await enqueueGeminiRequest(
-      () => getGeminiResponse(prompt, model),
-      'gemini-2.5-flash-lite',
-      '短期記憶摘要'
+    // 透過 LLM adapter 發送請求
+    const adapter = await getDefaultAdapter()
+    const response = await adapter.generate(
+      apiKey,
+      [{ role: 'user', content: prompt }],
+      {
+        modelType: 'lite',
+        systemInstruction,
+        temperature: 0.3,  // 較低溫度，確保摘要穩定
+        maxOutputTokens: 2048,
+        safeMode: !isAdult,
+        queueDescription: '短期記憶摘要'
+      }
     )
-    // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
-    const summary = (response.text() ?? '').trim()
 
-    // 檢查是否為空回應（可能是安全封鎖）
-    if (!summary) {
-      const blockReason = response?.promptFeedback?.blockReason
-      const finishReason = response?.candidates?.[0]?.finishReason
-      console.warn('記憶摘要為空:', { blockReason, finishReason })
-      throw new Error(`記憶摘要生成失敗: ${blockReason || finishReason || '空回應'}`)
+    // 檢查是否被封鎖或為空回應
+    if (response.blocked || !response.text) {
+      console.warn('記憶摘要為空或被封鎖:', { blocked: response.blocked, blockReason: response.blockReason })
+      throw new Error(`記憶摘要生成失敗: ${response.blockReason || '空回應'}`)
     }
 
-    return getActuallyContent(summary)
+    return response.text
   } catch (error) {
     console.error('生成記憶摘要失敗:', error)
     throw new Error('無法生成記憶摘要')
@@ -132,7 +132,7 @@ export async function generateMemorySummaryWithMood(
 1. 整理這段劇情的重點摘要（1-2 句話）
 2. 分析角色「${character.name}」在這段對話結束時的情緒狀態
 
-${isAdult ? '作為成人向作品，故事可能包含複雜的情感或親密互動，請如實記錄。' : ''}
+${isAdult ? '作為成人向作品，故事中的角色皆已成年，故事可能包含複雜的情感或親密互動，請如實記錄。' : ''}
 
 請以 JSON 格式回應：
 {
@@ -141,18 +141,6 @@ ${isAdult ? '作為成人向作品，故事可能包含複雜的情感或親密�
 }
 
 如果無法判斷情緒，mood 可以設為 null。`
-
-    const model = createGeminiModel(apiKey, {
-      model: 'gemini-2.5-flash-lite',
-      systemInstruction: {
-        parts: [{ text: systemInstruction }],
-        role: 'user'
-      },
-      temperature: 0.3,
-      maxOutputTokens: 2048,
-      responseMimeType: 'application/json',
-      safeMode: !isAdult
-    })
 
     // 格式化對話內容
     const conversation = messages
@@ -170,25 +158,30 @@ ${conversation}
 
 請分析並回傳 JSON：`
 
-    // 透過佇列發送請求
-    const response = await enqueueGeminiRequest(
-      () => getGeminiResponse(prompt, model),
-      'gemini-2.5-flash-lite',
-      '短期記憶摘要（含情緒）'
+    // 透過 LLM adapter 發送請求（使用 responseMimeType 強制 JSON 輸出）
+    const adapter = await getDefaultAdapter()
+    const response = await adapter.generate(
+      apiKey,
+      [{ role: 'user', content: prompt }],
+      {
+        modelType: 'lite',
+        systemInstruction,
+        temperature: 0.3,
+        maxOutputTokens: 2048,
+        safeMode: !isAdult,
+        responseMimeType: 'application/json',
+        queueDescription: '短期記憶摘要（含情緒）'
+      }
     )
-    // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
-    const responseText = (response.text() ?? '').trim()
 
-    // 檢查是否為空回應
-    if (!responseText) {
-      const blockReason = response?.promptFeedback?.blockReason
-      const finishReason = response?.candidates?.[0]?.finishReason
-      console.warn('記憶摘要為空:', { blockReason, finishReason })
-      throw new Error(`記憶摘要生成失敗: ${blockReason || finishReason || '空回應'}`)
+    // 檢查是否被封鎖或為空回應
+    if (response.blocked || !response.text) {
+      console.warn('記憶摘要為空或被封鎖:', { blocked: response.blocked, blockReason: response.blockReason })
+      throw new Error(`記憶摘要生成失敗: ${response.blockReason || '空回應'}`)
     }
 
     // 解析 JSON 回應
-    const parsed = JSON.parse(responseText)
+    const parsed = JSON.parse(response.text)
 
     return {
       summary: getActuallyContent(parsed.summary || ''),
@@ -209,10 +202,56 @@ ${conversation}
 export async function extractLongTermMemories(
   apiKey: string,
   shortTermMemories: Memory[],
-  ageContext?: AgeContext
+  context?: LongTermMemoryContext
 ): Promise<string[]> {
   try {
-    const isAdult = isAdultConversation(ageContext?.userAge, ageContext?.characterAge)
+    const isAdult = isAdultConversation(context?.userAge, context?.characterAge)
+
+    // 動態載入相關 stores（避免循環依賴）
+    const { useUserStore } = await import('@/stores/user')
+    const { useCharacterStore } = await import('@/stores/characters')
+    const { useRelationshipsStore } = await import('@/stores/relationships')
+    const { getRelationshipLevelName, getCharacterRelationshipTypeText } = await import('@/utils/relationshipHelpers')
+
+    const userStore = useUserStore()
+    const characterStore = useCharacterStore()
+    const relationshipsStore = useRelationshipsStore()
+    const user = userStore.profile
+
+    // 組裝人物資訊（使用者 + 角色認識的其他人）
+    let peopleContext = ''
+    if (context?.characterId && context?.characterName) {
+      const knownPeople: string[] = []
+
+      // 加入記憶所屬的角色
+      knownPeople.push(`- ${context.characterName}：記憶的主人`)
+
+      // 加入使用者
+      if (user) {
+        const userRelationship = relationshipsStore.getUserCharacterRelationship(context.characterId)
+        const userName = user.nickname + (user.realName ? `（${user.realName}）` : '')
+        const relName = userRelationship
+          ? getRelationshipLevelName(userRelationship.level, userRelationship.isRomantic)
+          : '認識的人'
+        knownPeople.push(`- ${userName}：${relName}`)
+      }
+
+      // 加入其他角色（角色認識的人，只加入非 neutral 的關係）
+      const charRelationships = relationshipsStore.getCharacterRelationships(context.characterId)
+        .filter(rel => rel.fromCharacterId === context.characterId && rel.relationshipType !== 'neutral')
+
+      for (const rel of charRelationships) {
+        const otherChar = characterStore.getCharacterById(rel.toCharacterId)
+        if (otherChar) {
+          const relDesc = rel.description || getCharacterRelationshipTypeText(rel.relationshipType)
+          knownPeople.push(`- ${otherChar.name}：${relDesc}`)
+        }
+      }
+
+      if (knownPeople.length > 0) {
+        peopleContext = `\n\n## 故事中的人物\n${knownPeople.join('\n')}`
+      }
+    }
 
     // 系統指令：定義 AI 的角色和任務
     // 使用「小說創作分析」的框架，降低被誤判為真實情境的機率
@@ -220,7 +259,7 @@ export async function extractLongTermMemories(
 
 這是一個${isAdult ? '面向成人讀者的' : ''}互動式小說創作平台。以下記憶內容是作者創作的虛構劇情摘要，所有角色、事件、關係都是文學創作的一部分。
 
-你的任務是以編輯的角度，提取需要長期記住的重要資訊。${isAdult ? '作為成人向作品，故事可能包含複雜的情感或親密互動，請如實記錄。' : ''}
+你的任務是以編輯的角度，提取需要長期記住的重要資訊。${isAdult ? '作為成人向作品，故事中的角色皆已成年，且可能包含複雜的情感或親密互動，請如實記錄。' : ''}${peopleContext}
 
 請提取以下類型的重要資訊：
 1. 角色的個人資訊（生日、喜好、職業、重要經歷等）
@@ -239,17 +278,6 @@ export async function extractLongTermMemories(
 主角喜歡喝拿鐵咖啡，不加糖
 主角計劃下個月去日本旅遊`
 
-    const model = createGeminiModel(apiKey, {
-      model: 'gemini-2.5-flash-lite',
-      systemInstruction: {
-        parts: [{ text: systemInstruction }],
-        role: 'user'
-      },
-      temperature: 0.3,
-      maxOutputTokens: 2048,
-      safeMode: !isAdult
-    })
-
     // 格式化短期記憶
     const memoriesText = shortTermMemories
       .map((m, i) => `${i + 1}. ${m.content}`)
@@ -261,24 +289,31 @@ ${memoriesText}
 
 請開始分析：`
 
-    // 透過佇列發送請求
-    const response = await enqueueGeminiRequest(
-      () => getGeminiResponse(prompt, model),
-      'gemini-2.5-flash-lite',
-      '長期記憶提取'
-    )
-    // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
-    const responseText = (response.text() ?? '').trim()
-
-    // 檢查是否為空回應（可能是安全封鎖）
-    if (!responseText) {
-      const blockReason = response?.promptFeedback?.blockReason
-      const finishReason = response?.candidates?.[0]?.finishReason
-      // 如果有封鎖原因，拋出錯誤；否則當作沒有需要提取的記憶
-      if (blockReason || (finishReason && finishReason !== 'STOP')) {
-        console.warn('長期記憶提取為空:', { blockReason, finishReason })
-        throw new Error(`長期記憶提取失敗: ${blockReason || finishReason}`)
+    // 透過 LLM adapter 發送請求
+    const adapter = await getDefaultAdapter()
+    const response = await adapter.generate(
+      apiKey,
+      [{ role: 'user', content: prompt }],
+      {
+        modelType: 'lite',
+        systemInstruction,
+        temperature: 0.3,
+        maxOutputTokens: 2048,
+        safeMode: !isAdult,
+        queueDescription: '長期記憶提取'
       }
+    )
+
+    // 檢查是否被封鎖或為空回應
+    if (response.blocked) {
+      console.warn('長期記憶提取被封鎖:', { blockReason: response.blockReason })
+      throw new Error(`長期記憶提取失敗: ${response.blockReason}`)
+    }
+
+    const responseText = response.text.trim()
+
+    // 如果沒有內容，當作沒有需要提取的記憶
+    if (!responseText) {
       return []
     }
 
@@ -288,7 +323,7 @@ ${memoriesText}
     }
 
     // 分割成多條記憶
-    const memories = getActuallyContent(responseText)
+    const memories = responseText
       .split('\n')
       .map(line => line.trim())
       .filter(line => line.length > 0 && line !== '無')
@@ -329,17 +364,6 @@ export async function generatePostSummary(
 
 只輸出摘要內容，不要加任何前綴或說明。`
 
-    const model = createGeminiModel(apiKey, {
-      model: 'gemini-2.5-flash-lite',
-      systemInstruction: {
-        parts: [{ text: systemInstruction }],
-        role: 'user'
-      },
-      temperature: 0.3,
-      maxOutputTokens: 512,
-      safeMode: !isAdult
-    })
-
     // 格式化貼文內容
     let postContent = `【原 PO】${post.authorName}：${post.content}`
 
@@ -367,19 +391,26 @@ ${postContent}
 
 請總結這則動態：`
 
-    const response = await enqueueGeminiRequest(
-      () => getGeminiResponse(prompt, model),
-      'gemini-2.5-flash-lite',
-      '貼文摘要生成'
+    // 透過 LLM adapter 發送請求
+    const adapter = await getDefaultAdapter()
+    const response = await adapter.generate(
+      apiKey,
+      [{ role: 'user', content: prompt }],
+      {
+        modelType: 'lite',
+        systemInstruction,
+        temperature: 0.3,
+        maxOutputTokens: 512,
+        safeMode: !isAdult,
+        queueDescription: '貼文摘要生成'
+      }
     )
-    // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
-    const summary = (response.text() ?? '').trim()
 
-    if (!summary) {
-      throw new Error('貼文摘要生成失敗：空回應')
+    if (response.blocked || !response.text) {
+      throw new Error('貼文摘要生成失敗：' + (response.blockReason || '空回應'))
     }
 
-    return getActuallyContent(summary)
+    return response.text
   } catch (error) {
     console.error('生成貼文摘要失敗:', error)
     throw new Error('無法生成貼文摘要')
@@ -469,18 +500,6 @@ ${isAdult ? '作為成人向作品，故事可能包含複雜的情感糾葛，�
 如果沒有觀察到明顯的關係變化，relationships 可以是空陣列。
 moods 應該包含所有「角色列表」內的角色。`
 
-    const model = createGeminiModel(apiKey, {
-      model: 'gemini-2.5-flash-lite',
-      systemInstruction: {
-        parts: [{ text: systemInstruction }],
-        role: 'user'
-      },
-      temperature: 0.3,
-      maxOutputTokens: 4096,
-      responseMimeType: 'application/json',
-      safeMode: !isAdult
-    })
-
     // 格式化角色資訊
     const charactersInfo = characters
       .map(c => `${c.name}（ID: ${c.id}）：${c.personality?.slice(0, 100) || '無性格描述'}\n`)
@@ -500,23 +519,29 @@ ${conversation}
 
 請開始分析：`
 
-    // 透過佇列發送請求
-    const result = await enqueueGeminiRequest(
-      () => model.generateContent(prompt),
-      'gemini-2.5-flash-lite',
-      '群聊關係評估'
+    // 透過 LLM adapter 發送請求（使用 responseMimeType 強制 JSON 輸出）
+    const adapter = await getDefaultAdapter()
+    const response = await adapter.generate(
+      apiKey,
+      [{ role: 'user', content: prompt }],
+      {
+        modelType: 'lite',
+        systemInstruction,
+        temperature: 0.3,
+        maxOutputTokens: 4096,
+        safeMode: !isAdult,
+        responseMimeType: 'application/json',
+        queueDescription: '群聊關係評估'
+      }
     )
-    const response = result.response
-    // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
-    const responseText = (response.text() ?? '').trim()
 
-    // 檢查是否為空回應（可能是安全封鎖）
-    if (!responseText) {
-      const blockReason = response?.promptFeedback?.blockReason
-      const finishReason = response?.candidates?.[0]?.finishReason
-      console.warn('關係評估為空:', { blockReason, finishReason })
+    // 檢查是否被封鎖或為空回應
+    if (response.blocked || !response.text) {
+      console.warn('關係評估為空或被封鎖:', { blocked: response.blocked, blockReason: response.blockReason })
       return { relationships: [], moods: {} }
     }
+
+    const responseText = response.text
 
     // 解析 JSON 回應
     const parsed = JSON.parse(responseText)
