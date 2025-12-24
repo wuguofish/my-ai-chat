@@ -67,6 +67,8 @@ export async function exportCharacterCard(
     activePeriods: character.activePeriods,
     schedule: character.schedule,
     createdAt: character.createdAt,
+    // LLM 服務商設定（匯入時會作為 recommendedProvider）
+    llmProvider: character.llmProvider,
     // 添加元資料
     _metadata: {
       exportVersion: CURRENT_VERSION, // 使用當前 app 版本
@@ -114,6 +116,7 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
       activePeriods?: Character['activePeriods']
       schedule?: Character['schedule']
       createdAt?: string
+      llmProvider?: Character['llmProvider']
       _metadata?: {
         exportVersion: string
         exportTime: string
@@ -169,6 +172,8 @@ export async function importCharacterCard(imageDataUrl: string): Promise<Partial
       activePeriods: data.activePeriods || undefined,
       schedule: data.schedule || undefined,
       createdAt: data.createdAt || undefined,
+      // 保留原作者設定的服務商作為建議（匯入時不直接套用，讓使用者決定）
+      recommendedProvider: data.llmProvider || undefined,
       // 標記是否為隱藏設定的名片
       isPrivate: data._metadata?.isPrivate || false,
       // 保留原始 metadata（作者資訊）

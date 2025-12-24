@@ -186,6 +186,20 @@ export const geminiFlashLiteQueue = new ApiQueue({
   jitterMs: 1000
 })
 
+/** Claude Sonnet 佇列（RPM: 50，Tier 1） */
+export const claudeSonnetQueue = new ApiQueue({
+  name: 'claude-sonnet',
+  rpm: 50,
+  jitterMs: 300
+})
+
+/** Claude Haiku 佇列（RPM: 50，Tier 1） */
+export const claudeHaikuQueue = new ApiQueue({
+  name: 'claude-haiku',
+  rpm: 50,
+  jitterMs: 200
+})
+
 // ==========================================
 // 便捷函數
 // ==========================================
@@ -206,7 +220,9 @@ export function getQueueForModel(model: string): ApiQueue {
 export function getAllQueueStatus(): QueueStatus[] {
   return [
     geminiFlashQueue.getStatus(),
-    geminiFlashLiteQueue.getStatus()
+    geminiFlashLiteQueue.getStatus(),
+    claudeSonnetQueue.getStatus(),
+    claudeHaikuQueue.getStatus()
   ]
 }
 
@@ -216,6 +232,8 @@ export function getAllQueueStatus(): QueueStatus[] {
 export function clearAllQueues(): void {
   geminiFlashQueue.clear()
   geminiFlashLiteQueue.clear()
+  claudeSonnetQueue.clear()
+  claudeHaikuQueue.clear()
 }
 
 // ==========================================
@@ -247,5 +265,44 @@ export function enqueueGeminiRequest<T>(
   description?: string
 ): Promise<T> {
   const queue = model.includes('lite') ? geminiFlashLiteQueue : geminiFlashQueue
+  return queue.enqueue(execute, description)
+}
+
+// ==========================================
+// Claude 專用包裝函數
+// ==========================================
+
+export type ClaudeModelType = 'main' | 'lite'
+
+/**
+ * 將 Claude API 請求加入佇列
+ * 根據模型類型選擇對應的佇列（Sonnet 或 Haiku）
+ *
+ * @param execute 要執行的 API 請求函數
+ * @param modelType 模型類型：'main'（Sonnet）或 'lite'（Haiku）
+ * @param description 請求描述（用於 debug）
+ * @returns Promise，當請求完成時 resolve
+ *
+ * @example
+ * // 角色對話（使用 Sonnet）
+ * const result = await enqueueClaudeRequest(
+ *   () => client.messages.create(params),
+ *   'main',
+ *   '角色對話：小明'
+ * )
+ *
+ * // 動態牆發文（使用 Haiku）
+ * const result = await enqueueClaudeRequest(
+ *   () => client.messages.create(params),
+ *   'lite',
+ *   '動態牆發文：小明'
+ * )
+ */
+export function enqueueClaudeRequest<T>(
+  execute: () => Promise<T>,
+  modelType: ClaudeModelType,
+  description?: string
+): Promise<T> {
+  const queue = modelType === 'lite' ? claudeHaikuQueue : claudeSonnetQueue
   return queue.enqueue(execute, description)
 }

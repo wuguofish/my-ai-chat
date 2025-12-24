@@ -2,15 +2,18 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useCharacterStore } from '@/stores/characters'
-import type { Character, Gender } from '@/types'
+import { useUserStore } from '@/stores/user'
+import type { Character, Gender, LLMProviderType } from '@/types'
 import { LIMITS, SCHEDULE_TEMPLATES_V2 } from '@/utils/constants'
 import AvatarCropper from '@/components/common/AvatarCropper.vue'
 import { v4 as uuidv4 } from 'uuid'
 import { ArrowLeft, FolderLock } from 'lucide-vue-next'
+import { getImplementedProviders, getProviderConfig } from '@/services/llm'
 
 const router = useRouter()
 const route = useRoute()
 const characterStore = useCharacterStore()
+const userStore = useUserStore()
 
 const isEditMode = computed(() => !!route.params.id)
 const editingCharacterId = computed(() => route.params.id as string)
@@ -34,6 +37,10 @@ const avatar = ref('')
 // 進階資料
 const systemPrompt = ref('')
 const maxOutputTokens = ref<number>(2048)
+const llmProvider = ref<LLMProviderType | ''>('')  // 空字串表示使用全域預設
+
+// 已實作的服務商列表
+const implementedProviders = computed(() => getImplementedProviders())
 
 // 作息時間（預設為上班族模板）
 const scheduleMode = ref<'disabled' | 'template' | 'custom'>('template')
@@ -74,6 +81,7 @@ onMounted(() => {
       avatar.value = character.avatar
       systemPrompt.value = character.systemPrompt || ''
       maxOutputTokens.value = character.maxOutputTokens || 2048
+      llmProvider.value = character.llmProvider || ''
       events.value = [...character.events]
 
       // 載入作息時間設定
@@ -146,6 +154,7 @@ const handleSubmit = () => {
     avatar: avatar.value || getDefaultAvatar(name.value),
     systemPrompt: systemPrompt.value.trim() || undefined,
     maxOutputTokens: maxOutputTokens.value || undefined,
+    llmProvider: llmProvider.value || undefined,  // 空字串存為 undefined
     events: events.value.filter(e => e.trim() !== ''),
 
     // 儲存作息時間（使用最新的 schedule 格式）
@@ -500,6 +509,30 @@ const getDefaultAvatar = (name: string) => {
       <!-- 進階模式 -->
       <div v-if="isAdvancedMode" class="form-section">
         <h3>進階設定</h3>
+
+        <!-- LLM 服務商選擇 -->
+        <div class="form-group">
+          <label for="llmProvider">AI 服務商</label>
+          <div class="provider-select-wrapper">
+            <select id="llmProvider" v-model="llmProvider" class="input-field">
+              <option value="">使用全域預設（{{ getProviderConfig(userStore.defaultProvider).name }}）</option>
+              <option
+                v-for="provider in implementedProviders"
+                :key="provider"
+                :value="provider"
+              >
+                {{ getProviderConfig(provider).icon }} {{ getProviderConfig(provider).name }}
+              </option>
+            </select>
+            <div v-if="llmProvider" class="provider-badge" :style="{ backgroundColor: getProviderConfig(llmProvider).iconColor }">
+              {{ getProviderConfig(llmProvider).icon }}
+            </div>
+          </div>
+          <div class="help-text">
+            選擇此好友對話時使用的 AI 服務商。未設定時會使用全域預設（目前為 {{ getProviderConfig(userStore.defaultProvider).name }}）。
+          </div>
+        </div>
+
         <div class="form-group">
           <label for="systemPrompt">系統提示詞</label>
           <textarea id="systemPrompt" v-model="systemPrompt" placeholder="自訂系統提示詞（留空則使用預設）" class="textarea-field"
@@ -1113,5 +1146,30 @@ const getDefaultAvatar = (name: string) => {
   color: var(--color-text-tertiary);
   font-size: var(--text-base);
   font-style: italic;
+}
+
+/* LLM 服務商選擇 */
+.provider-select-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.provider-select-wrapper .input-field {
+  flex: 1;
+}
+
+.provider-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: var(--text-base);
+  font-weight: 600;
+  flex-shrink: 0;
 }
 </style>

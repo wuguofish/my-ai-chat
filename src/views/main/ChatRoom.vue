@@ -21,13 +21,13 @@ import {
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import { useCharacterStatus, getCharacterStatusInfo } from '@/composables/useCharacterStatus'
 import { useMentionInput, type MentionOption } from '@/composables/useMentionInput'
-import { getCharacterResponse } from '@/services/gemini'
 import {
   generateMemorySummary,
   generateMemorySummaryWithMood,
   extractLongTermMemories,
   evaluateCharacterRelationshipsWithMood
 } from '@/services/memoryService'
+import { getDefaultAdapter, getProviderConfig } from '@/services/llm'
 import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users, Pencil } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -159,6 +159,12 @@ const getMemberRelationship = (characterId: string) => {
     affection: relationship.affection,
     color: levelInfo.color
   }
+}
+
+// 取得角色使用的 LLM 服務商資訊
+const getCharacterProviderInfo = (char: Character) => {
+  const provider = char.llmProvider || userStore.defaultProvider
+  return getProviderConfig(provider)
 }
 
 // 取得訊息發送者的頭像
@@ -781,12 +787,6 @@ const handleSingleChatMessage = async (userMessage: string) => {
   isLoading.value = true
 
   try {
-    const apiKey = userStore.apiKey
-    if (!apiKey) {
-      await alert('尚未設定 API Key，請到設定頁面設定', { type: 'warning' })
-      return
-    }
-
     // 取得使用者與角色的關係
     const userRelationship = relationshipsStore.getUserCharacterRelationship(currentCharacter.id)
 
@@ -809,17 +809,14 @@ const handleSingleChatMessage = async (userMessage: string) => {
     const targetRoom = chatRoomStore.getRoomById(currentRoomId)
     const currentMessages = chatRoomStore.getMessagesByRoomId(currentRoomId)
 
-    // 準備 API 請求參數
+    // 準備 API 請求參數（apiKey 由 adapter 自動取得）
     const requestParams = {
-      apiKey,
       character: currentCharacter,
       user: userStore.profile || {
         id: 'user',
         nickname: userName.value,
         avatar: userAvatar.value,
-        apiConfig: {
-          geminiApiKey: apiKey
-        },
+        apiConfig: { geminiApiKey: '' },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       },
@@ -836,10 +833,13 @@ const handleSingleChatMessage = async (userMessage: string) => {
       }
     }
 
+    // 取得對應的 adapter
+    const adapter = await getDefaultAdapter(currentCharacter)
+
     // 第一次嘗試取得回應
     let aiResponse
     try {
-      aiResponse = await getCharacterResponse(requestParams)
+      aiResponse = await adapter.getCharacterResponse(requestParams)
     } catch (firstError: any) {
       // 檢查是否為空字串錯誤
       if (firstError.message === 'EMPTY_RESPONSE' || firstError.message === 'EMPTY_RESPONSE_WITH_AFFECTION') {
@@ -847,7 +847,7 @@ const handleSingleChatMessage = async (userMessage: string) => {
 
         try {
           // 第二次嘗試
-          aiResponse = await getCharacterResponse(requestParams)
+          aiResponse = await adapter.getCharacterResponse(requestParams)
         } catch (secondError: any) {
           // 第二次還是空字串，使用預設訊息
           if (secondError.message === 'EMPTY_RESPONSE' || secondError.message === 'EMPTY_RESPONSE_WITH_AFFECTION') {
@@ -951,12 +951,6 @@ const handleGroupChatMessage = async (userMessage: string) => {
   isLoading.value = true
 
   try {
-    const apiKey = userStore.apiKey
-    if (!apiKey) {
-      await alert('尚未設定 API Key，請到設定頁面設定', { type: 'warning' })
-      return
-    }
-
     // 多輪對話邏輯
     const MAX_ROUNDS = 10 // 最多 10 輪
     let currentRound = 0
@@ -1038,6 +1032,9 @@ const handleGroupChatMessage = async (userMessage: string) => {
         const currentCharacter = characterStore.getCharacterById(charId)
         if (!currentCharacter) continue
 
+        // 根據角色設定取得對應的 adapter（apiKey 由 adapter 自動取得）
+        const adapter = await getDefaultAdapter(currentCharacter)
+
         // 判斷角色是否為離線但被 @all 吵醒
         const isOffline = !isCharacterOnline(currentCharacter)
         const hasAtAll = /@all/i.test(messageForAI)
@@ -1065,17 +1062,14 @@ const handleGroupChatMessage = async (userMessage: string) => {
         const targetRoom = chatRoomStore.getRoomById(currentRoomId)
         const currentMessages = chatRoomStore.getMessagesByRoomId(currentRoomId)
 
-        // 準備 API 請求參數（群聊）
+        // 準備 API 請求參數（群聊，apiKey 由 adapter 自動取得）
         const groupRequestParams = {
-          apiKey,
           character: currentCharacter,
           user: userStore.profile || {
             id: 'user',
             nickname: userName.value,
             avatar: userAvatar.value,
-            apiConfig: {
-              geminiApiKey: apiKey
-            },
+            apiConfig: { geminiApiKey: '' },
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           },
@@ -1099,7 +1093,7 @@ const handleGroupChatMessage = async (userMessage: string) => {
         // 第一次嘗試取得回應（群聊）
         let aiResponse
         try {
-          aiResponse = await getCharacterResponse(groupRequestParams)
+          aiResponse = await adapter.getCharacterResponse(groupRequestParams)
         } catch (firstError: any) {
           // 檢查是否為空字串錯誤
           if (firstError.message === 'EMPTY_RESPONSE' || firstError.message === 'EMPTY_RESPONSE_WITH_AFFECTION') {
@@ -1107,7 +1101,7 @@ const handleGroupChatMessage = async (userMessage: string) => {
 
             try {
               // 第二次嘗試
-              aiResponse = await getCharacterResponse(groupRequestParams)
+              aiResponse = await adapter.getCharacterResponse(groupRequestParams)
             } catch (secondError: any) {
               // 第二次還是空字串，使用預設訊息
               if (secondError.message === 'EMPTY_RESPONSE' || secondError.message === 'EMPTY_RESPONSE_WITH_AFFECTION') {
@@ -1531,10 +1525,15 @@ onBeforeUnmount(() => {
               :alt="character.name">
           </div>
           <div v-if="characterStatus" :class="['status-indicator', characterStatus]" />
-
         </div>
         <div class="info">
-          <h2 class="name">{{ character.name }}</h2>
+          <h2 class="name">
+            {{ character.name }}
+            <b
+              :style="{ color: getCharacterProviderInfo(character).iconColor }"
+              :title="getCharacterProviderInfo(character).tooltip"
+            >{{ getCharacterProviderInfo(character).icon }}</b>
+          </h2>
           <p class="status" :class="statusColorClass">{{ characterStatusText }}</p>
           <p v-if="character.statusMessage" class="statusMsg">{{ character.statusMessage }}</p>
         </div>
@@ -1764,7 +1763,13 @@ onBeforeUnmount(() => {
                 <div :class="['status-dot', getCharacterStatusInfo(char).status]"></div>
               </div>
               <div class="member-info">
-                <h4 class="member-name">{{ char.name }}</h4>
+                <h4 class="member-name">
+                  {{ char.name }}
+                  <b
+                    :style="{ color: getCharacterProviderInfo(char).iconColor }"
+                    :title="getCharacterProviderInfo(char).tooltip"
+                  >{{ getCharacterProviderInfo(char).icon }}</b>
+                </h4>
                 <p class="member-status" :class="getMemberStatusColorClass(char)">{{ getCharacterStatusInfo(char).statusText }}</p>
                 <p v-if="char.statusMessage" class="statusMsg">{{ char.statusMessage }}</p>
               </div>

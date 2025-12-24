@@ -388,11 +388,9 @@ ${additionalContext ? `\n補充資訊：${additionalContext}` : ''}`
 你的動態：`
 
   // 透過 LLM adapter 發送請求
-  const adapter = await getDefaultAdapter()
+  const adapter = await getDefaultAdapter(character)
   const response = await adapter.generate(
-    apiKey,
-    [{ role: 'user', content: userPrompt }],
-    {
+    [{ role: 'user', content: userPrompt }],  {
       modelType: 'lite',
       systemInstruction: systemPrompt,
       temperature: 0.9,
@@ -595,11 +593,9 @@ ${replyToComment ? `- 這是回覆 #${replyToComment.floor || ''} ${replyToComme
 你的留言：`
 
   // 透過 LLM adapter 發送請求
-  const adapter = await getDefaultAdapter()
+  const adapter = await getDefaultAdapter(character)
   const response = await adapter.generate(
-    apiKey,
-    [{ role: 'user', content: userPrompt }],
-    {
+    [{ role: 'user', content: userPrompt }], {
       modelType: 'lite',
       systemInstruction: systemPrompt,
       temperature: 0.9,

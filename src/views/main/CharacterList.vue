@@ -7,6 +7,7 @@ import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import { downloadCharacterCard, readCharacterCardFromFile } from '@/utils/characterExport'
+import { getProviderConfig, isProviderImplemented } from '@/services/llm'
 import PageHeader from '@/components/common/PageHeader.vue'
 import type { Character } from '@/types'
 import { v4 as uuidv4 } from 'uuid'
@@ -103,13 +104,41 @@ const handleImportCharacter = async (event: Event) => {
       return
     }
 
+    // 處理建議服務商
+    let llmProvider: Character['llmProvider'] = undefined
+    let providerHint = ''
+
+    if (characterData.recommendedProvider) {
+      const recommendedProvider = characterData.recommendedProvider
+      const providerConfig = getProviderConfig(recommendedProvider)
+
+      // 檢查該服務商是否已實作
+      if (isProviderImplemented(recommendedProvider)) {
+        // 檢查使用者是否有該服務商的 API Key
+        const hasApiKey = !!userStore.getApiKey(recommendedProvider)
+
+        if (hasApiKey) {
+          // 使用者有 API Key，直接使用建議的服務商
+          llmProvider = recommendedProvider
+        } else {
+          // 使用者沒有 API Key，提示可以在進階設定中設定
+          providerHint = `（原作者建議使用 ${providerConfig.name}，可在進階設定中變更）`
+        }
+      } else {
+        // 服務商尚未實作，提示
+        providerHint = `（原作者建議使用 ${providerConfig.name}，目前尚未支援）`
+      }
+    }
+
     // 創建新角色（保留所有匯入的資料，包括 metadata）
     const newCharacter: Character = {
       ...characterData as Character,
       id: uuidv4(),
       events: characterData.events || [],
       createdAt: characterData.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      // 如果使用者有建議服務商的 API Key，就套用；否則保持 undefined（使用全域預設）
+      llmProvider
     }
 
     // 添加到 store
@@ -120,9 +149,14 @@ const handleImportCharacter = async (event: Event) => {
 
     // 根據是否有作者資訊，顯示不同的訊息
     const author = characterData.importedMetadata?.author
-    const message = author
+    let message = author
       ? `經由 ${author} 的介紹，認識了 ${newCharacter.name}`
       : `成功匯入好友 ${newCharacter.name}`
+
+    // 如果有服務商提示，加到訊息後面
+    if (providerHint) {
+      message += providerHint
+    }
 
     showMessage(message, 'success')
   } catch (error) {

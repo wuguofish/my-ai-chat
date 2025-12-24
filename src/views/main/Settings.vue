@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 import { useCharacterStore } from '@/stores/characters'
@@ -11,7 +11,7 @@ import { useModal } from '@/composables/useModal'
 import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService } from '@/services/googleDrive'
 import { fetchServerVersion, clearCacheAndReload, getVersionInfo, type VersionInfo } from '@/utils/version'
-import { validateApiKey } from '@/services/gemini'
+import { getAdapter, getImplementedProviders, LLM_CONFIG, type LLMProvider } from '@/services/llm'
 import { Eye, EyeOff } from 'lucide-vue-next'
 import PageHeader from '@/components/common/PageHeader.vue'
 
@@ -53,10 +53,41 @@ googleAuthService.setTokenInvalidCallback(async () => {
   return await confirm('Google Drive 授權已失效，是否要重新授權？', { type: 'warning' })
 })
 
-const showApiKey = ref(false)
-const apiKeyInput = ref(userStore.apiKey)
-const isValidatingApiKey = ref(false)
-const apiKeyValidationResult = ref<{ valid: boolean; error?: string } | null>(null)
+// LLM 服務商設定
+const implementedProviders = getImplementedProviders()
+const selectedDefaultProvider = ref(userStore.defaultProvider)
+
+// 各服務商的 API Key 輸入狀態
+const apiKeyInputs = ref<Record<string, string>>({
+  gemini: userStore.getApiKey('gemini'),
+  claude: userStore.getApiKey('claude'),
+  openai: userStore.getApiKey('openai'),
+  grok: userStore.getApiKey('grok')
+})
+
+const showApiKey = ref<Record<string, boolean>>({
+  gemini: false,
+  claude: false,
+  openai: false,
+  grok: false
+})
+
+const isValidatingApiKey = ref<Record<string, boolean>>({
+  gemini: false,
+  claude: false,
+  openai: false,
+  grok: false
+})
+
+// 取得服務商的顯示設定
+const getProviderConfig = (provider: string) => {
+  return LLM_CONFIG[provider as LLMProvider]
+}
+
+// 檢查服務商是否已實作
+const isProviderImplemented = (provider: string) => {
+  return implementedProviders.includes(provider as LLMProvider)
+}
 
 // 使用者個人資訊編輯
 const showEditProfile = ref(false)
@@ -120,25 +151,41 @@ const formatBirthdayInput = (event: Event) => {
   editingProfile.value.birthday = value.slice(0, 5) // 限制最多 5 字元（MM-DD）
 }
 
-const handleUpdateApiKey = async () => {
-  if (apiKeyInput.value.trim()) {
-    userStore.updateApiKey(apiKeyInput.value.trim())
-    await alert('API Key 已更新', { type: 'success' })
+// 更新預設服務商
+const handleUpdateDefaultProvider = async () => {
+  userStore.updateDefaultProvider(selectedDefaultProvider.value as LLMProvider)
+  await alert(`預設 AI 服務商已更新為 ${getProviderConfig(selectedDefaultProvider.value)?.name}`, { type: 'success' })
+}
+
+// 更新指定服務商的 API Key
+const handleUpdateApiKey = async (provider: string) => {
+  const apiKey = apiKeyInputs.value[provider]?.trim()
+  if (apiKey) {
+    userStore.updateProviderApiKey(provider as LLMProvider, apiKey)
+    await alert(`${getProviderConfig(provider)?.name} API Key 已更新`, { type: 'success' })
   }
 }
 
-const handleValidateApiKey = async () => {
-  if (!apiKeyInput.value.trim()) {
+// 驗證指定服務商的 API Key
+const handleValidateApiKey = async (provider: string) => {
+  const apiKey = apiKeyInputs.value[provider]?.trim()
+
+  if (!apiKey) {
     await alert('請先輸入 API Key', { type: 'warning' })
     return
   }
 
-  try {
-    isValidatingApiKey.value = true
-    apiKeyValidationResult.value = null
+  // 檢查服務商是否已實作
+  if (!isProviderImplemented(provider)) {
+    await alert(`${getProviderConfig(provider)?.name} 尚未支援，敬請期待`, { type: 'warning' })
+    return
+  }
 
-    const result = await validateApiKey(apiKeyInput.value.trim())
-    apiKeyValidationResult.value = result
+  try {
+    isValidatingApiKey.value[provider] = true
+
+    const adapter = getAdapter(provider as LLMProvider)
+    const result = await adapter.validateApiKey(apiKey)
 
     if (result.valid) {
       await alert('API Key 有效且可正常使用', { type: 'success' })
@@ -149,7 +196,7 @@ const handleValidateApiKey = async () => {
     await alert('檢測失敗，請稍後再試', { type: 'danger' })
     console.error('API Key 檢測錯誤:', error)
   } finally {
-    isValidatingApiKey.value = false
+    isValidatingApiKey.value[provider] = false
   }
 }
 
@@ -579,28 +626,144 @@ const handleGoogleRestore = async () => {
     <!-- API 設定 -->
     <div class="settings-section">
       <h3>API 設定</h3>
+
+      <!-- 預設服務商選擇 -->
       <div class="form-group">
-        <label for="apiKey">Gemini API Key</label>
+        <label>預設 AI 服務商</label>
+        <div class="provider-select-row">
+          <select v-model="selectedDefaultProvider" class="input-field" @change="handleUpdateDefaultProvider">
+            <option v-for="provider in implementedProviders" :key="provider" :value="provider">
+              {{ getProviderConfig(provider)?.name }}
+            </option>
+          </select>
+        </div>
+        <p class="form-hint">新建立的好友會使用此服務商</p>
+      </div>
+
+      <div class="provider-divider"></div>
+
+      <!-- Gemini -->
+      <div class="provider-section">
+        <div class="provider-header">
+          <span class="provider-icon" :style="{ color: getProviderConfig('gemini')?.iconColor }">
+            {{ getProviderConfig('gemini')?.icon }}
+          </span>
+          <span class="provider-name">Gemini</span>
+        </div>
         <div class="api-key-input">
-          <input id="apiKey" v-model="apiKeyInput" :type="showApiKey ? 'text' : 'password'" class="input-field"
-            placeholder="輸入你的 Gemini API Key">
-          <button class="btn btn-info" @click="showApiKey = !showApiKey">
-            <EyeOff v-if="showApiKey" :size="18" />
+          <input
+            v-model="apiKeyInputs.gemini"
+            :type="showApiKey.gemini ? 'text' : 'password'"
+            class="input-field"
+            placeholder="輸入你的 Gemini API Key"
+          >
+          <button class="btn btn-info" @click="showApiKey.gemini = !showApiKey.gemini">
+            <EyeOff v-if="showApiKey.gemini" :size="18" />
             <Eye v-else :size="18" />
           </button>
         </div>
         <div class="button-group">
-          <button class="btn-primary btn" @click="handleUpdateApiKey">
-            更新 API Key
-          </button>
-          <button class="btn-info btn" @click="handleValidateApiKey" :disabled="isValidatingApiKey">
-            {{ isValidatingApiKey ? '檢測中...' : '檢測 API Key' }}
+          <button class="btn-primary btn" @click="handleUpdateApiKey('gemini')">更新</button>
+          <button class="btn-info btn" @click="handleValidateApiKey('gemini')" :disabled="isValidatingApiKey.gemini">
+            {{ isValidatingApiKey.gemini ? '檢測中...' : '檢測連線' }}
           </button>
         </div>
+        <p class="provider-models">主要對話：2.5 Flash ／ 輕量：2.5 Flash Lite</p>
         <p class="api-key-hint">
-          💡 完整資訊請前往 <a href="https://aistudio.google.com/app/api-keys" target="_blank" rel="noopener noreferrer">Google
-            AI Studio</a> 查看額度與管理 API Key
+          💡 <a :href="getProviderConfig('gemini')?.consoleUrl" target="_blank" rel="noopener noreferrer">前往 Google AI Studio</a> 查看額度
         </p>
+      </div>
+
+      <div class="provider-divider"></div>
+
+      <!-- Claude -->
+      <div class="provider-section">
+        <div class="provider-header">
+          <span class="provider-icon" :style="{ color: getProviderConfig('claude')?.iconColor }">
+            {{ getProviderConfig('claude')?.icon }}
+          </span>
+          <span class="provider-name">Claude</span>
+          <span class="provider-badge">選填</span>
+        </div>
+        <div class="api-key-input">
+          <input
+            v-model="apiKeyInputs.claude"
+            :type="showApiKey.claude ? 'text' : 'password'"
+            class="input-field"
+            placeholder="輸入你的 Claude API Key"
+          >
+          <button class="btn btn-info" @click="showApiKey.claude = !showApiKey.claude">
+            <EyeOff v-if="showApiKey.claude" :size="18" />
+            <Eye v-else :size="18" />
+          </button>
+        </div>
+        <div class="button-group">
+          <button class="btn-primary btn" @click="handleUpdateApiKey('claude')">更新</button>
+          <button class="btn-info btn" @click="handleValidateApiKey('claude')" :disabled="isValidatingApiKey.claude">
+            {{ isValidatingApiKey.claude ? '檢測中...' : '檢測連線' }}
+          </button>
+        </div>
+        <p class="provider-models">主要對話：Sonnet ／ 輕量：Haiku</p>
+        <p class="api-key-hint">
+          💡 <a :href="getProviderConfig('claude')?.consoleUrl" target="_blank" rel="noopener noreferrer">前往 Anthropic Console</a> 查看額度
+        </p>
+      </div>
+
+      <div class="provider-divider"></div>
+
+      <!-- OpenAI (尚未實作) -->
+      <div class="provider-section disabled">
+        <div class="provider-header">
+          <span class="provider-icon" :style="{ color: getProviderConfig('openai')?.iconColor }">
+            {{ getProviderConfig('openai')?.icon }}
+          </span>
+          <span class="provider-name">OpenAI</span>
+          <span class="provider-badge coming-soon">即將支援</span>
+        </div>
+        <div class="api-key-input">
+          <input
+            v-model="apiKeyInputs.openai"
+            :type="showApiKey.openai ? 'text' : 'password'"
+            class="input-field"
+            placeholder="輸入你的 OpenAI API Key"
+            disabled
+          >
+          <button class="btn btn-info" disabled>
+            <Eye :size="18" />
+          </button>
+        </div>
+        <p class="provider-models">主要對話：GPT-4o ／ 輕量：GPT-4o-mini</p>
+      </div>
+
+      <div class="provider-divider"></div>
+
+      <!-- Grok (尚未實作) -->
+      <div class="provider-section disabled">
+        <div class="provider-header">
+          <span class="provider-icon" :style="{ color: getProviderConfig('grok')?.iconColor }">
+            {{ getProviderConfig('grok')?.icon }}
+          </span>
+          <span class="provider-name">Grok</span>
+          <span class="provider-badge coming-soon">即將支援</span>
+        </div>
+        <div class="api-key-input">
+          <input
+            v-model="apiKeyInputs.grok"
+            :type="showApiKey.grok ? 'text' : 'password'"
+            class="input-field"
+            placeholder="輸入你的 Grok API Key"
+            disabled
+          >
+          <button class="btn btn-info" disabled>
+            <Eye :size="18" />
+          </button>
+        </div>
+        <p class="provider-models">主要對話：Grok 3 ／ 輕量：Grok 3 mini</p>
+      </div>
+
+      <!-- 檢測說明 -->
+      <div class="api-warning">
+        ⚠️ 「檢測連線」僅驗證 API Key 是否有效，不代表有剩餘額度。各模型額度獨立計算，請至各服務商後台確認。
       </div>
     </div>
 
@@ -854,6 +1017,75 @@ const handleGoogleRestore = async () => {
 
 .api-key-hint a:hover {
   text-decoration: underline;
+}
+
+/* 服務商區塊 */
+.provider-section {
+  padding: var(--spacing-lg) 0;
+}
+
+.provider-section.disabled {
+  opacity: 0.6;
+}
+
+.provider-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.provider-icon {
+  font-size: var(--text-2xl);
+  font-weight: bold;
+  width: 32px;
+  text-align: center;
+}
+
+.provider-name {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.provider-badge {
+  font-size: var(--text-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+}
+
+.provider-badge.coming-soon {
+  background: rgba(102, 126, 234, 0.1);
+  color: var(--color-primary);
+}
+
+.provider-models {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  margin-top: var(--spacing-sm);
+  margin-bottom: 0;
+}
+
+.provider-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: var(--spacing-md) 0;
+}
+
+.provider-select-row {
+  max-width: 300px;
+}
+
+.api-warning {
+  margin-top: var(--spacing-xl);
+  padding: var(--spacing-md);
+  background: rgba(255, 193, 7, 0.1);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 
 .btn-small {

@@ -165,7 +165,23 @@ export class GeminiAdapter implements LLMAdapter {
   readonly provider = 'gemini' as const
 
   /**
+   * 從 userStore 取得 API Key
+   */
+  private async getApiKey(): Promise<string> {
+    const { useUserStore } = await import('@/stores/user')
+    const userStore = useUserStore()
+    const apiKey = userStore.getApiKey(this.provider)
+
+    if (!apiKey) {
+      throw new Error(`請先設定 ${this.provider} 的 API Key`)
+    }
+
+    return apiKey
+  }
+
+  /**
    * 驗證 API Key
+   * 使用 countTokens API（免費）來驗證，不消耗免費額度
    */
   async validateApiKey(apiKey: string): Promise<ValidateApiKeyResult> {
     try {
@@ -175,24 +191,18 @@ export class GeminiAdapter implements LLMAdapter {
 
       const genAI = new GoogleGenerativeAI(apiKey)
       const model = genAI.getGenerativeModel({
-        model: getModelName('gemini', 'main'),
-        generationConfig: {
-          maxOutputTokens: 5
-        }
+        model: getModelName('gemini', 'lite')
       })
 
-      const result = await enqueueGeminiRequest(
-        () => model.generateContent('回覆 OK'),
-        getGeminiModelName('main'),
-        'API Key 驗證'
-      )
-      const response = result.response
+      // 使用 countTokens 來驗證 API Key（免費，不消耗額度）
+      const result = await model.countTokens('test')
 
-      if (!response || !response.text()) {
-        return { valid: false, error: '無法取得回應' }
+      // 如果能成功回傳 token 數量，表示 API Key 有效
+      if (result && typeof result.totalTokens === 'number') {
+        return { valid: true }
       }
 
-      return { valid: true }
+      return { valid: false, error: '無法取得回應' }
     } catch (error: any) {
       console.error('API Key 驗證失敗:', error)
 
@@ -210,16 +220,17 @@ export class GeminiAdapter implements LLMAdapter {
 
   /**
    * 生成內容（單次請求）
+   * API Key 自動從 userStore 取得，或可透過 options.apiKey 傳入
    *
-   * @param apiKey API Key
    * @param messages 訊息陣列（最後一條 user 訊息作為 prompt，其餘作為 history）
    * @param options 生成選項
    */
   async generate(
-    apiKey: string,
     messages: LLMMessage[],
     options?: GenerateOptions
   ): Promise<GenerateResponse> {
+    // 優先使用 options 傳入的 apiKey，否則從 userStore 取得
+    const apiKey = options?.apiKey || await this.getApiKey()
     const model = createGeminiModel(apiKey, options)
 
     // 分離 history 和最後的 prompt
@@ -274,11 +285,14 @@ export class GeminiAdapter implements LLMAdapter {
 
   /**
    * 取得角色回應（完整流程）
+   * API Key 自動從 userStore 取得
    */
   async getCharacterResponse(params: GetCharacterResponseParams): Promise<CharacterResponse> {
-    const { apiKey, character, user, room, messages, userMessage, context } = params
+    const { character, user, room, messages, userMessage, context } = params
 
     try {
+      const apiKey = await this.getApiKey()
+
       // 判斷是否為群聊
       const isGroupChat = room?.type === 'group'
       const useShortIds = isGroupChat && context?.otherCharactersInRoom && context.otherCharactersInRoom.length > 0

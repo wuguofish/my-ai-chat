@@ -55,8 +55,8 @@ export const LLM_CONFIG: Record<LLMProvider, ProviderConfig> = {
   },
   claude: {
     name: 'Claude',
-    mainModel: 'claude-sonnet-4-20250514',
-    liteModel: 'claude-3-5-haiku-20241022',
+    mainModel: 'claude-sonnet-4-5-20250929',
+    liteModel: 'claude-haiku-4-5-20251001',
     consoleUrl: 'https://console.anthropic.com/settings/keys',
     icon: '✳',
     iconColor: '#D97706',

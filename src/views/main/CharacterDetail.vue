@@ -143,7 +143,6 @@ const handleGenerateStatus = async () => {
     const statusMessage = await generateStatusMessage(
       character.value,
       { shortTermMemories, mood: character.value.mood },
-      userStore.apiKey,
       userStore.profile?.age
     )
 

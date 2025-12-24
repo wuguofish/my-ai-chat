@@ -58,6 +58,8 @@ export interface GenerateOptions extends CreateModelOptions {
   queueDescription?: string
   /** 回應格式（例如 'application/json' 強制 JSON 輸出） */
   responseMimeType?: string
+  /** API Key（內部使用，外部呼叫時會自動從 userStore 取得） */
+  apiKey?: string
 }
 
 /**
@@ -88,7 +90,6 @@ export interface ValidateApiKeyResult {
  * 角色回應參數
  */
 export interface GetCharacterResponseParams {
-  apiKey: string
   character: Character
   user: UserProfile
   room?: ChatRoom
@@ -119,15 +120,16 @@ export interface LLMAdapter {
 
   /**
    * 驗證 API Key
+   * 注意：此方法需要外部傳入 apiKey，因為可能用於驗證尚未儲存的 key
    */
   validateApiKey(apiKey: string): Promise<ValidateApiKeyResult>
 
   /**
    * 生成內容（單次請求）
    * 用於摘要、動態、記憶等簡單的內容生成任務
+   * API Key 會自動從 userStore 取得
    */
   generate(
-    apiKey: string,
     messages: LLMMessage[],
     options?: GenerateOptions
   ): Promise<GenerateResponse>
@@ -135,6 +137,7 @@ export interface LLMAdapter {
   /**
    * 取得角色回應（包含完整的前後處理邏輯）
    * 用於角色對話/群聊等複雜情境
+   * API Key 會自動從 userStore 取得
    */
   getCharacterResponse(params: GetCharacterResponseParams): Promise<CharacterResponse>
 }

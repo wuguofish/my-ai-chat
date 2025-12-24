@@ -846,16 +846,15 @@ export interface StatusMessageContext {
 
 /**
  * 為角色生成狀態訊息（類似 LINE 的個人狀態）
+ * 會根據角色的 LLM 服務商設定自動選擇對應的 adapter
  * @param character 角色資料
  * @param context 生成上下文（短期記憶、心情、時間等）
- * @param apiKey Gemini API Key
  * @param userAge 使用者年齡（用於判斷安全模式）
  * @returns 生成的狀態訊息（45 字以內）
  */
 export async function generateStatusMessage(
   character: Character,
   context: StatusMessageContext = {},
-  apiKey: string,
   userAge?: string
 ): Promise<string> {
   const { shortTermMemories = [], mood, timeOfDay } = context
@@ -876,9 +875,8 @@ export async function generateStatusMessage(
     night: '晚上'
   }
 
-  // 呼叫 Gemini API（提前引入以取得 isAdult）
-  const { getGeminiResponseText } = await import('@/services/gemini')
-  const { createGeminiModel } = await import('@/services/llm/adapters/gemini')
+  // 取得 adapter（根據角色設定）
+  const { getDefaultAdapter } = await import('@/services/llm')
   const { isAdultConversation } = await import('@/services/llm/utils')
   const { useUserStore } = await import('@/stores/user')
   const { useRelationshipsStore } = await import('@/stores/relationships')
@@ -977,22 +975,21 @@ ${timeDescriptions[currentTimeOfDay]}`
 
 你的狀態訊息：`
 
-  // 建立模型並呼叫 API（透過佇列）
-  const { enqueueGeminiRequest } = await import('@/services/apiQueue')
+  // 取得 adapter（根據角色的 LLM 設定，adapter 會自動取得對應的 API Key）
+  const adapter = await getDefaultAdapter(character)
 
-  const model = createGeminiModel(apiKey, {
+  // 透過 adapter 生成狀態訊息
+  const response = await adapter.generate([
+    { role: 'user', content: userPrompt }
+  ], {
     modelType: 'lite',
     systemInstruction: systemPrompt,
     temperature: 0.9,  // 提高創意
-    maxOutputTokens: 2048,
+    maxOutputTokens: 256,
     safeMode: !isAdult
   })
 
-  let statusMessage = await enqueueGeminiRequest(
-    () => getGeminiResponseText(userPrompt, model),
-    'gemini-2.5-flash-lite',
-    `狀態訊息：${character.name}`
-  )
+  let statusMessage = response.text
 
   // 確保不超過 45 字
   return statusMessage.length > 45 ? statusMessage.substring(0, 45) + '...' : statusMessage
@@ -1202,7 +1199,6 @@ async function triggerStatusUpdateOnStatusChange(characterId: string): Promise<v
     const statusMessage = await generateStatusMessage(
       character,
       { shortTermMemories, mood: character.mood },
-      userStore.apiKey,
       userStore.profile?.age
     )
 
@@ -1345,7 +1341,6 @@ async function triggerUnreadMessageResponse(character: Character): Promise<void>
         const responseText = await generateCatchUpResponse(
           character,
           messagesToRespond,
-          userStore.apiKey,
           userStore.profile?.age,
           room.id
         )
@@ -1385,15 +1380,16 @@ async function triggerUnreadMessageResponse(character: Character): Promise<void>
  * 生成角色的「剛上線回應」
  * 角色看到未讀訊息後，自然地回應
  * 使用與一般對話相同的 System Prompt，確保角色個性一致
+ * 會根據角色的 LLM 服務商設定自動選擇對應的 adapter
  */
 export async function generateCatchUpResponse(
   character: Character,
   messagesToRespond: Message[],
-  apiKey: string,
   userAge?: string,
   roomId?: string
 ): Promise<string> {
-  const { createGeminiModel, isAdultConversation } = await import('@/services/gemini')
+  const { getDefaultAdapter } = await import('@/services/llm')
+  const { isAdultConversation } = await import('@/services/llm/utils')
   const { useUserStore } = await import('@/stores/user')
   const { useRelationshipsStore } = await import('@/stores/relationships')
   const { useMemoriesStore } = await import('@/stores/memories')
@@ -1446,14 +1442,6 @@ export async function generateCatchUpResponse(
     .replace(/## 好感度系統規則[\s\S]*?（最後一行的數字就是更新後的好感度總值，可以是負數）/g, '')
     .replace(/【重要】每次回應的最後一行必須輸出更新後的好感度數值[\s\S]*?/g, '')
 
-  const model = createGeminiModel(apiKey, {
-    model: 'gemini-2.5-flash',
-    systemInstruction,
-    temperature: 0.8,
-    maxOutputTokens: 2048,
-    safeMode: !isAdult
-  })
-
   // 格式化未讀訊息摘要
   const messagesSummary = messagesToRespond
     .map(msg => `${msg.senderName}: ${msg.content}`)
@@ -1480,14 +1468,19 @@ ${wasMentioned ? '注意：你被 @ 點名了，請針對被點名的內容回�
 
 只輸出回應內容，不要加任何前綴或說明：`
 
-  // 透過佇列發送請求
-  const { enqueueGeminiRequest } = await import('@/services/apiQueue')
-  const result = await enqueueGeminiRequest(
-    () => model.generateContent(prompt),
-    'gemini-2.5-flash',
-    `群聊回應：${character.name}`
-  )
-  // 確保返回的是字串，避免 response.text() 返回 undefined 時的 .trim() 錯誤
-  const responseText = result.response.text() ?? ''
-  return responseText.trim()
+  // 取得 adapter（根據角色的 LLM 設定，adapter 會自動取得對應的 API Key）
+  const adapter = await getDefaultAdapter(character)
+
+  // 透過 adapter 生成回應
+  const response = await adapter.generate([
+    { role: 'user', content: prompt }
+  ], {
+    modelType: 'main',
+    systemInstruction,
+    temperature: 0.8,
+    maxOutputTokens: 2048,
+    safeMode: !isAdult
+  })
+
+  return response.text.trim()
 }

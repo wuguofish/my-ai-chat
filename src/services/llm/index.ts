@@ -51,12 +51,19 @@ export {
   sendGeminiRequestText
 } from './adapters/gemini'
 
+export {
+  claudeAdapter,
+  ClaudeAdapter
+} from './adapters/claude'
+
 // Adapter 實例快取
 import type { LLMAdapter, LLMProvider } from './types'
 import { geminiAdapter } from './adapters/gemini'
+import { claudeAdapter } from './adapters/claude'
 
 const adapterCache: Partial<Record<LLMProvider, LLMAdapter>> = {
-  gemini: geminiAdapter
+  gemini: geminiAdapter,
+  claude: claudeAdapter
 }
 
 /**
@@ -91,38 +98,45 @@ export function getImplementedProviders(): LLMProvider[] {
   ) as LLMProvider[]
 }
 
+import type { Character } from '@/types'
+
 /**
- * 取得預設服務商的 adapter
- * 從 user store 取得預設服務商設定
+ * 根據角色或全域設定決定要使用的服務商
+ * @param character 可選的角色（用於取得角色專屬的服務商設定）
+ * @returns 服務商識別
  */
-export async function getDefaultAdapter(): Promise<LLMAdapter> {
+async function resolveProvider(character?: Character | null): Promise<LLMProvider> {
   const { useUserStore } = await import('@/stores/user')
   const userStore = useUserStore()
-  const provider = userStore.defaultProvider as LLMProvider
+
+  // 決定使用哪個 provider：角色設定優先，否則使用全域預設
+  let provider: LLMProvider = character?.llmProvider || (userStore.defaultProvider as LLMProvider)
 
   // 檢查該服務商是否已實作
   if (!isProviderImplemented(provider)) {
-    console.warn(`預設服務商 "${provider}" 尚未實作，降級使用 gemini`)
-    return getAdapter('gemini')
+    console.warn(`服務商 "${provider}" 尚未實作，降級使用 gemini`)
+    provider = 'gemini'
+  }
+
+  return provider
+}
+
+/**
+ * 取得 adapter
+ * 可傳入角色以使用角色專屬的服務商設定，否則使用全域預設
+ *
+ * @param character 可選的角色（用於取得角色專屬的服務商設定）
+ * @returns LLM Adapter 實例
+ */
+export async function getDefaultAdapter(character?: Character | null): Promise<LLMAdapter> {
+  const provider = await resolveProvider(character)
+
+  if (character) {
+    console.log(`🤖 使用 ${provider} adapter 回應角色: ${character.name}`)
   }
 
   return getAdapter(provider)
 }
 
-/**
- * 取得預設服務商的 API Key
- * 從 user store 取得對應的 API Key
- */
-export async function getDefaultApiKey(): Promise<string> {
-  const { useUserStore } = await import('@/stores/user')
-  const userStore = useUserStore()
-  const provider = userStore.defaultProvider
-
-  // 檢查該服務商是否已實作
-  if (!isProviderImplemented(provider as LLMProvider)) {
-    console.warn(`預設服務商 "${provider}" 尚未實作，降級使用 gemini`)
-    return userStore.getApiKey('gemini')
-  }
-
-  return userStore.getApiKey(provider)
-}
+// getDefaultApiKey 已不再需要對外公開
+// Adapter 現在會自動從 userStore 取得 API Key

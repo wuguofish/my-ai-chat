@@ -1,5 +1,24 @@
 # 更新履歷
 
+## [1.7.8] - 2025-12-24
+
+### 🔧 技術改進
+- **Claude API 請求佇列**
+  - 新增 Claude Sonnet / Haiku 專用佇列，避免動態牆多角色互動時超過 rate limit
+  - Sonnet 和 Haiku 各有獨立佇列（RPM: 50，間隔約 1.2 秒）
+  - 與 Gemini 佇列架構一致，統一管理 API 請求頻率
+
+- **名片匯入服務商建議**
+  - 匯入好友名片時，會保留原作者設定的 LLM 服務商作為「建議服務商」
+  - 若使用者已設定該服務商的 API Key，自動套用；否則顯示提示訊息
+  - 匯出名片時自動包含 `llmProvider` 欄位
+
+### 🐛 Bug 修正
+- **Claude adapter 移除不必要的引號清理**
+  - `cleanExcessiveQuotes` 是針對 Gemini 的特殊處理，Claude 不需要
+
+---
+
 ## [1.7.7] - 2025-12-23
 
 ### 🔧 技術改進
