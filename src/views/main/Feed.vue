@@ -1089,7 +1089,6 @@ onUnmounted(() => {
 }
 
 .post-content {
-  font-size: var(--text-base);
   line-height: 1.6;
   color: var(--color-text-primary);
   white-space: pre-wrap;

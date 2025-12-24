@@ -27,8 +27,8 @@ import {
   extractLongTermMemories,
   evaluateCharacterRelationshipsWithMood
 } from '@/services/memoryService'
-import { getDefaultAdapter, getCharacterProviderInfo } from '@/services/llm'
-import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users, Pencil } from 'lucide-vue-next'
+import { getDefaultAdapter, getCharacterProviderInfo, cleanExcessiveQuotes } from '@/services/llm'
+import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users, Pencil, UserRoundX, SquareAsterisk } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -188,12 +188,11 @@ const handleAvatarClick = (senderId: string, event: Event) => {
 const formatMessageContent = (content: string) => {
   if (!room.value) return content
 
-  // 取得聊天室中的所有角色
-  const allCharacters = room.value.characterIds
-    .map(id => characterStore.getCharacterById(id))
-    .filter((c): c is NonNullable<typeof c> => c != null)  // 使用 != null 同時過濾 null 和 undefined
+  var _content = chatRoomStore.cleanMessageMentions(content)
+  _content = cleanExcessiveQuotes(_content)
 
-  return formatMessageForDisplay(content, allCharacters, userName.value)
+  // 使用所有角色（不只是目前群組成員），這樣歷史訊息中被移除成員的 @提及仍能正確顯示
+  return formatMessageForDisplay(_content, characterStore.characters, userName.value)
 }
 
 // 輸入框
@@ -736,6 +735,34 @@ const processShortTermMemoriesForCharacter = async (characterId: string) => {
   } catch (error) {
     console.error('處理短期記憶失敗:', error)
     // 靜默失敗，不影響正常對話
+  }
+}
+
+// 插入動作標記 *...*
+const handleInsertAction = () => {
+  const textarea = messageInputRef.value
+  if (!textarea) return
+
+  const start = textarea.selectionStart
+  const end = textarea.selectionEnd
+  const text = messageInput.value
+
+  if (start !== end) {
+    // 有選取文字，用 * 包起來
+    const selectedText = text.substring(start, end)
+    messageInput.value = text.substring(0, start) + '*' + selectedText + '*' + text.substring(end)
+    // 游標移到結尾
+    nextTick(() => {
+      textarea.focus()
+      textarea.setSelectionRange(end + 2, end + 2)
+    })
+  } else {
+    // 沒選取，插入 ** 並把游標移到中間
+    messageInput.value = text.substring(0, start) + '**' + text.substring(start)
+    nextTick(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start + 1, start + 1)
+    })
   }
 }
 
@@ -1420,6 +1447,21 @@ const handleAddMember = async (characterId: string) => {
   }
 }
 
+// 移除群組成員
+const handleRemoveMember = async (char: Character) => {
+  if (!room.value || room.value.type !== 'group') return
+
+  const confirmed = await confirm(`確定要將「${char.name}」移出群組嗎？`, {
+    type: 'warning',
+    confirmText: '移出',
+    cancelText: '取消'
+  })
+
+  if (confirmed) {
+    chatRoomStore.removeMemberFromRoom(roomId.value, char.id, char.name)
+  }
+}
+
 // 開始編輯群組名稱
 const handleEditGroupName = () => {
   if (!room.value) return
@@ -1767,9 +1809,14 @@ onBeforeUnmount(() => {
                 <p v-if="char.statusMessage" class="statusMsg">{{ char.statusMessage }}</p>
               </div>
               <div class="member-actions">
-                <button class="btn btn-info" @click.stop="handleViewMemberMemory(char)">
-                  <Bubbles :size="20" />記憶
-                </button>
+                <div class="member-btns">
+                  <button class="btn btn-info" @click.stop="handleViewMemberMemory(char)">
+                    <Bubbles :size="18" />記憶
+                  </button>
+                  <button class="btn btn-ghost btn-danger btn-remove-member" @click.stop="handleRemoveMember(char)" title="移出群組">
+                    <UserRoundX :size="23" />
+                  </button>
+                </div>
                 <div class="member-relationship">
                   <span class="affection-value">♥ {{ getMemberRelationship(char.id).affection }}</span>
                   <span class="relationship-level" :style="{ backgroundColor: getMemberRelationship(char.id).color }">
@@ -1964,6 +2011,9 @@ onBeforeUnmount(() => {
       <p class="readonly-notice">此好友已被刪除，無法發送新訊息</p>
     </div>
     <div v-else class="input-container">
+      <button class="action-btn" @click="handleInsertAction" title="插入動作 *動作*">
+        <i><SquareAsterisk :size="20" /></i>
+      </button>
       <textarea ref="messageInputRef" v-model="messageInput" class="message-input"
         :placeholder="isTouchDevice() ? '輸入訊息...' : '輸入訊息... (Enter 送出，Shift+Enter 換行)'" rows="1" :disabled="isLoading"
         @input="handleInputChange" @keydown="handleKeydown"></textarea>
@@ -2575,6 +2625,36 @@ onBeforeUnmount(() => {
   transform: none;
 }
 
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-sm);
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.action-btn:hover {
+  background: var(--color-info);
+  color: var(--color-text-white);
+  border-color: var(--color-info);
+}
+
+.action-btn:hover i {
+  color: var(--color-text-white);
+}
+
+.action-btn:active {
+  transform: scale(0.95);
+}
+
+.action-btn svg {
+  display: block;
+}
+
 /* Multi-select mode */
 .multi-select-header {
   display: flex;
@@ -3042,7 +3122,7 @@ onBeforeUnmount(() => {
 /* 面板容器 */
 .panel {
   width: 100%;
-  max-width: 80vw;
+  max-width: 75vw;
   height: 90%;
   background: var(--color-bg-primary);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
@@ -3302,10 +3382,32 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+.member-btns {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.member-btns .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.btn-remove-member {
+  color: #ff7875;
+  background: rgba(255, 77, 79, 0.08);
+}
+
+.btn-remove-member:hover {
+  color: var(--color-danger);
+  background: rgba(255, 77, 79, 0.15);
+}
+
 .member-relationship {
   display: flex;
   align-items: center;
-  gap: var(--spacing-xs);
+  gap: var(--spacing-md);
 }
 
 .member-relationship .relationship-level {
@@ -3424,7 +3526,12 @@ onBeforeUnmount(() => {
 }
 
 :deep(.tag-text) {
-  color: var(--color-warning)!important;;
+  color: var(--color-warning)!important;
+}
+
+:deep(.tag-unknown) {
+  color: var(--color-text-tertiary) !important;
+  font-style: italic;
 }
 
 @media (max-width: 768px) {
@@ -3450,7 +3557,17 @@ onBeforeUnmount(() => {
   }
 
   .input-container {
-    padding: var(--spacing-md) var(--spacing-lg);
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) var(--spacing-xs);
+  }
+
+  .action-btn {
+    padding: var(--spacing-xs);
+  }
+
+  .send-btn {
+    padding: var(--spacing-sm) var(--spacing-md);
+    min-width: 44px;
   }
 
   .memory-panel {
@@ -3518,6 +3635,14 @@ onBeforeUnmount(() => {
 
   .context-actions .btn {
     width: 100%;
+  }
+
+  .member-btns {
+    gap: var(--spacing-xs);
+  }
+
+  .member-relationship {
+    gap: var(--spacing-xs);
   }
 
 }

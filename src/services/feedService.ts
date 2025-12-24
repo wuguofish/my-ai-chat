@@ -185,6 +185,7 @@ export function formatFeedContentForDisplay(
 
   // 處理 @user（使用者被提及）
   formatted = formatted.replace(/@user(?![\w])/gi, `<span class="mention mention-me">@${userName}</span>`)
+  formatted = formatted.replace(`@${userName}`, `<span class="mention mention-me">@${userName}</span>`)
 
   return formatted
 }

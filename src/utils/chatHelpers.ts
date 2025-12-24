@@ -460,6 +460,11 @@ export function formatMessageForDisplay(message: string, characters: Character[]
     formatted = formatted.replace(regex, `<span class="tag-text">@${char.name}</span>`)
   })
 
+  // 處理未知的 @UUID（已刪除的角色），轉換為 @unknown
+  // UUID 格式：xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  formatted = formatted.replace(/@[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/gi,
+    '<span class="tag-text tag-unknown">@unknown</span>')
+
   // 處理粗體標記：**粗體** → <b>粗體</b>（必須先處理，避免被單星號規則誤判）
   // 使用 [\s\S] 來匹配包括換行在內的所有字元
   formatted = formatted.replace(/\*\*([\s\S]+?)\*\*/g, '<b>$1</b>')
