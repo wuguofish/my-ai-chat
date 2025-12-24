@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getActuallyContent } from './gemini'
+import { getActuallyContent } from './llm/utils'
 
 describe('getActuallyContent', () => {
   // 情況1：整個訊息被引號包住

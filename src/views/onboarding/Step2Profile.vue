@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useUserStore } from '@/stores/user'
-import type { UserProfile, Gender } from '@/types'
+import type { UserProfile, Gender, LLMProviderType } from '@/types'
 import { LIMITS } from '@/utils/constants'
 import AvatarCropper from '@/components/common/AvatarCropper.vue'
 
@@ -32,8 +32,9 @@ const handleNext = () => {
     return
   }
 
-  // 取得暫存的 API Key
+  // 取得暫存的 API Key 和服務商
   const apiKey = sessionStorage.getItem('temp-api-key') || ''
+  const provider = (sessionStorage.getItem('temp-provider') || 'gemini') as LLMProviderType
 
   if (!apiKey) {
     error.value = '找不到 API Key，請重新設定'
@@ -56,8 +57,16 @@ const handleNext = () => {
     profession: profession.value.trim() || undefined,
     bio: bio.value.trim() || undefined,
     avatar: avatar.value || getDefaultAvatar(nickname.value),
+    // 舊版 API 設定（向後兼容）
     apiConfig: {
-      geminiApiKey: apiKey
+      geminiApiKey: provider === 'gemini' ? apiKey : ''
+    },
+    // 新版 LLM 設定
+    llmSettings: {
+      defaultProvider: provider,
+      apiKeys: {
+        [provider]: apiKey
+      }
     },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -65,6 +74,7 @@ const handleNext = () => {
 
   userStore.setProfile(userProfile)
   sessionStorage.removeItem('temp-api-key')
+  sessionStorage.removeItem('temp-provider')
   error.value = ''
   emit('next')
 }

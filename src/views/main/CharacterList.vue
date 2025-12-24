@@ -7,7 +7,7 @@ import { useUserStore } from '@/stores/user'
 import { useToast } from '@/composables/useToast'
 import { getRelationshipLevelInfo } from '@/utils/relationshipHelpers'
 import { downloadCharacterCard, readCharacterCardFromFile } from '@/utils/characterExport'
-import { getProviderConfig, isProviderImplemented } from '@/services/llm'
+import { getProviderConfig, getCharacterProviderInfo, isProviderImplemented } from '@/services/llm'
 import PageHeader from '@/components/common/PageHeader.vue'
 import type { Character } from '@/types'
 import { v4 as uuidv4 } from 'uuid'
@@ -272,7 +272,12 @@ const getDefaultAvatar = (name: string) => {
         </div>
         <div class="character-info">
           <h3 class="character-name">{{ character.name }}</h3>
-          <p v-if="character.statusMessage" class="status-message">{{ character.statusMessage }}</p>
+          <p class="status-message">
+            <b :style="{ color: getCharacterProviderInfo(character).iconColor }"
+              :title="getCharacterProviderInfo(character).tooltip">{{ getCharacterProviderInfo(character).icon }}</b>
+              <span v-if="character.statusMessage">{{ character.statusMessage }}</span>
+              <span v-else><i>尚未設定狀態訊息</i></span>
+          </p>
           <span class="meta-item">{{ getGenderText(character.gender) }}</span>
           <span class="meta-item">{{ character.age }}歲</span>
           <div style="margin-top: 0.3rem;"><span class="meta-item">{{ character.profession }}</span></div>
@@ -429,6 +434,10 @@ const getDefaultAvatar = (name: string) => {
   margin: 0 0 var(--spacing-sm) 0;
 }
 
+.character-name b {
+  font-size: var(--text-base);
+}
+
 .status-message {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
@@ -437,6 +446,10 @@ const getDefaultAvatar = (name: string) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.status-message b {
+  margin-right: var(--spacing-xs);
 }
 
 .meta-item {

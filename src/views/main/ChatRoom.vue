@@ -27,7 +27,7 @@ import {
   extractLongTermMemories,
   evaluateCharacterRelationshipsWithMood
 } from '@/services/memoryService'
-import { getDefaultAdapter, getProviderConfig } from '@/services/llm'
+import { getDefaultAdapter, getCharacterProviderInfo } from '@/services/llm'
 import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users, Pencil } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -159,12 +159,6 @@ const getMemberRelationship = (characterId: string) => {
     affection: relationship.affection,
     color: levelInfo.color
   }
-}
-
-// 取得角色使用的 LLM 服務商資訊
-const getCharacterProviderInfo = (char: Character) => {
-  const provider = char.llmProvider || userStore.defaultProvider
-  return getProviderConfig(provider)
 }
 
 // 取得訊息發送者的頭像
@@ -306,7 +300,7 @@ const handleGenerateContext = async () => {
     const recentMessages = currentMessages.slice(-20)
 
     // 生成情境摘要（群聊情境用最年輕角色判斷安全模式）
-    const summary = await generateMemorySummary(apiKey, recentMessages, getAgeContextForMemory())
+    const summary = await generateMemorySummary(recentMessages, getAgeContextForMemory())
 
     // 更新聊天室情境
     memoriesStore.updateRoomSummary(roomId.value, summary)
@@ -379,7 +373,7 @@ const handleGenerateMemory = async () => {
     // 判斷是私聊還是群聊
     if (room.value?.type === 'single' && character.value) {
       // 私聊：生成短期記憶摘要（用當前角色判斷安全模式）
-      const summary = await generateMemorySummary(apiKey, recentMessages, getAgeContextForMemory(character.value))
+      const summary = await generateMemorySummary(recentMessages, getAgeContextForMemory(character.value))
       // 私聊：為單一角色生成記憶
       const result = memoriesStore.addCharacterShortTermMemory(
         character.value.id,
@@ -404,7 +398,7 @@ const handleGenerateMemory = async () => {
       }
     } else if (room.value?.type === 'group') {
       // 群聊：生成短期記憶摘要（用最年輕角色判斷安全模式）
-      const summary = await generateMemorySummary(apiKey, recentMessages, getAgeContextForMemory())
+      const summary = await generateMemorySummary(recentMessages, getAgeContextForMemory())
       // 群聊：為所有參與角色生成記憶
       let successCount = 0
       for (const char of groupCharacters.value) {
@@ -506,7 +500,6 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
 
       // 生成短期記憶摘要（包含情緒評估）
       const { summary, mood } = await generateMemorySummaryWithMood(
-        apiKey,
         recentMessages,
         targetCharacter,
         {
@@ -562,7 +555,7 @@ const handleMemoryGeneration = async (targetRoomId?: string): Promise<boolean> =
       const minAge = ages.length > 0 ? Math.min(...ages) : 0
 
       // 生成短期記憶摘要
-      const summary = await generateMemorySummary(apiKey, recentMessages, {
+      const summary = await generateMemorySummary(recentMessages, {
         userAge: userAge.value,
         characterAge: minAge > 0 ? String(minAge) : undefined
       })
@@ -648,7 +641,7 @@ const handleRoomContextGeneration = async (targetRoomId?: string) => {
     const minAge = ages.length > 0 ? Math.min(...ages) : 0
 
     // 生成聊天室情境摘要
-    const summary = await generateMemorySummary(apiKey, recentMessages, {
+    const summary = await generateMemorySummary(recentMessages, {
       userAge: userAge.value,
       characterAge: minAge > 0 ? String(minAge) : undefined
     })
@@ -663,7 +656,7 @@ const handleRoomContextGeneration = async (targetRoomId?: string) => {
     // 評估角色間關係和情緒（群聊才需要）
     if (targetRoom.characterIds.length >= 2) {
       // 背景執行關係和情緒評估，不阻塞主流程
-      evaluateCharacterRelationshipsWithMood(apiKey, targetCharacters, recentMessages, userAge.value)
+      evaluateCharacterRelationshipsWithMood(targetCharacters, recentMessages, userAge.value)
         .then(({ relationships, moods }) => {
           // 更新關係
           if (relationships.length > 0) {
@@ -721,7 +714,7 @@ const processShortTermMemoriesForCharacter = async (characterId: string) => {
     const targetCharacter = characterStore.getCharacterById(characterId)
 
     // 呼叫 AI 提取長期記憶（帶入角色資訊以便 LLM 理解人物關係）
-    const longTermMemoryContents = await extractLongTermMemories(apiKey, shortTermMemories, {
+    const longTermMemoryContents = await extractLongTermMemories(shortTermMemories, {
       userAge: userAge.value,
       characterAge: targetCharacter?.age,
       characterId: characterId,

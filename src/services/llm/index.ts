@@ -99,6 +99,19 @@ export function getImplementedProviders(): LLMProvider[] {
 }
 
 import type { Character } from '@/types'
+import { getProviderConfig, type ProviderConfig } from './config'
+import { useUserStore } from '@/stores/user'
+
+/**
+ * 取得角色使用的 LLM 服務商資訊（用於顯示 icon）
+ * @param character 角色
+ * @returns 服務商配置（包含 icon、iconColor、tooltip 等）
+ */
+export function getCharacterProviderInfo(character: Character): ProviderConfig {
+  const userStore = useUserStore()
+  const provider = character.llmProvider || userStore.defaultProvider
+  return getProviderConfig(provider)
+}
 
 /**
  * 根據角色或全域設定決定要使用的服務商

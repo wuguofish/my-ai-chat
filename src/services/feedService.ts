@@ -268,7 +268,6 @@ function advanceCommentSession(postId: string, participants: string[]): void {
 export async function generatePostContent(
   character: Character,
   triggerEvent: PostTriggerEvent,
-  apiKey: string,
   userAge?: string,
   additionalContext?: string
 ): Promise<string> {
@@ -420,7 +419,6 @@ ${additionalContext ? `\n補充資訊：${additionalContext}` : ''}`
 export async function generateCommentContent(
   character: Character,
   post: Post,
-  apiKey: string,
   userAge?: string,
   replyToComment?: PostComment,
   recentComments?: PostComment[]
@@ -675,7 +673,6 @@ export async function triggerCharacterPost(
     const content = await generatePostContent(
       character,
       event,
-      userStore.apiKey,
       userStore.profile?.age,
       additionalContext
     )
@@ -887,7 +884,6 @@ export async function characterCommentOnPost(
     const content = await generateCommentContent(
       character,
       post,
-      userStore.apiKey,
       userStore.profile?.age,
       undefined,  // replyToComment
       recentComments
@@ -1042,7 +1038,6 @@ async function characterReplyToComment(
     const content = await generateCommentContent(
       character,
       post,
-      userStore.apiKey,
       userStore.profile?.age,
       replyToComment,
       recentComments
@@ -1708,7 +1703,6 @@ export async function summarizeClosedPosts(): Promise<number> {
 
       // 生成摘要
       const summary = await generatePostSummary(
-        userStore.apiKey,
         post,
         userStore.profile?.age
       )

@@ -51,7 +51,6 @@ export interface RelationshipEvaluationResult {
  * 從最近對話生成短期記憶摘要（基礎版，不含情緒評估）
  */
 export async function generateMemorySummary(
-  apiKey: string,
   messages: Message[],
   ageContext?: AgeContext
 ): Promise<string> {
@@ -85,7 +84,6 @@ ${conversation}`
     // 透過 LLM adapter 發送請求
     const adapter = await getDefaultAdapter()
     const response = await adapter.generate(
-      apiKey,
       [{ role: 'user', content: prompt }],
       {
         modelType: 'lite',
@@ -115,7 +113,6 @@ ${conversation}`
  * 一次 API 呼叫同時取得摘要和角色情緒
  */
 export async function generateMemorySummaryWithMood(
-  apiKey: string,
   messages: Message[],
   character: Character,
   ageContext?: AgeContext
@@ -161,7 +158,6 @@ ${conversation}
     // 透過 LLM adapter 發送請求（使用 responseMimeType 強制 JSON 輸出）
     const adapter = await getDefaultAdapter()
     const response = await adapter.generate(
-      apiKey,
       [{ role: 'user', content: prompt }],
       {
         modelType: 'lite',
@@ -190,7 +186,7 @@ ${conversation}
   } catch (error) {
     console.error('生成記憶摘要（含情緒）失敗:', error)
     // 降級：只回傳基本摘要
-    const summary = await generateMemorySummary(apiKey, messages, ageContext)
+    const summary = await generateMemorySummary(messages, ageContext)
     return { summary }
   }
 }
@@ -200,7 +196,6 @@ ${conversation}
  * @returns 提取出的長期記憶列表（可能是空陣列）
  */
 export async function extractLongTermMemories(
-  apiKey: string,
   shortTermMemories: Memory[],
   context?: LongTermMemoryContext
 ): Promise<string[]> {
@@ -292,7 +287,6 @@ ${memoriesText}
     // 透過 LLM adapter 發送請求
     const adapter = await getDefaultAdapter()
     const response = await adapter.generate(
-      apiKey,
       [{ role: 'user', content: prompt }],
       {
         modelType: 'lite',
@@ -343,7 +337,6 @@ ${memoriesText}
  * @returns 貼文摘要（1-2 句話）
  */
 export async function generatePostSummary(
-  apiKey: string,
   post: Post,
   userAge?: string
 ): Promise<string> {
@@ -394,7 +387,6 @@ ${postContent}
     // 透過 LLM adapter 發送請求
     const adapter = await getDefaultAdapter()
     const response = await adapter.generate(
-      apiKey,
       [{ role: 'user', content: prompt }],
       {
         modelType: 'lite',
@@ -422,12 +414,11 @@ ${postContent}
  * @deprecated 請改用 evaluateCharacterRelationshipsWithMood
  */
 export async function evaluateCharacterRelationships(
-  apiKey: string,
   characters: Character[],
   recentMessages: Message[],
   userAge?: string
 ): Promise<RelationshipEvaluation[]> {
-  const result = await evaluateCharacterRelationshipsWithMood(apiKey, characters, recentMessages, userAge)
+  const result = await evaluateCharacterRelationshipsWithMood(characters, recentMessages, userAge)
   return result.relationships
 }
 
@@ -436,7 +427,6 @@ export async function evaluateCharacterRelationships(
  * 在情境摘要更新時呼叫，分析角色互動並產生關係狀態和情緒
  */
 export async function evaluateCharacterRelationshipsWithMood(
-  apiKey: string,
   characters: Character[],
   recentMessages: Message[],
   userAge?: string
@@ -522,7 +512,6 @@ ${conversation}
     // 透過 LLM adapter 發送請求（使用 responseMimeType 強制 JSON 輸出）
     const adapter = await getDefaultAdapter()
     const response = await adapter.generate(
-      apiKey,
       [{ role: 'user', content: prompt }],
       {
         modelType: 'lite',

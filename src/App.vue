@@ -90,8 +90,7 @@ const checkAndSendBirthdayWishes = async () => {
       const wishMessage = await generateBirthdayWish(
         character,
         userStore.profile,
-        relationship,
-        userStore.apiKey
+        relationship
       )
 
       // 將祝福訊息新增到聊天室

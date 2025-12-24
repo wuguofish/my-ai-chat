@@ -11,6 +11,7 @@ import { useCharacterStatus } from '@/composables/useCharacterStatus'
 import { SCHEDULE_TEMPLATES_V2 } from '@/utils/constants'
 import { isTodayHolidaySync } from '@/utils/chatHelpers'
 import type { Character } from '@/types'
+import { getCharacterProviderInfo } from '@/services/llm'
 import { Plus, ArrowLeft, MessageCircle, Edit, Bubbles, Trash2, X, Heart } from 'lucide-vue-next'
 
 const { alert, confirm, confirmDanger } = useModal()
@@ -442,6 +443,8 @@ const getRelationshipTypeText = getCharacterRelationshipTypeText
           <div class="basic-info">
             <h1 class="name">{{ character.name }}</h1>
             <div class="status-message-container">
+              <b :style="{ color: getCharacterProviderInfo(character).iconColor }"
+                :title="getCharacterProviderInfo(character).tooltip">{{ getCharacterProviderInfo(character).icon }}</b>
               <p v-if="character.statusMessage" class="status-message">{{ character.statusMessage }}</p>
               <p v-else class="status-message empty">尚未設定狀態訊息</p>
               <button class="btn btn-sm btn-primary-outline edit-status-btn" @click="handleEditStatus">

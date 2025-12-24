@@ -15,10 +15,14 @@ export type GeminiModelName = 'gemini-2.5-flash' | 'gemini-2.5-flash-lite'
 export interface ProviderConfig {
   /** 服務商名稱 */
   name: string
-  /** 主要對話模型 */
+  /** 主要對話模型（API 用） */
   mainModel: string
-  /** 輕量任務模型 */
+  /** 輕量任務模型（API 用） */
   liteModel: string
+  /** 主要對話模型（顯示用） */
+  mainModelDisplay: string
+  /** 輕量任務模型（顯示用） */
+  liteModelDisplay: string
   /** 後台管理 URL */
   consoleUrl: string
   /** 顯示用 Icon */
@@ -39,6 +43,8 @@ export const LLM_CONFIG: Record<LLMProvider, ProviderConfig> = {
     name: 'Gemini',
     mainModel: 'gemini-2.5-flash',
     liteModel: 'gemini-2.5-flash-lite',
+    mainModelDisplay: '2.5 Flash',
+    liteModelDisplay: '2.5 Flash Lite',
     consoleUrl: 'https://aistudio.google.com/app/api-keys',
     icon: 'G',
     iconColor: '#4285F4',
@@ -48,6 +54,8 @@ export const LLM_CONFIG: Record<LLMProvider, ProviderConfig> = {
     name: 'OpenAI',
     mainModel: 'gpt-4o',
     liteModel: 'gpt-4o-mini',
+    mainModelDisplay: 'GPT-4o',
+    liteModelDisplay: 'GPT-4o mini',
     consoleUrl: 'https://platform.openai.com/api-keys',
     icon: '⬡',
     iconColor: '#10A37F',
@@ -57,6 +65,8 @@ export const LLM_CONFIG: Record<LLMProvider, ProviderConfig> = {
     name: 'Claude',
     mainModel: 'claude-sonnet-4-5-20250929',
     liteModel: 'claude-haiku-4-5-20251001',
+    mainModelDisplay: '4.5 Sonnet',
+    liteModelDisplay: '4.5 Haiku',
     consoleUrl: 'https://console.anthropic.com/settings/keys',
     icon: '✳',
     iconColor: '#D97706',
@@ -66,6 +76,8 @@ export const LLM_CONFIG: Record<LLMProvider, ProviderConfig> = {
     name: 'Grok',
     mainModel: 'grok-3',
     liteModel: 'grok-3-mini',
+    mainModelDisplay: 'Grok 3',
+    liteModelDisplay: 'Grok 3 mini',
     consoleUrl: 'https://console.x.ai/',
     icon: '⌀',
     iconColor: '#000000',

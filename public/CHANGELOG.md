@@ -1,5 +1,27 @@
 # 更新履歷
 
+## [1.7.9] - 2025-12-25
+
+### ✨ 新增功能
+- **Onboarding 多服務商支援**
+  - 新使用者註冊時可選擇 Gemini 或 Claude 作為預設 AI 服務商
+  - 服務商選擇器採用 2x2 卡片設計，顯示彩色 Icon
+  - OpenAI 和 Grok 標記為「即將推出」，無法選擇
+  - API Key 驗證使用對應服務商的 adapter
+
+### 🔧 技術改進
+- **LLM 服務商配置集中管理**
+  - 新增 `mainModelDisplay` 和 `liteModelDisplay` 到 `ProviderConfig`
+  - Settings 頁面的模型顯示名稱改從 config 讀取，未來更新版本會自動連動
+  - 新增 `getCharacterProviderInfo()` 共用函數，用於取得角色使用的服務商資訊
+
+- **Settings 頁面預設服務商選擇器**
+  - 從下拉選單改為 Radio 卡片設計
+  - 只顯示已設定 API Key 的服務商
+  - Badge 改為動態顯示「預設」或「選填」
+
+---
+
 ## [1.7.8] - 2025-12-24
 
 ### 🔧 技術改進

@@ -72,8 +72,7 @@ export function markWishSent(characterId: string): void {
 export async function generateBirthdayWish(
   character: Character,
   user: UserProfile,
-  relationship: UserCharacterRelationship,
-  apiKey: string
+  relationship: UserCharacterRelationship
 ): Promise<string> {
   // 取得關係等級名稱
   const relationshipName = getRelationshipLevelName(relationship.level, relationship.isRomantic)
@@ -102,9 +101,8 @@ ${relationship.note ? `- 關係備註：${relationship.note}` : ''}
 
   try {
     // 透過 LLM adapter 發送請求
-    const adapter = await getDefaultAdapter()
+    const adapter = await getDefaultAdapter(character)
     const response = await adapter.generate(
-      apiKey,
       [{ role: 'user', content: prompt }],
       {
         modelType: 'lite',

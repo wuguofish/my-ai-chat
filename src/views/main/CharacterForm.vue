@@ -509,28 +509,34 @@ const getDefaultAvatar = (name: string) => {
       <!-- 進階模式 -->
       <div v-if="isAdvancedMode" class="form-section">
         <h3>進階設定</h3>
-
         <!-- LLM 服務商選擇 -->
         <div class="form-group">
-          <label for="llmProvider">AI 服務商</label>
-          <div class="provider-select-wrapper">
-            <select id="llmProvider" v-model="llmProvider" class="input-field">
-              <option value="">使用全域預設（{{ getProviderConfig(userStore.defaultProvider).name }}）</option>
-              <option
-                v-for="provider in implementedProviders"
-                :key="provider"
-                :value="provider"
-              >
-                {{ getProviderConfig(provider).icon }} {{ getProviderConfig(provider).name }}
-              </option>
-            </select>
-            <div v-if="llmProvider" class="provider-badge" :style="{ backgroundColor: getProviderConfig(llmProvider).iconColor }">
-              {{ getProviderConfig(llmProvider).icon }}
-            </div>
-          </div>
-          <div class="help-text">
-            選擇此好友對話時使用的 AI 服務商。未設定時會使用全域預設（目前為 {{ getProviderConfig(userStore.defaultProvider).name }}）。
-          </div>
+          <label for="llmProviderRadioGroup">AI 服務商</label>
+          <p class="help-text">
+            選擇此好友對話時使用的 AI 服務商。「預設」會使用全域設定（目前為 {{ getProviderConfig(userStore.defaultProvider).name }}）。
+          </p>
+          <div id="llmProviderRadioGroup" class="radio-group provider-radio-group">
+            <!-- 預設選項 -->
+            <label class="radio-item">
+              <input v-model="llmProvider" type="radio" value="">
+              <span class="provider-option">
+                <b class="provider-icon" :style="{ color: getProviderConfig(userStore.defaultProvider).iconColor }">
+                  {{ getProviderConfig(userStore.defaultProvider).icon }}
+                </b>
+                <span class="provider-label">預設</span>
+              </span>
+            </label>
+            <!-- 各服務商選項 -->
+            <label v-for="provider in implementedProviders" :key="provider" class="radio-item">
+              <input v-model="llmProvider" type="radio" :value="provider">
+              <span class="provider-option">
+                <b class="provider-icon" :style="{ color: getProviderConfig(provider).iconColor }">
+                  {{ getProviderConfig(provider).icon }}
+                </b>
+                <span class="provider-label">{{ getProviderConfig(provider).name }}</span>
+              </span>
+            </label>
+          </div>          
         </div>
 
         <div class="form-group">
@@ -539,7 +545,7 @@ const getDefaultAvatar = (name: string) => {
             :maxlength="LIMITS.MAX_SYSTEM_PROMPT_LENGTH" rows="6" />
           <div class="char-count">{{ systemPrompt.length }}/{{ LIMITS.MAX_SYSTEM_PROMPT_LENGTH }}</div>
           <div class="help-text">
-            <p style="margin-top: 8px;">
+            <p>
               <strong>💡
                 提示：</strong>系統提示詞可用於<span class="text-info">補充特殊設定、禁忌話題或好友獨有的表達模式</span>，會附加在自動生成內容之後。
               <br />因此<span class="text-info">無須重複自動生成的內容</span>。
@@ -779,7 +785,8 @@ const getDefaultAvatar = (name: string) => {
   cursor: pointer;
 }
 
-.radio-item span {
+/* 基本 radio 樣式 */
+.radio-item > input + span {
   display: block;
   padding: var(--spacing-md) var(--spacing-lg);
   font-size: var(--text-base);
@@ -799,7 +806,7 @@ const getDefaultAvatar = (name: string) => {
   font-weight: 500;
 }
 
-.radio-item:not(:has(input:disabled)):hover span {
+.radio-item:not(:has(input:disabled)):hover > input + span {
   color: var(--color-primary);
   border-color: var(--color-primary);
   background: rgba(102, 126, 234, 0.04);
@@ -808,6 +815,52 @@ const getDefaultAvatar = (name: string) => {
 .radio-item input[type="radio"]:disabled + span {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+/* LLM 服務商 radio group */
+.provider-radio-group {
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+    
+}
+
+.provider-radio-group .radio-item {
+  flex: 0 0 auto;
+  min-width: 80px;
+}
+
+/* .provider-option 覆寫基本 radio 樣式（優先順序要比 .radio-item > input + span 高） */
+.provider-radio-group .radio-item > input + span.provider-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-xs);
+}
+
+.provider-icon {
+  display: block;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.provider-label {
+  display: block;
+  font-size: var(--text-sm);
+}
+
+/* 選中時 icon 稍微亮一點，文字白色 */
+.radio-item input[type="radio"]:checked + .provider-option .provider-icon {
+  filter: brightness(1.2);
+}
+
+.radio-item input[type="radio"]:checked + .provider-option .provider-label {
+  color: var(--color-text-white);
+}
+
+/* hover 時文字變 primary 色（不論是否選中，優先順序要比 :checked 高） */
+.radio-item:not(:has(input:disabled)):hover input[type="radio"] + .provider-option .provider-label {
+  color: var(--color-primary);
 }
 
 .char-count {
@@ -820,7 +873,7 @@ const getDefaultAvatar = (name: string) => {
 .help-text {
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
-  margin-top: var(--spacing-sm);
+  margin-top: var(--spacing-);
   font-style: italic;
 }
 
@@ -1109,6 +1162,14 @@ const getDefaultAvatar = (name: string) => {
     align-items: flex-start;
     gap: var(--spacing-xs);
   }
+
+  .radio-group {
+    gap: var(--spacing-xs);
+  }
+
+  .provider-radio-group {
+    gap: 0;
+  }
 }
 
 /* 隱藏設定區塊 */
@@ -1148,28 +1209,4 @@ const getDefaultAvatar = (name: string) => {
   font-style: italic;
 }
 
-/* LLM 服務商選擇 */
-.provider-select-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-}
-
-.provider-select-wrapper .input-field {
-  flex: 1;
-}
-
-.provider-badge {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-size: var(--text-base);
-  font-weight: 600;
-  flex-shrink: 0;
-}
 </style>

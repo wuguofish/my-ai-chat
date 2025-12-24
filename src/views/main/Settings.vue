@@ -57,6 +57,11 @@ googleAuthService.setTokenInvalidCallback(async () => {
 const implementedProviders = getImplementedProviders()
 const selectedDefaultProvider = ref(userStore.defaultProvider)
 
+// 有設定 API Key 的服務商（用於預設服務商選擇）
+const providersWithApiKey = computed(() => {
+  return implementedProviders.filter(provider => userStore.hasApiKey(provider))
+})
+
 // 各服務商的 API Key 輸入狀態
 const apiKeyInputs = ref<Record<string, string>>({
   gemini: userStore.getApiKey('gemini'),
@@ -629,19 +634,38 @@ const handleGoogleRestore = async () => {
 
       <!-- 預設服務商選擇 -->
       <div class="form-group">
-        <label>預設 AI 服務商</label>
-        <div class="provider-select-row">
-          <select v-model="selectedDefaultProvider" class="input-field" @change="handleUpdateDefaultProvider">
-            <option v-for="provider in implementedProviders" :key="provider" :value="provider">
-              {{ getProviderConfig(provider)?.name }}
-            </option>
-          </select>
+        <h4>預設 AI 服務商</h4>
+        <div v-if="providersWithApiKey.length > 0" class="default-provider-radio-group">
+          <label
+            v-for="provider in providersWithApiKey"
+            :key="provider"
+            class="default-provider-item"
+            :class="{ selected: selectedDefaultProvider === provider }"
+          >
+            <input
+              type="radio"
+              v-model="selectedDefaultProvider"
+              :value="provider"
+              @change="handleUpdateDefaultProvider"
+            >
+            <span class="provider-option">
+              <b class="provider-icon" :style="{ color: getProviderConfig(provider)?.iconColor }">
+                {{ getProviderConfig(provider)?.icon }}
+              </b>
+              <span class="provider-label">{{ getProviderConfig(provider)?.name }}</span>
+            </span>
+          </label>
         </div>
-        <p class="form-hint">新建立的好友會使用此服務商</p>
+        <p v-else class="form-hint warning">請先在下方設定至少一個 API Key</p>
+        <p v-if="providersWithApiKey.length > 0" class="form-hint">未設定服務商的好友及記憶生成功能會使用預設的AI服務商</p>
       </div>
 
       <div class="provider-divider"></div>
-
+      <h4>AI 服務商 API KEY</h4>
+      <!-- 檢測說明 -->
+      <div class="api-warning">
+        ⚠️ 「檢測連線」僅驗證 API Key 是否有效，<b>不保證有剩餘額度</b>，實際額度請至各服務商後台確認。
+      </div>
       <!-- Gemini -->
       <div class="provider-section">
         <div class="provider-header">
@@ -649,6 +673,8 @@ const handleGoogleRestore = async () => {
             {{ getProviderConfig('gemini')?.icon }}
           </span>
           <span class="provider-name">Gemini</span>
+          <span v-if="selectedDefaultProvider === 'gemini'" class="provider-badge default">預設</span>
+          <span v-else class="provider-badge">選填</span>
         </div>
         <div class="api-key-input">
           <input
@@ -668,7 +694,7 @@ const handleGoogleRestore = async () => {
             {{ isValidatingApiKey.gemini ? '檢測中...' : '檢測連線' }}
           </button>
         </div>
-        <p class="provider-models">主要對話：2.5 Flash ／ 輕量：2.5 Flash Lite</p>
+        <p class="provider-models">主要對話：{{ getProviderConfig('gemini')?.mainModelDisplay }} ／ 其他功能：{{ getProviderConfig('gemini')?.liteModelDisplay }}</p>
         <p class="api-key-hint">
           💡 <a :href="getProviderConfig('gemini')?.consoleUrl" target="_blank" rel="noopener noreferrer">前往 Google AI Studio</a> 查看額度
         </p>
@@ -683,7 +709,8 @@ const handleGoogleRestore = async () => {
             {{ getProviderConfig('claude')?.icon }}
           </span>
           <span class="provider-name">Claude</span>
-          <span class="provider-badge">選填</span>
+          <span v-if="selectedDefaultProvider === 'claude'" class="provider-badge default">預設</span>
+          <span v-else class="provider-badge">選填</span>
         </div>
         <div class="api-key-input">
           <input
@@ -703,7 +730,7 @@ const handleGoogleRestore = async () => {
             {{ isValidatingApiKey.claude ? '檢測中...' : '檢測連線' }}
           </button>
         </div>
-        <p class="provider-models">主要對話：Sonnet ／ 輕量：Haiku</p>
+        <p class="provider-models">主要對話：{{ getProviderConfig('claude')?.mainModelDisplay }} ／ 其他功能：{{ getProviderConfig('claude')?.liteModelDisplay }}</p>
         <p class="api-key-hint">
           💡 <a :href="getProviderConfig('claude')?.consoleUrl" target="_blank" rel="noopener noreferrer">前往 Anthropic Console</a> 查看額度
         </p>
@@ -732,7 +759,7 @@ const handleGoogleRestore = async () => {
             <Eye :size="18" />
           </button>
         </div>
-        <p class="provider-models">主要對話：GPT-4o ／ 輕量：GPT-4o-mini</p>
+        <p class="provider-models">主要對話：{{ getProviderConfig('openai')?.mainModelDisplay }} ／ 其他功能：{{ getProviderConfig('openai')?.liteModelDisplay }}</p>
       </div>
 
       <div class="provider-divider"></div>
@@ -758,13 +785,8 @@ const handleGoogleRestore = async () => {
             <Eye :size="18" />
           </button>
         </div>
-        <p class="provider-models">主要對話：Grok 3 ／ 輕量：Grok 3 mini</p>
-      </div>
-
-      <!-- 檢測說明 -->
-      <div class="api-warning">
-        ⚠️ 「檢測連線」僅驗證 API Key 是否有效，不代表有剩餘額度。各模型額度獨立計算，請至各服務商後台確認。
-      </div>
+        <p class="provider-models">主要對話：{{ getProviderConfig('grok')?.mainModelDisplay }} ／ 其他功能：{{ getProviderConfig('grok')?.liteModelDisplay }}</p>
+      </div>      
     </div>
 
     <!-- Google Drive 同步 -->
@@ -1056,6 +1078,11 @@ const handleGoogleRestore = async () => {
   color: var(--color-text-secondary);
 }
 
+.provider-badge.default {
+  background: var(--color-primary);
+  color: var(--color-text-white);
+}
+
 .provider-badge.coming-soon {
   background: rgba(102, 126, 234, 0.1);
   color: var(--color-primary);
@@ -1074,18 +1101,86 @@ const handleGoogleRestore = async () => {
   margin: var(--spacing-md) 0;
 }
 
-.provider-select-row {
-  max-width: 300px;
+/* 預設服務商 radio group */
+.default-provider-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.default-provider-item {
+  position: relative;
+  cursor: pointer;
+}
+
+.default-provider-item input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.default-provider-item .provider-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  min-width: 70px;
+  background: var(--color-bg-secondary);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius);
+  transition: all var(--transition);
+}
+
+.default-provider-item .provider-icon {
+  font-size: 20px;
+  line-height: 1;
+  text-shadow: 1px 1px 9px rgba(255, 255, 255);
+}
+
+.default-provider-item .provider-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.default-provider-item:hover .provider-option {
+  border-color: var(--color-primary);
+  background: rgba(102, 126, 234, 0.04);
+}
+
+.default-provider-item:hover .provider-label {
+  color: var(--color-primary);
+}
+
+.default-provider-item.selected .provider-option {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+
+.default-provider-item.selected .provider-label {
+  color: var(--color-text-white);
+}
+
+.default-provider-item.selected .provider-icon {
+  filter: brightness(1.2);
+}
+
+.form-hint {
+  font-size: var(--text-base);
+}
+
+.form-hint.warning {
+  color: var(--color-warning, #f59e0b);
 }
 
 .api-warning {
-  margin-top: var(--spacing-xl);
+  margin-top: var(--spacing-xs);
   padding: var(--spacing-md);
   background: rgba(255, 193, 7, 0.1);
   border-radius: var(--radius);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--color-text-secondary);
-  line-height: 1.5;
 }
 
 .btn-small {

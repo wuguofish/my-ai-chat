@@ -992,7 +992,7 @@ ${timeDescriptions[currentTimeOfDay]}`
   let statusMessage = response.text
 
   // 確保不超過 45 字
-  return statusMessage.length > 45 ? statusMessage.substring(0, 45) + '...' : statusMessage
+  return statusMessage
 }
 
 /**
