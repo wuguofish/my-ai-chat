@@ -14,7 +14,70 @@ import {
 import { getDefaultAdapter, isAdultConversation } from '@/services/llm'
 import { getRelationshipLevelName, getCharacterRelationshipTypeText } from '@/utils/relationshipHelpers'
 import { getCharacterStatus, getGenderText } from '@/utils/chatHelpers'
+import { getTodayHoliday, HOLIDAYS, type HolidayType } from '@/services/holidayGreetingService'
 import { v4 as uuidv4 } from 'uuid'
+
+// ==========================================
+// 節日貼文追蹤（每個角色今天只發一次節日相關貼文）
+// ==========================================
+const HOLIDAY_POST_KEY = 'ai-chat-holiday-posts'
+
+interface HolidayPostRecord {
+  date: string  // YYYY-MM-DD
+  characterIds: string[]  // 今天已發過節日貼文的角色
+}
+
+function getHolidayPostRecord(): HolidayPostRecord | null {
+  try {
+    const stored = localStorage.getItem(HOLIDAY_POST_KEY)
+    return stored ? JSON.parse(stored) : null
+  } catch {
+    return null
+  }
+}
+
+function getTodayDateString(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+function hasPostedHolidayToday(characterId: string): boolean {
+  const record = getHolidayPostRecord()
+  if (!record) return false
+  if (record.date !== getTodayDateString()) return false
+  return record.characterIds.includes(characterId)
+}
+
+function markHolidayPosted(characterId: string): void {
+  const today = getTodayDateString()
+  const record = getHolidayPostRecord()
+
+  if (record && record.date === today) {
+    if (!record.characterIds.includes(characterId)) {
+      record.characterIds.push(characterId)
+    }
+    localStorage.setItem(HOLIDAY_POST_KEY, JSON.stringify(record))
+  } else {
+    // 新的一天，重置記錄
+    localStorage.setItem(HOLIDAY_POST_KEY, JSON.stringify({
+      date: today,
+      characterIds: [characterId]
+    }))
+  }
+}
+
+// 當前節日快取（避免重複呼叫 API）
+let cachedHoliday: { date: string; holiday: HolidayType | null } | null = null
+
+async function getCachedTodayHoliday(): Promise<HolidayType | null> {
+  const today = getTodayDateString()
+  if (cachedHoliday && cachedHoliday.date === today) {
+    return cachedHoliday.holiday
+  }
+  const holiday = await getTodayHoliday()
+  cachedHoliday = { date: today, holiday }
+  return holiday
+}
 
 // ==========================================
 // 輔助函數
@@ -670,12 +733,26 @@ export async function triggerCharacterPost(
   }
 
   try {
+    // 檢查是否為節日，且這個角色今天還沒發過節日貼文
+    let finalContext = additionalContext
+    const holiday = await getCachedTodayHoliday()
+    if (holiday && !hasPostedHolidayToday(character.id)) {
+      const holidayInfo = HOLIDAYS[holiday]
+      const holidayContext = `今天是${holidayInfo.name}，可以在貼文中提到節日氛圍或祝福`
+      finalContext = additionalContext
+        ? `${additionalContext}；${holidayContext}`
+        : holidayContext
+      // 標記這個角色今天已發過節日貼文
+      markHolidayPosted(character.id)
+      console.log(`[Feed] ${character.name} 的貼文將帶有${holidayInfo.name}氛圍`)
+    }
+
     // 生成動態內容
     const content = await generatePostContent(
       character,
       event,
       userStore.profile?.age,
-      additionalContext
+      finalContext
     )
 
     // 建立動態

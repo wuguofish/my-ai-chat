@@ -14,6 +14,13 @@ import {
   generateBirthdayWish,
   markWishSent
 } from '@/services/birthdayService'
+import {
+  getTodayHoliday,
+  getEligibleCharactersForHolidayGreeting,
+  generateHolidayGreeting,
+  markGreetingSent,
+  HOLIDAYS
+} from '@/services/holidayGreetingService'
 import { triggerDailyCatchup } from '@/services/feedService'
 import ToastContainer from '@/components/ToastContainer.vue'
 import GlobalModal from '@/components/GlobalModal.vue'
@@ -117,6 +124,85 @@ const checkAndSendBirthdayWishes = async () => {
   console.log('🎂 生日祝福發送完成！')
 }
 
+/**
+ * 檢查並發送節日祝福
+ * 如果今天是特定節日，好感度達到 friend 以上的好友會自動發送祝福
+ */
+const checkAndSendHolidayGreetings = async () => {
+  // 檢查今天是什麼節日
+  const holidayType = await getTodayHoliday()
+  if (!holidayType) {
+    return
+  }
+
+  const holiday = HOLIDAYS[holidayType]
+  console.log(`🎉 今天是${holiday.name}！開始檢查節日祝福...`)
+
+  // 檢查是否有 API Key
+  if (!userStore.apiKey) {
+    console.log(`🎉 今天是${holiday.name}，但沒有 API Key，跳過節日祝福`)
+    return
+  }
+
+  // 取得應該發送祝福的好友列表
+  const eligibleCharacters = getEligibleCharactersForHolidayGreeting(
+    characterStore.characters,
+    chatRoomsStore.chatRooms,
+    (characterId: string) => {
+      const relationship = relationshipsStore.getUserCharacterRelationship(characterId)
+      return relationship?.affection ?? 0
+    },
+    holidayType
+  )
+
+  if (eligibleCharacters.length === 0) {
+    console.log(`🎉 沒有符合條件的好友需要發送${holiday.name}祝福`)
+    return
+  }
+
+  console.log(`🎉 找到 ${eligibleCharacters.length} 位好友要發送${holiday.name}祝福`)
+
+  // 依序為每個好友生成並發送祝福訊息
+  for (const { character, chatRoom } of eligibleCharacters) {
+    try {
+      console.log(`🎉 正在為 ${character.name} 生成${holiday.name}祝福...`)
+
+      // 取得關係資訊
+      const relationship = relationshipsStore.getUserCharacterRelationship(character.id)
+      if (!relationship) continue
+
+      // 使用 AI 生成祝福訊息
+      const greetingMessage = await generateHolidayGreeting(
+        character,
+        userStore.profile!,
+        relationship,
+        holiday
+      )
+
+      // 將祝福訊息新增到聊天室
+      chatRoomsStore.addMessage(chatRoom.id, {
+        roomId: chatRoom.id,
+        senderId: character.id,
+        senderName: character.name,
+        content: greetingMessage,
+        type: 'character'
+      })
+
+      // 標記已發送祝福
+      markGreetingSent(character.id, holidayType)
+
+      console.log(`🎉 ${character.name} 的${holiday.name}祝福已發送: ${greetingMessage}`)
+
+      // 避免 API 呼叫過於頻繁，加入短暫延遲
+      await new Promise(resolve => setTimeout(resolve, 500))
+    } catch (error) {
+      console.error(`🎉 為 ${character.name} 生成${holiday.name}祝福時發生錯誤:`, error)
+    }
+  }
+
+  console.log(`🎉 ${holiday.name}祝福發送完成！`)
+}
+
 onMounted(async () => {
   // 遷移舊版本的記憶資料（需要傳入聊天室列表）
   memoriesStore.migrateLegacyRoomMemories(chatRoomsStore.chatRooms)
@@ -139,6 +225,11 @@ onMounted(async () => {
   // 檢查並發送生日祝福（非阻塞，在背景執行）
   checkAndSendBirthdayWishes().catch(err => {
     console.error('生日祝福檢查失敗:', err)
+  })
+
+  // 檢查並發送節日祝福（非阻塞，在背景執行）
+  checkAndSendHolidayGreetings().catch(err => {
+    console.error('節日祝福檢查失敗:', err)
   })
 
   // 動態牆：每日首次開 App 時觸發角色發文（非阻塞，在背景執行）
