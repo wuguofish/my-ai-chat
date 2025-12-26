@@ -1,9 +1,9 @@
 /**
- * Claude LLM Adapter
- * 使用 Anthropic 官方 SDK
+ * OpenAI LLM Adapter
+ * 使用 OpenAI 官方 SDK
  */
 
-import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
 import type {
   LLMAdapter,
   LLMMessage,
@@ -20,25 +20,52 @@ import {
   getActuallyContent,
   formatErrorMessage
 } from '../utils'
-import { enqueueClaudeRequest } from '@/services/apiQueue'
+import { enqueueOpenAIRequest } from '@/services/apiQueue'
 import { generateSystemPrompt, convertToShortIds, convertToLongIds } from '@/utils/chatHelpers'
 
 /**
- * Claude API 訊息格式
+ * OpenAI API 訊息格式
  */
-type ClaudeMessage = {
-  role: 'user' | 'assistant'
+type OpenAIMessage = {
+  role: 'system' | 'user' | 'assistant'
   content: string
 }
 
 /**
- * 檢查 Claude 回應是否被封鎖
+ * 檢查 OpenAI 回應是否被封鎖
  */
-function checkResponseBlocked(response: Anthropic.Message): { reason: string; message: string } | null {
+function checkResponseBlocked(response: OpenAI.Chat.Completions.ChatCompletion): { reason: string; message: string } | null {
   // 檢查是否有內容
-  if (!response.content || response.content.length === 0) {
+  if (!response.choices || response.choices.length === 0) {
     return {
       reason: 'EMPTY_RESPONSE',
+      message: '回應內容為空'
+    }
+  }
+
+  const choice = response.choices[0]
+
+  // 檢查 finish_reason
+  if (choice?.finish_reason === 'content_filter') {
+    return {
+      reason: 'CONTENT_FILTER',
+      message: '內容因違反安全政策被過濾'
+    }
+  }
+
+  // 檢查是否有 refusal（GPT-4 以上模型支援）
+  const message = choice?.message
+  if (message && 'refusal' in message && message.refusal) {
+    return {
+      reason: 'REFUSAL',
+      message: message.refusal as string
+    }
+  }
+
+  // 檢查內容是否為空
+  if (!message?.content) {
+    return {
+      reason: 'EMPTY_CONTENT',
       message: '回應內容為空'
     }
   }
@@ -47,82 +74,31 @@ function checkResponseBlocked(response: Anthropic.Message): { reason: string; me
 }
 
 /**
- * 從 Claude 回應中提取文字
+ * 從 OpenAI 回應中提取文字
  */
-function extractTextFromResponse(response: Anthropic.Message): string {
-  if (!response.content || response.content.length === 0) {
+function extractTextFromResponse(response: OpenAI.Chat.Completions.ChatCompletion): string {
+  if (!response.choices || response.choices.length === 0) {
     return ''
   }
 
-  return response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map(block => block.text)
-    .join('')
+  return response.choices[0]?.message?.content || ''
 }
 
 /**
- * 確保訊息序列符合 Claude API 要求：
- * 1. 第一條訊息必須是 user
- * 2. user 和 assistant 必須交替出現
+ * OpenAI Adapter 實作
  *
- * @param messages 原始訊息陣列
- * @param insertPlaceholder 是否在連續 assistant 之間插入假 user 訊息（群聊模式）
+ * 注意：OpenAI API 不需要特別的訊息正規化
+ * - 不要求第一則必須是 user
+ * - 允許連續相同角色的訊息
  */
-function normalizeMessages(messages: ClaudeMessage[], insertPlaceholder = false): ClaudeMessage[] {
-  if (messages.length === 0) {
-    return [{ role: 'user', content: '請開始' }]
-  }
-
-  // 確保第一條訊息是 user（刪掉前面的 assistant 訊息，省 token）
-  let startIndex = 0
-  if (messages[0]?.role !== 'user') {
-    const firstUserIndex = messages.findIndex(msg => msg.role === 'user')
-    if (firstUserIndex > 0) {
-      startIndex = firstUserIndex
-    } else {
-      // 完全沒有 user 訊息，回傳預設
-      return [{ role: 'user', content: '請開始' }]
-    }
-  }
-
-  const result: ClaudeMessage[] = []
-
-  for (let i = startIndex; i < messages.length; i++) {
-    const msg = messages[i]!
-    const lastMsg = result[result.length - 1]
-
-    if (!lastMsg) {
-      // 第一條訊息（已確保是 user）
-      result.push({ ...msg })
-    } else if (lastMsg.role === msg.role) {
-      if (msg.role === 'assistant' && insertPlaceholder) {
-        // 群聊模式：在連續 assistant 之間插入假 user 訊息
-        // 這樣 AI 就不會誤以為自己要同時扮演多個角色
-        result.push({ role: 'user', content: '（對話繼續）' })
-        result.push({ ...msg })
-      } else {
-        // 一般模式：合併連續相同角色的內容
-        lastMsg.content += '\n\n' + msg.content
-      }
-    } else {
-      result.push({ ...msg })
-    }
-  }
-
-  return result
-}
-
-/**
- * Claude Adapter 實作
- */
-export class ClaudeAdapter implements LLMAdapter {
-  readonly provider = 'claude' as const
+export class OpenAIAdapter implements LLMAdapter {
+  readonly provider = 'openai' as const
 
   /**
-   * 建立 Anthropic 客戶端
+   * 建立 OpenAI 客戶端
    */
-  private createClient(apiKey: string): Anthropic {
-    return new Anthropic({
+  private createClient(apiKey: string): OpenAI {
+    return new OpenAI({
       apiKey,
       dangerouslyAllowBrowser: true  // 前端環境需要此設定
     })
@@ -145,7 +121,7 @@ export class ClaudeAdapter implements LLMAdapter {
 
   /**
    * 驗證 API Key
-   * 使用 countTokens API（免費）來驗證，不消耗 tokens
+   * 使用 models.list API 來驗證，這是最輕量的驗證方式
    */
   async validateApiKey(apiKey: string): Promise<ValidateApiKeyResult> {
     try {
@@ -155,33 +131,31 @@ export class ClaudeAdapter implements LLMAdapter {
 
       const client = this.createClient(apiKey)
 
-      // 使用 countTokens 來驗證 API Key（免費，不消耗 tokens）
-      const response = await client.messages.countTokens({
-        model: getModelName('claude', 'lite'),
-        messages: [{ role: 'user', content: 'test' }]
-      })
+      // 使用 models.list 來驗證 API Key
+      // 這是最輕量的方式，不消耗 tokens
+      const response = await client.models.list()
 
-      // 如果能成功回傳 token 數量，表示 API Key 有效
-      if (response && typeof response.input_tokens === 'number') {
+      // 如果能成功回傳模型列表，表示 API Key 有效
+      if (response && response.data) {
         return { valid: true }
       }
 
       return { valid: false, error: '無法取得回應' }
     } catch (error: any) {
-      console.error('Claude API Key 驗證失敗:', error)
+      console.error('OpenAI API Key 驗證失敗:', error)
 
-      if (error instanceof Anthropic.APIError) {
+      if (error instanceof OpenAI.APIError) {
         const status = error.status
         const message = error.message || ''
 
-        if (status === 401 || message.includes('invalid_api_key')) {
+        if (status === 401 || message.includes('invalid_api_key') || message.includes('Incorrect API key')) {
           return { valid: false, error: 'API Key 無效' }
-        } else if (status === 429 || message.includes('rate_limit')) {
+        } else if (status === 429) {
           return { valid: false, error: 'API 請求過於頻繁，請稍後再試' }
-        } else if (status === 529 || message.includes('overloaded')) {
-          return { valid: false, error: 'Claude 服務目前過載，請稍後再試' }
         } else if (status === 403) {
           return { valid: false, error: 'API Key 權限不足' }
+        } else if (status === 500 || status === 503) {
+          return { valid: false, error: 'OpenAI 服務目前不可用，請稍後再試' }
         } else {
           return { valid: false, error: `驗證失敗：${message || '未知錯誤'}` }
         }
@@ -205,7 +179,6 @@ export class ClaudeAdapter implements LLMAdapter {
       temperature = 0.7,
       maxOutputTokens = 2048,
       topP,
-      topK,
       apiKey: optionsApiKey,
       queueDescription
     } = options || {}
@@ -213,40 +186,38 @@ export class ClaudeAdapter implements LLMAdapter {
     // 優先使用 options 傳入的 apiKey，否則從 userStore 取得
     const apiKey = optionsApiKey || await this.getApiKey()
     const client = this.createClient(apiKey)
-    const modelName = getModelName('claude', modelType)
+    const modelName = getModelName('openai', modelType)
 
-    // 轉換訊息格式（過濾掉 system role）
-    const claudeMessages = normalizeMessages(
-      messages
-        .filter(msg => msg.role !== 'system')
-        .map(msg => ({
-          role: msg.role as 'user' | 'assistant',
-          content: msg.content
-        }))
-    )
+    // 建立訊息陣列
+    const openaiMessages: OpenAIMessage[] = []
 
-    const createParams: Anthropic.MessageCreateParams = {
-      model: modelName,
-      max_tokens: maxOutputTokens,
-      messages: claudeMessages,
-      temperature
+    // 加入 system 訊息
+    if (systemInstruction) {
+      openaiMessages.push({ role: 'system', content: systemInstruction })
     }
 
-    if (systemInstruction) {
-      createParams.system = systemInstruction
+    // 轉換訊息格式並加入
+    openaiMessages.push(
+      ...messages.map(msg => ({
+        role: msg.role as 'user' | 'assistant' | 'system',
+        content: msg.content
+      }))
+    )
+
+    const createParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+      model: modelName,
+      max_tokens: maxOutputTokens,
+      messages: openaiMessages,
+      temperature
     }
 
     if (topP !== undefined) {
       createParams.top_p = topP
     }
 
-    if (topK !== undefined) {
-      createParams.top_k = topK
-    }
-
     // 透過佇列發送請求，避免超過 rate limit
-    const response = await enqueueClaudeRequest(
-      () => client.messages.create(createParams),
+    const response = await enqueueOpenAIRequest<OpenAI.Chat.Completions.ChatCompletion>(
+      () => client.chat.completions.create(createParams),
       modelType === 'lite' ? 'lite' : 'main',
       queueDescription || '內容生成'
     )
@@ -258,7 +229,7 @@ export class ClaudeAdapter implements LLMAdapter {
         raw: response,
         blocked: true,
         blockReason: blocked.reason,
-        finishReason: response.stop_reason || undefined
+        finishReason: response.choices[0]?.finish_reason || undefined
       }
     }
 
@@ -267,7 +238,7 @@ export class ClaudeAdapter implements LLMAdapter {
       text: getActuallyContent(text),
       raw: response,
       blocked: false,
-      finishReason: response.stop_reason || undefined
+      finishReason: response.choices[0]?.finish_reason || undefined
     }
   }
 
@@ -315,8 +286,8 @@ export class ClaudeAdapter implements LLMAdapter {
         _userMsg = convertToShortIds(_userMsg, context.otherCharactersInRoom)
       }
 
-      // 轉換歷史訊息為 Claude 格式
-      const historyMessages: ClaudeMessage[] = processedMessages.slice(-20).map(msg => {
+      // 轉換歷史訊息為 OpenAI 格式
+      const historyMessages: OpenAIMessage[] = processedMessages.slice(-20).map(msg => {
         const isUser = msg.senderId === 'user'
         let content = msg.content
 
@@ -335,23 +306,22 @@ export class ClaudeAdapter implements LLMAdapter {
         historyMessages.push({ role: 'user', content: _userMsg })
       }
 
-      // 正規化訊息序列（群聊模式插入假 user 訊息，避免 AI 誤以為要扮演多角色）
-      const normalizedMessages = normalizeMessages(historyMessages, isGroupChat)
-
       // 發送請求（透過佇列）
-      const sendAndCheck = async (chatMessages: ClaudeMessage[]): Promise<{ text: string; response: Anthropic.Message }> => {
-        const createParams: Anthropic.MessageCreateParams = {
-          model: getModelName('claude', 'main'),
+      const sendAndCheck = async (chatMessages: OpenAIMessage[]): Promise<{ text: string; response: OpenAI.Chat.Completions.ChatCompletion }> => {
+        const createParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+          model: getModelName('openai', 'main'),
           max_tokens: character.maxOutputTokens || 2048,
-          system: systemPrompt,
-          messages: chatMessages,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...chatMessages
+          ],
           temperature: 0.95,
-          top_k: 40
+          top_p: 0.9
         }
 
         // 透過佇列發送請求，避免超過 rate limit
-        const response = await enqueueClaudeRequest(
-          () => client.messages.create(createParams),
+        const response = await enqueueOpenAIRequest(
+          () => client.chat.completions.create(createParams),
           'main',
           `角色對話：${character.name}`
         )
@@ -367,19 +337,19 @@ export class ClaudeAdapter implements LLMAdapter {
 
       // 多層降級重試
       let text: string
-      let response: Anthropic.Message
+      let response: OpenAI.Chat.Completions.ChatCompletion
 
       try {
-        const result = await sendAndCheck(normalizedMessages)
+        const result = await sendAndCheck(historyMessages)
         text = result.text
         response = result.response
       } catch (firstError: any) {
-        if (firstError instanceof ContentBlockedError && normalizedMessages.length > 2) {
+        if (firstError instanceof ContentBlockedError && historyMessages.length > 2) {
           console.warn('⚠️ 內容被封鎖（完整歷史），嘗試縮短對話歷史重試...')
 
           try {
-            // 縮短到最後 3 條訊息，並重新正規化
-            const shorterMessages = normalizeMessages(historyMessages.slice(-3), isGroupChat)
+            // 縮短到最後 3 條訊息
+            const shorterMessages = historyMessages.slice(-3)
 
             const result = await sendAndCheck(shorterMessages)
             text = result.text
@@ -448,7 +418,8 @@ export class ClaudeAdapter implements LLMAdapter {
       }
 
       // 檢查是否因為 max_tokens 被截斷
-      if (response.stop_reason === 'max_tokens') {
+      const finishReason = response.choices[0]?.finish_reason
+      if (finishReason === 'length') {
         console.warn('⚠️ AI 回應因達到 token 上限而被截斷')
         throw new Error('MAX_TOKENS_REACHED')
       }
@@ -501,11 +472,11 @@ export class ClaudeAdapter implements LLMAdapter {
         newAffection: undefined
       }
     } catch (error: any) {
-      console.error('Claude API 錯誤:', error)
+      console.error('OpenAI API 錯誤:', error)
       throw new Error(formatErrorMessage(error))
     }
   }
 }
 
 // 匯出單例
-export const claudeAdapter = new ClaudeAdapter()
+export const openaiAdapter = new OpenAIAdapter()

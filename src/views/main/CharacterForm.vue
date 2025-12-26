@@ -527,13 +527,24 @@ const getDefaultAvatar = (name: string) => {
               </span>
             </label>
             <!-- 各服務商選項 -->
-            <label v-for="provider in implementedProviders" :key="provider" class="radio-item">
-              <input v-model="llmProvider" type="radio" :value="provider">
+            <label
+              v-for="provider in implementedProviders"
+              :key="provider"
+              class="radio-item"
+              :class="{ disabled: !userStore.hasApiKey(provider) }"
+            >
+              <input
+                v-model="llmProvider"
+                type="radio"
+                :value="provider"
+                :disabled="!userStore.hasApiKey(provider)"
+              >
               <span class="provider-option">
                 <b class="provider-icon" :style="{ color: getProviderConfig(provider).iconColor }">
                   {{ getProviderConfig(provider).icon }}
                 </b>
                 <span class="provider-label">{{ getProviderConfig(provider).name }}</span>
+                <span v-if="!userStore.hasApiKey(provider)" class="no-key-hint">（未設定）</span>
               </span>
             </label>
           </div>          
@@ -847,6 +858,13 @@ const getDefaultAvatar = (name: string) => {
 .provider-label {
   display: block;
   font-size: var(--text-sm);
+}
+
+.no-key-hint {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
 }
 
 /* 選中時 icon 稍微亮一點，文字白色 */

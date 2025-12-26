@@ -52,13 +52,14 @@ export const LLM_CONFIG: Record<LLMProvider, ProviderConfig> = {
   },
   openai: {
     name: 'OpenAI',
-    mainModel: 'gpt-4o',
-    liteModel: 'gpt-4o-mini',
-    mainModelDisplay: 'GPT-4o',
-    liteModelDisplay: 'GPT-4o mini',
+    mainModel: 'gpt-4.1',
+    liteModel: 'gpt-4.1-mini',
+    mainModelDisplay: 'GPT-4.1',
+    liteModelDisplay: 'GPT-4.1 mini',
     consoleUrl: 'https://platform.openai.com/api-keys',
     icon: '⬡',
-    iconColor: '#10A37F',
+    iconColor: '#000000',
+    iconColorDark: '#FFFFFF',
     tooltip: 'OpenAI'
   },
   claude: {

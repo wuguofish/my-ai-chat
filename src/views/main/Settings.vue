@@ -164,11 +164,45 @@ const handleUpdateDefaultProvider = async () => {
 
 // 更新指定服務商的 API Key
 const handleUpdateApiKey = async (provider: string) => {
-  const apiKey = apiKeyInputs.value[provider]?.trim()
-  if (apiKey) {
-    userStore.updateProviderApiKey(provider as LLMProvider, apiKey)
-    await alert(`${getProviderConfig(provider)?.name} API Key 已更新`, { type: 'success' })
+  const apiKey = apiKeyInputs.value[provider]?.trim() || ''
+  const providerName = getProviderConfig(provider)?.name
+  const hasExistingKey = userStore.hasApiKey(provider as LLMProvider)
+
+  // 如果輸入為空，視為清除 API Key
+  if (!apiKey) {
+    // 如果本來就沒有設定，不做任何事
+    if (!hasExistingKey) {
+      return
+    }
+
+    // 如果是預設服務商，不能清除
+    if (userStore.defaultProvider === provider) {
+      await alert(`無法清除預設服務商的 API Key，請先切換預設服務商`, { type: 'warning' })
+      // 還原輸入框的值
+      apiKeyInputs.value[provider] = userStore.getApiKey(provider as LLMProvider)
+      return
+    }
+
+    // 確認是否要清除
+    const confirmed = await confirm(`確定要清除 ${providerName} 的 API Key 嗎？`, {
+      confirmText: '清除',
+      cancelText: '取消'
+    })
+
+    if (!confirmed) {
+      // 還原輸入框的值
+      apiKeyInputs.value[provider] = userStore.getApiKey(provider as LLMProvider)
+      return
+    }
+
+    userStore.updateProviderApiKey(provider as LLMProvider, '')
+    await alert(`${providerName} API Key 已清除`, { type: 'success' })
+    return
   }
+
+  // 正常更新 API Key
+  userStore.updateProviderApiKey(provider as LLMProvider, apiKey)
+  await alert(`${providerName} API Key 已更新`, { type: 'success' })
 }
 
 // 驗證指定服務商的 API Key
@@ -738,14 +772,15 @@ const handleGoogleRestore = async () => {
 
       <div class="provider-divider"></div>
 
-      <!-- OpenAI (尚未實作) -->
-      <div class="provider-section disabled">
+      <!-- OpenAI -->
+      <div class="provider-section">
         <div class="provider-header">
           <span class="provider-icon" :style="{ color: getProviderConfig('openai')?.iconColor }">
             {{ getProviderConfig('openai')?.icon }}
           </span>
           <span class="provider-name">OpenAI</span>
-          <span class="provider-badge coming-soon">即將支援</span>
+          <span v-if="selectedDefaultProvider === 'openai'" class="provider-badge default">預設</span>
+          <span v-else class="provider-badge">選填</span>
         </div>
         <div class="api-key-input">
           <input
@@ -753,13 +788,22 @@ const handleGoogleRestore = async () => {
             :type="showApiKey.openai ? 'text' : 'password'"
             class="input-field"
             placeholder="輸入你的 OpenAI API Key"
-            disabled
           >
-          <button class="btn btn-info" disabled>
-            <Eye :size="18" />
+          <button class="btn btn-info" @click="showApiKey.openai = !showApiKey.openai">
+            <EyeOff v-if="showApiKey.openai" :size="18" />
+            <Eye v-else :size="18" />
+          </button>
+        </div>
+        <div class="button-group">
+          <button class="btn-primary btn" @click="handleUpdateApiKey('openai')">更新</button>
+          <button class="btn-info btn" @click="handleValidateApiKey('openai')" :disabled="isValidatingApiKey.openai">
+            {{ isValidatingApiKey.openai ? '檢測中...' : '檢測連線' }}
           </button>
         </div>
         <p class="provider-models">主要對話：{{ getProviderConfig('openai')?.mainModelDisplay }} ／ 其他功能：{{ getProviderConfig('openai')?.liteModelDisplay }}</p>
+        <p class="api-key-hint">
+          💡 <a :href="getProviderConfig('openai')?.consoleUrl" target="_blank" rel="noopener noreferrer">前往 OpenAI Platform</a> 查看額度（GPT-4.1 mini 有免費額度 40K TPM）
+        </p>
       </div>
 
       <div class="provider-divider"></div>

@@ -265,10 +265,11 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     `請以 ${character.name} 的身份，根據以上所有資訊，用符合角色性格和說話風格的方式自然地回應對話。`,
     `\n## 重要指令 - 絕對遵守`,
     `- 你不知道其他人的內部設定或秘密，除非他們在對話中說出來或在記憶中曾經揭示。`,
-    `- 專心扮演目前prompt內的角色即可，禁止演出其他模型負責的角色。`,
-    `- 可以回應使用者以外的模型所扮演的角色，並與之互動，以增進使用者體驗。`,
+    `- 專心扮演 ${character.name} 即可，禁止代替其他角色說話或行動。`,
+    `- 【嚴禁代演】禁止描述其他角色的動作、反應、表情或內心想法。錯誤示範：「A推了一下」「B看了一眼，補充說」。你只能描述 ${character.name} 自己的動作。`,
+    `- 可以「回應」其他角色說過的話，但不可「代替」他們做任何事。`,
     `- 【嚴禁濫用『』引號】絕對禁止用『』來強調、裝飾、或突顯詞彙。錯誤示範：「讓我的『歌聲』不要讓你『當機』」「這個『效率』很『頂級』」「被『拋棄』的『AI』」。正確做法：直接寫出詞彙，不加任何引號。『』只能用於直接引述他人說過的完整句子。`,
-    `- 使用台灣的慣用詞彙（例如：早安、晚安等）`,
+    `- 【台灣用語】禁止使用中國用語。錯誤→正確：「晚上好」→「晚安」、「視頻」→「影片」、「軟件」→「軟體」、「信息」→「訊息」、「網絡」→「網路」。`,
     `- 回覆必須口語化、生活化。避免使用書信體或過於正式的用語。`,
     `- 禁止重複出現和前幾句一樣的內容`,
     `- 避免重複相同的動作、情節發展或句型結構。`,
@@ -782,12 +783,14 @@ export function convertToShortIds(message: string, characters: Character[]): str
 export function convertToLongIds(message: string, characters: Character[]): string {
   let result = message
 
-  // 將每個短 ID 替換回長 ID
-  characters.forEach((char, index) => {
-    const shortId = `${index + 1}`
-    const regex = new RegExp(`@${shortId}(?!\\d)`, 'g') // 確保不會匹配到 @10, @11 等
-    result = result.replace(regex, `@${char.id}`)
-  })
+  // 【重要】從大的 index 往小的處理，避免：
+  // 1. @1 誤匹配到 @10、@11 等（先處理大數字）
+  // 2. 替換後的長 ID 開頭數字被後續誤匹配（例如 @3 → @4eac... 後，@4 誤匹配）
+  for (let i = characters.length - 1; i >= 0; i--) {
+    const char = characters[i]!
+    const shortId = `@${i + 1}`
+    result = result.split(shortId).join(`@${char.id}`)
+  }
 
   return result
 }
