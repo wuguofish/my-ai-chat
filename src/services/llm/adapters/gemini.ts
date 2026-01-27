@@ -6,12 +6,15 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, type GenerativeMo
 import type {
   LLMAdapter,
   LLMMessage,
+  LLMMessageContent,
   GenerateOptions,
   GenerateResponse,
   ValidateApiKeyResult,
   GetCharacterResponseParams,
   CharacterResponse
 } from '../types'
+import type { Part } from '@google/generative-ai'
+import { imageAttachmentToLLMFormat } from '@/utils/imageHelpers'
 import { ContentBlockedError } from '../types'
 import { getModelName, getGeminiModelName } from '../config'
 import {
@@ -131,6 +134,28 @@ export function createGeminiModel(
 }
 
 /**
+ * 將 LLMMessageContent 轉換為 Gemini 的 Part 陣列
+ */
+function convertToGeminiParts(content: LLMMessageContent): Part[] {
+  if (typeof content === 'string') {
+    return [{ text: content }]
+  }
+
+  return content.map(item => {
+    if (item.type === 'text') {
+      return { text: item.text }
+    }
+    // 圖片
+    return {
+      inlineData: {
+        mimeType: item.mimeType,
+        data: item.data
+      }
+    }
+  })
+}
+
+/**
  * 檢查 Gemini 回應是否被封鎖
  */
 function checkResponseBlocked(response: any): { reason: string; message: string } | null {
@@ -235,19 +260,20 @@ export class GeminiAdapter implements LLMAdapter {
 
     // 分離 history 和最後的 prompt
     const lastUserIndex = messages.map(m => m.role).lastIndexOf('user')
-    const userPrompt = lastUserIndex >= 0 ? messages[lastUserIndex]?.content || '' : ''
+    const lastUserMessage = lastUserIndex >= 0 ? messages[lastUserIndex] : null
+    const userPromptContent = lastUserMessage?.content || ''
     const historyMessages = lastUserIndex > 0 ? messages.slice(0, lastUserIndex) : []
 
-    // 轉換歷史訊息為 Gemini 格式
+    // 轉換歷史訊息為 Gemini 格式（支援多模態）
     const history: Content[] = historyMessages.map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: msg.content }]
+      parts: convertToGeminiParts(msg.content)
     }))
 
     // 加入 workaround：先加 user prompt，再加假的 model 回應
     history.push({
       role: 'user',
-      parts: [{ text: userPrompt }]
+      parts: convertToGeminiParts(userPromptContent)
     })
     history.push({
       role: 'model',
@@ -288,7 +314,7 @@ export class GeminiAdapter implements LLMAdapter {
    * API Key 自動從 userStore 取得
    */
   async getCharacterResponse(params: GetCharacterResponseParams): Promise<CharacterResponse> {
-    const { character, user, room, messages, userMessage, context } = params
+    const { character, user, room, messages, userMessage, userImages, context } = params
 
     try {
       const apiKey = await this.getApiKey()
@@ -367,13 +393,43 @@ export class GeminiAdapter implements LLMAdapter {
 
       history = ensureHistoryStartsWithUser(history)
 
+      // 建立使用者訊息的 parts（包含圖片）
+      const buildUserMessageParts = (text: string): Part[] => {
+        const parts: Part[] = []
+
+        // 如果有圖片，先加入圖片
+        if (userImages && userImages.length > 0) {
+          for (const img of userImages) {
+            const { mimeType, data } = imageAttachmentToLLMFormat(img)
+            parts.push({
+              inlineData: { mimeType, data }
+            })
+          }
+        }
+
+        // 加入文字
+        if (text) {
+          parts.push({ text })
+        }
+
+        // 確保至少有一個 part（Gemini API 要求每個 Content 至少有一個 part）
+        // 這種情況發生在群聊後續輪，需要一個 placeholder 來維持 user/model 交替
+        if (parts.length === 0) {
+          parts.push({ text: '（對話繼續）' })
+        }
+
+        return parts
+      }
+
       // 發送訊息並檢查回應
       const sendAndCheck = async (chatHistory: Content[], userMsg: string): Promise<{ text: string; response: any }> => {
         const historyWithUserMsg = [...chatHistory]
+
         historyWithUserMsg.push({
           role: 'user',
-          parts: [{ text: userMsg }]
+          parts: buildUserMessageParts(userMsg)
         })
+
         historyWithUserMsg.push({
           role: 'model',
           parts: [{ text: `[${character.name}]:` }]

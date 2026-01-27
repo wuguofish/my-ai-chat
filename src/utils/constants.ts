@@ -25,6 +25,20 @@ export const LIMITS = {
   MAX_POSTS: 120,
   MAX_COMMENTS_PER_POST: 48,
   MAX_NOTIFICATIONS: 50,
+  // 圖片相關限制
+  MAX_IMAGE_WIDTH: 1024,              // 圖片最大寬度（px）
+  MAX_IMAGE_HEIGHT: 1024,             // 圖片最大高度（px）
+  MAX_IMAGE_SIZE_KB: 500,             // 單張圖片最大 500KB
+  MAX_IMAGES_PER_MESSAGE: 4,          // 每則訊息最多 4 張圖片
+} as const
+
+/**
+ * 圖片相關常數
+ */
+export const IMAGE_CONSTANTS = {
+  SUPPORTED_TYPES: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const,
+  QUALITY_STEPS: [0.85, 0.7, 0.5, 0.3] as const,  // 漸進式壓縮品質
+  DEFAULT_MIME_TYPE: 'image/jpeg' as const,
 } as const
 
 // ==========================================

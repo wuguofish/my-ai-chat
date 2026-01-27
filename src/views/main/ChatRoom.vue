@@ -8,7 +8,7 @@ import { useRelationshipsStore } from '@/stores/relationships'
 import { useMemoriesStore } from '@/stores/memories'
 import { useToast } from '@/composables/useToast'
 import { useModal } from '@/composables/useModal'
-import type { Character } from '@/types'
+import type { Character, ImageAttachment } from '@/types'
 import {
   formatMessageTime,
   formatMessageForAI,
@@ -28,7 +28,9 @@ import {
   evaluateCharacterRelationshipsWithMood
 } from '@/services/memoryService'
 import { getDefaultAdapter, getCharacterProviderInfo, cleanExcessiveQuotes } from '@/services/llm'
-import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users, Pencil, UserRoundX, SquareAsterisk } from 'lucide-vue-next'
+import { compressImage, getImageFromPaste, isValidImageType } from '@/utils/imageHelpers'
+import { LIMITS } from '@/utils/constants'
+import { ArrowLeft, Send, Copy, Trash2, X, MessageCircle, Bubbles, FileText, Users, Pencil, UserRoundX, SquareAsterisk, ImageIcon } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -201,6 +203,11 @@ const messageInputRef = ref<HTMLTextAreaElement | null>(null)
 const messagesContainer = ref<HTMLElement | null>(null)
 const isLoading = ref(false)
 
+// 圖片上傳（僅私聊支援）
+const pendingImages = ref<ImageAttachment[]>([])
+const imageInputRef = ref<HTMLInputElement | null>(null)
+const isCompressingImage = ref(false)
+
 // @ 選單（使用共用 composable）
 const isGroupChat = computed(() => room.value?.type === 'group')
 const {
@@ -244,6 +251,20 @@ const showMemoryPanel = ref(false)   // 記憶/成員面板
 const showMemberMemoryModal = ref(false)  // 成員記憶彈窗
 const selectedMemberForMemory = ref<Character | null>(null)  // 選中查看記憶的成員
 const memoryTab = ref<'short' | 'long'>('short')
+
+// 圖片預覽
+const showImagePreview = ref(false)
+const previewImageSrc = ref('')
+
+const openImagePreview = (src: string) => {
+  previewImageSrc.value = src
+  showImagePreview.value = true
+}
+
+const closeImagePreview = () => {
+  showImagePreview.value = false
+  previewImageSrc.value = ''
+}
 
 // 取得短期記憶（角色綁定）
 const shortTermMemories = computed(() => {
@@ -766,26 +787,102 @@ const handleInsertAction = () => {
   }
 }
 
+// ============================================
+// 圖片上傳功能
+// ============================================
+
+// 觸發圖片選擇
+const triggerImageUpload = () => {
+  imageInputRef.value?.click()
+}
+
+// 處理圖片選擇
+const handleImageSelect = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const files = input.files
+  if (!files || files.length === 0) return
+
+  await processImageFiles(Array.from(files))
+  // 清空 input，允許重複選擇同一檔案
+  input.value = ''
+}
+
+// 處理貼上圖片
+const handlePaste = async (event: ClipboardEvent) => {
+  const imageFile = getImageFromPaste(event)
+  if (imageFile) {
+    event.preventDefault()
+    await processImageFiles([imageFile])
+  }
+}
+
+// 處理圖片檔案（壓縮並加入待發送列表）
+const processImageFiles = async (files: File[]) => {
+  // 檢查數量限制
+  const remainingSlots = LIMITS.MAX_IMAGES_PER_MESSAGE - pendingImages.value.length
+  if (remainingSlots <= 0) {
+    info(`每則訊息最多 ${LIMITS.MAX_IMAGES_PER_MESSAGE} 張圖片`)
+    return
+  }
+
+  const filesToProcess = files.slice(0, remainingSlots)
+  isCompressingImage.value = true
+
+  try {
+    for (const file of filesToProcess) {
+      if (!isValidImageType(file)) {
+        info('不支援的圖片格式，請使用 JPEG、PNG、WebP 或 GIF')
+        continue
+      }
+
+      const compressed = await compressImage(file)
+      pendingImages.value.push(compressed)
+    }
+  } catch (error) {
+    console.error('圖片處理失敗:', error)
+    info('圖片處理失敗，請重試')
+  } finally {
+    isCompressingImage.value = false
+  }
+}
+
+// 移除待發送圖片
+const removePendingImage = (index: number) => {
+  pendingImages.value.splice(index, 1)
+}
+
+// 清空待發送圖片
+const clearPendingImages = () => {
+  pendingImages.value = []
+}
+
 // 發送訊息
 const handleSendMessage = async () => {
-  if (!messageInput.value.trim() || isLoading.value || !room.value) return
+  const hasText = messageInput.value.trim().length > 0
+  const hasImages = pendingImages.value.length > 0
+
+  // 需要有文字或圖片才能發送
+  if ((!hasText && !hasImages) || isLoading.value || !room.value) return
 
   const userMessage = messageInput.value.trim()
+  const imagesToSend = [...pendingImages.value]  // 複製待發送圖片
+
   messageInput.value = ''
+  clearPendingImages()  // 清空待發送圖片
 
   // 清除草稿（訊息已發送）
   chatRoomStore.clearDraft(roomId.value)
 
   // 判斷是單人還是群組聊天
   if (room.value.type === 'single') {
-    await handleSingleChatMessage(userMessage)
+    await handleSingleChatMessage(userMessage, imagesToSend)
   } else {
-    await handleGroupChatMessage(userMessage)
+    await handleGroupChatMessage(userMessage, imagesToSend)
   }
 }
 
 // 處理單人聊天訊息
-const handleSingleChatMessage = async (userMessage: string) => {
+const handleSingleChatMessage = async (userMessage: string, images?: ImageAttachment[]) => {
   if (!character.value) return
 
   // 保存當前聊天室 ID、room 和角色，用於背景執行
@@ -793,12 +890,13 @@ const handleSingleChatMessage = async (userMessage: string) => {
   const currentRoom = room.value
   const currentCharacter = character.value
 
-  // 新增使用者訊息
+  // 新增使用者訊息（包含圖片）
   chatRoomStore.addMessage(currentRoomId, {
     roomId: currentRoomId,
     senderId: 'user',
     senderName: userName.value,
-    content: userMessage
+    content: userMessage,
+    images: images && images.length > 0 ? images : undefined
   })
 
   scrollToBottom()
@@ -843,6 +941,7 @@ const handleSingleChatMessage = async (userMessage: string) => {
       room: targetRoom || currentRoom,
       messages: currentMessages.slice(0, -1),
       userMessage,
+      userImages: images,  // 傳遞使用者附帶的圖片
       context: {
         userRelationship,
         characterRelationships,
@@ -940,7 +1039,7 @@ const handleSingleChatMessage = async (userMessage: string) => {
 }
 
 // 處理群組聊天訊息
-const handleGroupChatMessage = async (userMessage: string) => {
+const handleGroupChatMessage = async (userMessage: string, images?: ImageAttachment[]) => {
   if (!room.value) return
 
   // 保存當前聊天室 ID 和資料，用於背景執行
@@ -957,12 +1056,13 @@ const handleGroupChatMessage = async (userMessage: string) => {
   // 轉換使用者訊息：@名字 → @ID
   const messageForAI = formatMessageForAI(userMessage, allCharacters, userName.value)
 
-  // 新增使用者訊息（儲存原始訊息）
+  // 新增使用者訊息（儲存原始訊息，包含圖片）
   chatRoomStore.addMessage(currentRoomId, {
     roomId: currentRoomId,
     senderId: 'user',
     senderName: userName.value,
-    content: userMessage
+    content: userMessage,
+    images: images && images.length > 0 ? images : undefined
   })
 
   scrollToBottom()
@@ -1094,10 +1194,14 @@ const handleGroupChatMessage = async (userMessage: string) => {
             updatedAt: new Date().toISOString()
           },
           room: targetRoom || currentRoom,
-          // 傳入該聊天室的最新訊息歷史（排除正在生成的這一則）
-          messages: (currentRound === 1 && isFirstCharacterInThisRound) ? currentMessages.slice(0, -1) : currentMessages,
-          // 只有第一輪的第一個角色需要傳入 userMessage，其他角色會在 messages 中看到
-          userMessage: (currentRound === 1 && isFirstCharacterInThisRound) ? messageForAI : '',
+          // 傳入該聊天室的最新訊息歷史
+          // 第一輪：排除剛加入的使用者訊息（會通過 userMessage 傳入）
+          // 後續輪：包含完整歷史
+          messages: currentRound === 1 ? currentMessages.slice(0, -1) : currentMessages,
+          // 第一輪的所有角色都收到使用者訊息，後續輪從 messages 中看到
+          userMessage: currentRound === 1 ? messageForAI : '',
+          // 只有第一輪的第一個角色需要傳入圖片，後續角色從對話中得知圖片內容
+          userImages: (currentRound === 1 && isFirstCharacterInThisRound) ? images : undefined,
           context: {
             userRelationship,
             characterRelationships,
@@ -1950,7 +2054,18 @@ onBeforeUnmount(() => {
               <span class="sender-name">{{ message.senderName }}</span>
               <span class="message-time">{{ formatMessageTime(message.timestamp) }}</span>
             </div>
-            <div class="message-text" v-html="formatMessageContent(message.content)"></div>
+            <!-- 訊息中的圖片 -->
+            <div v-if="message.images && message.images.length > 0" class="message-images">
+              <img
+                v-for="img in message.images"
+                :key="img.id"
+                :src="img.data"
+                :alt="'圖片'"
+                class="message-image"
+                @click="openImagePreview(img.data)"
+              />
+            </div>
+            <div v-if="message.content" class="message-text" v-html="formatMessageContent(message.content)"></div>
           </div>
         </div>
       </div>
@@ -2006,20 +2121,58 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- 隱藏的圖片上傳 input -->
+    <input
+      ref="imageInputRef"
+      type="file"
+      accept="image/jpeg,image/png,image/webp,image/gif"
+      multiple
+      style="display: none"
+      @change="handleImageSelect"
+    />
+
     <!-- Input -->
     <div v-if="isDeletedFriendRoom" class="input-container deleted-friend-notice">
       <p class="readonly-notice">此好友已被刪除，無法發送新訊息</p>
     </div>
-    <div v-else class="input-container">
-      <button class="action-btn" @click="handleInsertAction" title="插入動作 *動作*">
-        <i><SquareAsterisk :size="20" /></i>
-      </button>
-      <textarea ref="messageInputRef" v-model="messageInput" class="message-input"
-        :placeholder="isTouchDevice() ? '輸入訊息...' : '輸入訊息... (Enter 送出，Shift+Enter 換行)'" rows="1" :disabled="isLoading"
-        @input="handleInputChange" @keydown="handleKeydown"></textarea>
-      <button class="send-btn" :disabled="!messageInput.trim() || isLoading" @click="handleSendMessage">
-        <Send :size="20" />
-      </button>
+    <div v-else class="input-wrapper">
+      <!-- 待發送圖片預覽（私聊專用） -->
+      <div v-if="pendingImages.length > 0" class="pending-images">
+        <div
+          v-for="(img, index) in pendingImages"
+          :key="img.id"
+          class="pending-image-item"
+        >
+          <img :src="img.data" :alt="`待發送圖片 ${index + 1}`" />
+          <button class="remove-image-btn" @click="removePendingImage(index)" title="移除圖片">
+            <X :size="14" />
+          </button>
+        </div>
+        <div v-if="isCompressingImage" class="compressing-indicator">
+          壓縮中...
+        </div>
+      </div>
+
+      <div class="input-container">
+        <button class="action-btn" @click="handleInsertAction" title="插入動作 *動作*">
+          <i><SquareAsterisk :size="20" /></i>
+        </button>
+        <!-- 圖片上傳按鈕 -->
+        <button
+          class="action-btn image-btn"
+          @click="triggerImageUpload"
+          :disabled="isLoading || pendingImages.length >= LIMITS.MAX_IMAGES_PER_MESSAGE"
+          :title="`上傳圖片（最多 ${LIMITS.MAX_IMAGES_PER_MESSAGE} 張）`"
+        >
+          <i><ImageIcon :size="20" /></i>
+        </button>
+        <textarea ref="messageInputRef" v-model="messageInput" class="message-input"
+          :placeholder="isTouchDevice() ? '輸入訊息...' : '輸入訊息... (Enter 送出，Shift+Enter 換行)'" rows="1" :disabled="isLoading"
+          @input="handleInputChange" @keydown="handleKeydown" @paste="handlePaste"></textarea>
+        <button class="send-btn" :disabled="(!messageInput.trim() && pendingImages.length === 0) || isLoading" @click="handleSendMessage">
+          <Send :size="20" />
+        </button>
+      </div>
     </div>
 
     <!-- 群組成員 Modal -->
@@ -2121,6 +2274,14 @@ onBeforeUnmount(() => {
           <button class="btn-primary" @click="handleSaveEdit">儲存</button>
         </div>
       </div>
+    </div>
+
+    <!-- 圖片預覽 Modal -->
+    <div v-if="showImagePreview" class="image-preview-overlay" @click="closeImagePreview">
+      <button class="image-preview-close" @click="closeImagePreview">
+        <X :size="24" />
+      </button>
+      <img :src="previewImageSrc" alt="圖片預覽" class="image-preview-content" @click.stop />
     </div>
   </div>
 </template>
@@ -2653,6 +2814,151 @@ onBeforeUnmount(() => {
 
 .action-btn svg {
   display: block;
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.action-btn:disabled:hover {
+  background: none;
+  color: var(--color-text-secondary);
+}
+
+/* Input Wrapper (for pending images) */
+.input-wrapper {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-primary);
+  border-top: 2px solid var(--color-border);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.input-wrapper .input-container {
+  border-top: none;
+  box-shadow: none;
+}
+
+/* Pending Images */
+.pending-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-xl) 0;
+}
+
+.pending-image-item {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 2px solid var(--color-border);
+}
+
+.pending-image-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.remove-image-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.remove-image-btn:hover {
+  background: var(--color-danger);
+}
+
+.compressing-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+  border: 2px dashed var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* Message Images */
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.message-image {
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.message-image:hover {
+  transform: scale(1.02);
+}
+
+/* Image Preview Modal */
+.image-preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--spacing-xl);
+}
+
+.image-preview-close {
+  position: absolute;
+  top: var(--spacing-lg);
+  right: var(--spacing-lg);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.image-preview-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.image-preview-content {
+  max-width: 90%;
+  max-height: 90%;
+  object-fit: contain;
+  border-radius: var(--radius);
 }
 
 /* Multi-select mode */

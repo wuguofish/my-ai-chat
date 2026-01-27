@@ -2,7 +2,7 @@
  * LLM 服務層 - 統一介面定義
  */
 
-import type { Character, Message, UserProfile, ChatRoom } from '@/types'
+import type { Character, Message, UserProfile, ChatRoom, ImageAttachment } from '@/types'
 import type { SystemPromptContext } from '@/utils/chatHelpers'
 
 /**
@@ -21,11 +21,33 @@ export type ModelType = 'main' | 'lite'
 export type SafetyLevel = 'safe' | 'unrestricted'
 
 /**
+ * 多模態內容 - 圖片
+ */
+export interface LLMImageContent {
+  type: 'image'
+  mimeType: string  // 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
+  data: string      // Base64 編碼（不含 data: 前綴）
+}
+
+/**
+ * 多模態內容 - 文字
+ */
+export interface LLMTextContent {
+  type: 'text'
+  text: string
+}
+
+/**
+ * LLM 訊息內容（支援純文字或多模態陣列）
+ */
+export type LLMMessageContent = string | (LLMTextContent | LLMImageContent)[]
+
+/**
  * 對話訊息格式（統一格式，各 adapter 自行轉換）
  */
 export interface LLMMessage {
   role: 'user' | 'assistant' | 'system'
-  content: string
+  content: LLMMessageContent
 }
 
 /**
@@ -95,6 +117,8 @@ export interface GetCharacterResponseParams {
   room?: ChatRoom
   messages: Message[]
   userMessage: string
+  /** 使用者訊息附帶的圖片（僅私聊支援） */
+  userImages?: ImageAttachment[]
   context?: Partial<SystemPromptContext>
 }
 

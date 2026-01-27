@@ -7,6 +7,7 @@ import OpenAI from 'openai'
 import type {
   LLMAdapter,
   LLMMessage,
+  LLMMessageContent,
   GenerateOptions,
   GenerateResponse,
   ValidateApiKeyResult,
@@ -22,13 +23,67 @@ import {
 } from '../utils'
 import { enqueueOpenAIRequest } from '@/services/apiQueue'
 import { generateSystemPrompt, convertToShortIds, convertToLongIds } from '@/utils/chatHelpers'
+import { imageAttachmentToLLMFormat } from '@/utils/imageHelpers'
+import type { ImageAttachment } from '@/types'
 
 /**
- * OpenAI API 訊息格式
+ * OpenAI API 內容區塊類型
  */
-type OpenAIMessage = {
-  role: 'system' | 'user' | 'assistant'
-  content: string
+type OpenAIContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } }
+
+/**
+ * 將 LLMMessageContent 轉換為 OpenAI 內容格式
+ */
+function convertToOpenAIContent(content: LLMMessageContent): string | OpenAIContentBlock[] {
+  if (typeof content === 'string') {
+    return content
+  }
+
+  return content.map(item => {
+    if (item.type === 'text') {
+      return { type: 'text' as const, text: item.text }
+    }
+    // 圖片：OpenAI 需要完整的 data URL
+    return {
+      type: 'image_url' as const,
+      image_url: {
+        url: `data:${item.mimeType};base64,${item.data}`,
+        detail: 'auto' as const
+      }
+    }
+  })
+}
+
+/**
+ * 建立包含圖片的 OpenAI 內容
+ */
+function buildOpenAIContentWithImages(text: string, images?: ImageAttachment[]): string | OpenAIContentBlock[] {
+  if (!images || images.length === 0) {
+    return text
+  }
+
+  const blocks: OpenAIContentBlock[] = []
+
+  // 先加入圖片
+  for (const img of images) {
+    const { mimeType, data } = imageAttachmentToLLMFormat(img)
+    blocks.push({
+      type: 'image_url',
+      image_url: {
+        url: `data:${mimeType};base64,${data}`,
+        detail: 'auto'
+      }
+    })
+  }
+
+  // 再加入文字
+  if (text) {
+    blocks.push({ type: 'text', text })
+  }
+
+  return blocks
 }
 
 /**
@@ -188,21 +243,32 @@ export class OpenAIAdapter implements LLMAdapter {
     const client = this.createClient(apiKey)
     const modelName = getModelName('openai', modelType)
 
-    // 建立訊息陣列
-    const openaiMessages: OpenAIMessage[] = []
+    // 建立訊息陣列（支援多模態）
+    const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
 
     // 加入 system 訊息
     if (systemInstruction) {
       openaiMessages.push({ role: 'system', content: systemInstruction })
     }
 
-    // 轉換訊息格式並加入
-    openaiMessages.push(
-      ...messages.map(msg => ({
-        role: msg.role as 'user' | 'assistant' | 'system',
-        content: msg.content
-      }))
-    )
+    // 轉換訊息格式並加入（支援多模態）
+    for (const msg of messages) {
+      const content = convertToOpenAIContent(msg.content)
+      if (msg.role === 'user') {
+        openaiMessages.push({ role: 'user', content })
+      } else if (msg.role === 'assistant') {
+        // assistant 只支援純文字
+        openaiMessages.push({
+          role: 'assistant',
+          content: typeof content === 'string' ? content : content.filter(c => c.type === 'text').map(c => (c as { type: 'text'; text: string }).text).join('')
+        })
+      } else if (msg.role === 'system') {
+        openaiMessages.push({
+          role: 'system',
+          content: typeof content === 'string' ? content : content.filter(c => c.type === 'text').map(c => (c as { type: 'text'; text: string }).text).join('')
+        })
+      }
+    }
 
     const createParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
       model: modelName,
@@ -247,7 +313,7 @@ export class OpenAIAdapter implements LLMAdapter {
    * API Key 自動從 userStore 取得
    */
   async getCharacterResponse(params: GetCharacterResponseParams): Promise<CharacterResponse> {
-    const { character, user, room, messages, userMessage, context } = params
+    const { character, user, room, messages, userMessage, userImages, context } = params
 
     try {
       const apiKey = await this.getApiKey()
@@ -287,7 +353,7 @@ export class OpenAIAdapter implements LLMAdapter {
       }
 
       // 轉換歷史訊息為 OpenAI 格式
-      const historyMessages: OpenAIMessage[] = processedMessages.slice(-20).map(msg => {
+      const historyMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = processedMessages.slice(-20).map(msg => {
         const isUser = msg.senderId === 'user'
         let content = msg.content
 
@@ -295,19 +361,20 @@ export class OpenAIAdapter implements LLMAdapter {
           content = `[${msg.senderName}]: ${msg.content}`
         }
 
-        return {
-          role: (isUser ? 'user' : 'assistant') as 'user' | 'assistant',
-          content
+        if (isUser) {
+          return { role: 'user' as const, content }
         }
+        return { role: 'assistant' as const, content }
       })
 
-      // 加入使用者訊息
-      if (_userMsg) {
-        historyMessages.push({ role: 'user', content: _userMsg })
+      // 加入使用者訊息（可能包含圖片）
+      if (_userMsg || (userImages && userImages.length > 0)) {
+        const userContent = buildOpenAIContentWithImages(_userMsg, userImages)
+        historyMessages.push({ role: 'user', content: userContent })
       }
 
       // 發送請求（透過佇列）
-      const sendAndCheck = async (chatMessages: OpenAIMessage[]): Promise<{ text: string; response: OpenAI.Chat.Completions.ChatCompletion }> => {
+      const sendAndCheck = async (chatMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]): Promise<{ text: string; response: OpenAI.Chat.Completions.ChatCompletion }> => {
         const createParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
           model: getModelName('openai', 'main'),
           max_tokens: character.maxOutputTokens || 2048,

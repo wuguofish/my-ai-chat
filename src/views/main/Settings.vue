@@ -966,6 +966,11 @@ const handleGoogleRestore = async () => {
           <div class="tech-tags">
             <span class="tech-tag">Claude Code</span>
           </div>
+          <p><strong>靈感來源</strong></p>
+          <div class="tech-tags">
+            <span class="tech-tag"><a href="https://mochi-sable.vercel.app/" target="_blank">麻糬</a></span>
+            <span>非常感謝麻糬的原作者<a href="https://www.threads.com/@iewiepeity_" target="_blank">緹緹</a>，同意本專案延伸麻糬的概念，寫出新的AI RP 平台。</span>
+          </div>
         </div>
       </div>
     </div>

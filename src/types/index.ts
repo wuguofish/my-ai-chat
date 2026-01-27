@@ -184,6 +184,17 @@ export interface ChatRoom {
 
 export type MessageType = 'user' | 'character' | 'system' | 'auto_response'
 
+/**
+ * 圖片附件（用於聊天訊息）
+ */
+export interface ImageAttachment {
+  id: string
+  data: string       // Base64 編碼（含 data:image/xxx;base64, 前綴）
+  mimeType: string   // 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
+  width: number
+  height: number
+}
+
 export interface Message {
   id: string
   roomId: string
@@ -195,6 +206,9 @@ export interface Message {
 
   mentionedCharacterIds?: string[]
   replyToMessageId?: string
+
+  /** 圖片附件（僅私聊支援） */
+  images?: ImageAttachment[]
 }
 
 // ==========================================

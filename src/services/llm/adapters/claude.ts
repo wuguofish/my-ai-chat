@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type {
   LLMAdapter,
   LLMMessage,
+  LLMMessageContent,
   GenerateOptions,
   GenerateResponse,
   ValidateApiKeyResult,
@@ -22,13 +23,82 @@ import {
 } from '../utils'
 import { enqueueClaudeRequest } from '@/services/apiQueue'
 import { generateSystemPrompt, convertToShortIds, convertToLongIds } from '@/utils/chatHelpers'
+import { imageAttachmentToLLMFormat } from '@/utils/imageHelpers'
+import type { ImageAttachment } from '@/types'
 
 /**
- * Claude API 訊息格式
+ * Claude 支援的圖片 MIME 類型
+ */
+type ClaudeImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
+
+/**
+ * Claude API 內容區塊類型
+ */
+type ClaudeContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: ClaudeImageMediaType; data: string } }
+
+/**
+ * Claude API 訊息格式（支援多模態）
  */
 type ClaudeMessage = {
   role: 'user' | 'assistant'
-  content: string
+  content: string | ClaudeContentBlock[]
+}
+
+/**
+ * 將 LLMMessageContent 轉換為 Claude 內容格式
+ */
+function convertToClaudeContent(content: LLMMessageContent): string | ClaudeContentBlock[] {
+  if (typeof content === 'string') {
+    return content
+  }
+
+  return content.map(item => {
+    if (item.type === 'text') {
+      return { type: 'text' as const, text: item.text }
+    }
+    // 圖片
+    return {
+      type: 'image' as const,
+      source: {
+        type: 'base64' as const,
+        media_type: item.mimeType as ClaudeImageMediaType,
+        data: item.data
+      }
+    }
+  })
+}
+
+/**
+ * 建立包含圖片的 Claude 內容
+ */
+function buildClaudeContentWithImages(text: string, images?: ImageAttachment[]): string | ClaudeContentBlock[] {
+  if (!images || images.length === 0) {
+    return text
+  }
+
+  const blocks: ClaudeContentBlock[] = []
+
+  // 先加入圖片
+  for (const img of images) {
+    const { mimeType, data } = imageAttachmentToLLMFormat(img)
+    blocks.push({
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: mimeType as ClaudeImageMediaType,
+        data
+      }
+    })
+  }
+
+  // 再加入文字
+  if (text) {
+    blocks.push({ type: 'text', text })
+  }
+
+  return blocks
 }
 
 /**
@@ -102,7 +172,13 @@ function normalizeMessages(messages: ClaudeMessage[], insertPlaceholder = false)
         result.push({ ...msg })
       } else {
         // 一般模式：合併連續相同角色的內容
-        lastMsg.content += '\n\n' + msg.content
+        // 如果任一方是多模態內容，插入 placeholder 而不是合併
+        if (typeof lastMsg.content !== 'string' || typeof msg.content !== 'string') {
+          result.push({ role: lastMsg.role === 'user' ? 'assistant' : 'user', content: '（繼續）' })
+          result.push({ ...msg })
+        } else {
+          lastMsg.content += '\n\n' + msg.content
+        }
       }
     } else {
       result.push({ ...msg })
@@ -215,13 +291,13 @@ export class ClaudeAdapter implements LLMAdapter {
     const client = this.createClient(apiKey)
     const modelName = getModelName('claude', modelType)
 
-    // 轉換訊息格式（過濾掉 system role）
+    // 轉換訊息格式（過濾掉 system role，支援多模態）
     const claudeMessages = normalizeMessages(
       messages
         .filter(msg => msg.role !== 'system')
         .map(msg => ({
           role: msg.role as 'user' | 'assistant',
-          content: msg.content
+          content: convertToClaudeContent(msg.content)
         }))
     )
 
@@ -276,7 +352,7 @@ export class ClaudeAdapter implements LLMAdapter {
    * API Key 自動從 userStore 取得
    */
   async getCharacterResponse(params: GetCharacterResponseParams): Promise<CharacterResponse> {
-    const { character, user, room, messages, userMessage, context } = params
+    const { character, user, room, messages, userMessage, userImages, context } = params
 
     try {
       const apiKey = await this.getApiKey()
@@ -330,9 +406,10 @@ export class ClaudeAdapter implements LLMAdapter {
         }
       })
 
-      // 加入使用者訊息
-      if (_userMsg) {
-        historyMessages.push({ role: 'user', content: _userMsg })
+      // 加入使用者訊息（可能包含圖片）
+      if (_userMsg || (userImages && userImages.length > 0)) {
+        const userContent = buildClaudeContentWithImages(_userMsg, userImages)
+        historyMessages.push({ role: 'user', content: userContent })
       }
 
       // 正規化訊息序列（群聊模式插入假 user 訊息，避免 AI 誤以為要扮演多角色）

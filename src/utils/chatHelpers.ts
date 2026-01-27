@@ -276,7 +276,8 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
     `- 請務必回應使用者的每一句話，避免只回傳空洞的動作描述（如「看著你」、「微笑」），必須要有實際的對話內容。`,
     `- 嚴禁輸出思考過程：只輸出你真正要傳送給對方的文字。`,
     `- 禁止輸出空字串。`,
-    `- 禁止輸出角色標籤或旁白說明，直接輸出對話內容即可。`
+    `- 禁止輸出角色標籤或旁白說明，直接輸出對話內容即可。`,
+    `- 【圖片描述】當使用者分享圖片時，請先簡短描述圖片內容（1-2句），再進行回應。這樣後續對話才能知道圖片的內容。`
   ]
 
   // 成人模式額外指令
@@ -783,13 +784,15 @@ export function convertToShortIds(message: string, characters: Character[]): str
 export function convertToLongIds(message: string, characters: Character[]): string {
   let result = message
 
-  // 【重要】從大的 index 往小的處理，避免：
-  // 1. @1 誤匹配到 @10、@11 等（先處理大數字）
-  // 2. 替換後的長 ID 開頭數字被後續誤匹配（例如 @3 → @4eac... 後，@4 誤匹配）
+  // 【重要】從大的 index 往小的處理，避免 @1 誤匹配到 @10、@11 等
+  // 使用正則表達式 + 負向前瞻，確保 @數字 後面不是數字或字母，避免：
+  // - @3 → @199c7f3c... 後，@1 誤匹配到 @199c7f3c 開頭的 @1
   for (let i = characters.length - 1; i >= 0; i--) {
     const char = characters[i]!
-    const shortId = `@${i + 1}`
-    result = result.split(shortId).join(`@${char.id}`)
+    const shortId = i + 1
+    // 匹配 @數字，但後面不能接數字或字母
+    const regex = new RegExp(`@${shortId}(?![0-9a-zA-Z])`, 'g')
+    result = result.replace(regex, `@${char.id}`)
   }
 
   return result
