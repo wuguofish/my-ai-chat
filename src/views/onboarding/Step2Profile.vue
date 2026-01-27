@@ -51,7 +51,7 @@ const handleNext = () => {
     id: 'user',
     nickname: nickname.value.trim(),
     realName: realName.value.trim() || undefined,
-    age: age.value.trim() || undefined,
+    age: age.value ? String(age.value).trim() : undefined,
     gender: gender.value !== 'unset' ? gender.value : undefined,
     birthday: birthdayValue,
     profession: profession.value.trim() || undefined,
