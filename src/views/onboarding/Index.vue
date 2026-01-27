@@ -204,7 +204,7 @@ const handleStartSetup = () => {
       <!-- 歡迎畫面 -->
       <div v-if="currentStep === 0" class="welcome-screen">
         <img src="/logo.svg" alt="愛茶的 AI Chat Logo" class="app-logo" />
-        <h1>歡迎愛茶的AI Chat</h1>
+        <h1>歡迎加入愛茶的AI Chat</h1>
         <p>與你的 AI 角色們開始對話</p>
 
         <button class="btn-primary btn-large" @click="handleStartSetup" :disabled="isImporting">
