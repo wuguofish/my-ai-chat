@@ -12,13 +12,25 @@ export const LEGAL_ADULT_AGE = 18
  * 支援格式：「25」、「25歲」、「二十五」等
  * 無法解析或未填寫時回傳 null
  */
-export function parseAge(ageStr?: string): number | null {
-  if (!ageStr || !ageStr.trim()) {
+export function parseAge(ageStr?: string | number): number | null {
+  // 防護：確保 ageStr 是字串
+  if (ageStr === undefined || ageStr === null) {
+    return null
+  }
+
+  // 如果是數字，直接驗證並回傳
+  if (typeof ageStr === 'number') {
+    return (!isNaN(ageStr) && ageStr > 0 && ageStr < 150) ? ageStr : null
+  }
+
+  // 確保是字串
+  const safeStr = typeof ageStr === 'string' ? ageStr : String(ageStr)
+  if (!safeStr.trim()) {
     return null
   }
 
   // 移除「歲」等後綴
-  const cleaned = ageStr.trim().replace(/歲|岁|years?\s*old/gi, '').trim()
+  const cleaned = safeStr.trim().replace(/歲|岁|years?\s*old/gi, '').trim()
 
   // 嘗試直接解析數字
   const num = parseInt(cleaned, 10)
@@ -34,7 +46,7 @@ export function parseAge(ageStr?: string): number | null {
  * 只有當玩家和角色都是成年人時才回傳 true
  * 未填寫年齡一律視為未成年
  */
-export function isAdultConversation(userAge?: string, characterAge?: string): boolean {
+export function isAdultConversation(userAge?: string | number, characterAge?: string | number): boolean {
   const userAgeNum = parseAge(userAge)
   const charAgeNum = parseAge(characterAge)
 
