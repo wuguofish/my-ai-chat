@@ -9,6 +9,15 @@ import type {
 } from '@/types'
 import { getRelationshipLevelName, getCharacterRelationshipTypeText } from './relationshipHelpers'
 
+/**
+ * 安全地檢查字串是否有內容（非空白）
+ * 防止對非字串類型呼叫 .trim() 導致錯誤
+ */
+function hasContent(value: unknown): boolean {
+  if (typeof value !== 'string') return false
+  return value.trim().length > 0
+}
+
 // 假日快取（從 holidayService 同步）
 let cachedIsHoliday: boolean | null = null
 let cachedHolidayDate: string | null = null
@@ -127,14 +136,14 @@ export function generateSystemPrompt(context: SystemPromptContext): string {
   }
 
   // 3. 聊天室摘要（如果有）
-  if (roomSummary && roomSummary.trim()) {
+  if (hasContent(roomSummary)) {
     parts.push(`\n\n## 對話背景\n${roomSummary}`)
   }
 
   // 4. 與使用者的關係
   if (userRelationship) {
     const relationshipInfo = `\n\n## 與 ${user.nickname} 的關係\n關係等級：${getRelationshipLevelName(userRelationship.level, userRelationship.isRomantic)}\n親密度：${userRelationship.affection}`
-    if (userRelationship.note && userRelationship.note.trim()) {
+    if (hasContent(userRelationship.note)) {
       parts.push(relationshipInfo + `\n備註：${userRelationship.note}`)
     } else {
       parts.push(relationshipInfo)
@@ -313,12 +322,12 @@ ${userRelationship.isRomantic ? '• 戀人（200+）：最深厚的關係，彼
   parts.push(instructions.join('\n'))
 
   // 如果有角色自訂 system prompt，直接附加（不加標題，避免干擾使用者的 OOC 指令格式）
-  if (character.systemPrompt && character.systemPrompt.trim()) {
+  if (hasContent(character.systemPrompt)) {
     parts.push(`\n\n${character.systemPrompt}`)
   }
 
   // 如果有全域自訂 system prompt，直接附加（優先級最高，放最後）
-  if (user.globalSystemPrompt && user.globalSystemPrompt.trim()) {
+  if (hasContent(user.globalSystemPrompt)) {
     parts.push(`\n\n${user.globalSystemPrompt}`)
   }
 
@@ -347,27 +356,27 @@ function generateDefaultCharacterPrompt(character: Character, isAdult: boolean):
   }
 
   // 背景故事
-  if (character.background && character.background.trim()) {
+  if (hasContent(character.background)) {
     parts.push(`\n${character.background}`)
   }
 
   // 性格
-  if (character.personality && character.personality.trim()) {
+  if (hasContent(character.personality)) {
     parts.push(`\n\n性格：\n${character.personality}`)
   }
 
   // 說話風格
-  if (character.speakingStyle && character.speakingStyle.trim()) {
+  if (hasContent(character.speakingStyle)) {
     parts.push(`\n\n說話風格：\n${character.speakingStyle}`)
   }
 
   // 喜歡的事物
-  if (character.likes && character.likes.trim()) {
+  if (hasContent(character.likes)) {
     parts.push(`\n\n喜歡：${character.likes}`)
   }
 
   // 討厭的事物
-  if (character.dislikes && character.dislikes.trim()) {
+  if (hasContent(character.dislikes)) {
     parts.push(`\n\n討厭：${character.dislikes}`)
   }
 
