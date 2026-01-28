@@ -3,6 +3,14 @@
  * 處理檔案的建立、讀取、更新操作
  */
 
+import { encodeBackupData, decodeBackupData } from '@/utils/dataObfuscation'
+
+// Google Drive 備份的包裝格式（用於向下相容）
+interface ObfuscatedBackup {
+  _format: 'obfuscated_v1'
+  data: string
+}
+
 export interface DriveFile {
   id: string
   name: string
@@ -202,17 +210,24 @@ class GoogleDriveService {
         await this.initialize()
       }
 
+      // 編碼備份資料（防止明文洩露角色設定）
+      const encodedData = encodeBackupData(data)
+      const wrappedData: ObfuscatedBackup = {
+        _format: 'obfuscated_v1',
+        data: encodedData
+      }
+
       // 檢查是否已有備份檔案
       const existingFile = await this.getExistingBackupFile()
 
       if (existingFile) {
         // 更新現有檔案
         console.log('更新現有備份檔案:', existingFile.id)
-        await this.updateFile(existingFile.id, data)
+        await this.updateFile(existingFile.id, wrappedData)
       } else {
         // 建立新檔案
         console.log('建立新備份檔案')
-        await this.createFile(data)
+        await this.createFile(wrappedData)
       }
 
       console.log('備份上傳成功')
@@ -259,9 +274,18 @@ class GoogleDriveService {
         throw new Error(`檔案下載失敗: ${response.statusText}`)
       }
 
-      const data = await response.json()
+      const rawData = await response.json()
       console.log('備份下載成功')
-      return data
+
+      // 檢查是否為新版編碼格式
+      if (rawData._format === 'obfuscated_v1' && rawData.data) {
+        console.log('偵測到編碼格式，正在解碼...')
+        return decodeBackupData(rawData.data)
+      }
+
+      // 舊版明文格式，直接返回（向下相容）
+      console.log('偵測到舊版明文格式')
+      return rawData
     } catch (error) {
       console.error('下載備份失敗:', error)
       throw error

@@ -6,6 +6,7 @@ import type {
   RelationshipLevel
 } from '@/types'
 import { getRelationshipLevelByAffection } from '@/utils/relationshipHelpers'
+import { obfuscatedSerializer } from '@/utils/dataObfuscation'
 
 interface RelationshipsState {
   userToCharacter: UserCharacterRelationship[]
@@ -386,5 +387,9 @@ export const useRelationshipsStore = defineStore('relationships', {
     }
   },
 
-  persist: true
+  persist: {
+    key: 'ai-chat-relationships',
+    storage: localStorage,
+    serializer: obfuscatedSerializer
+  }
 })

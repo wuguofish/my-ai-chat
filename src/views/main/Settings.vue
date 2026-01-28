@@ -12,6 +12,7 @@ import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService } from '@/services/googleDrive'
 import { fetchServerVersion, clearCacheAndReload, getVersionInfo, type VersionInfo } from '@/utils/version'
 import { getAdapter, getImplementedProviders, LLM_CONFIG, type LLMProvider } from '@/services/llm'
+import { encodeBackupData, decodeBackupData } from '@/utils/dataObfuscation'
 import { Eye, EyeOff } from 'lucide-vue-next'
 import PageHeader from '@/components/common/PageHeader.vue'
 
@@ -272,11 +273,13 @@ const handleExportData = () => {
     }
   }
 
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  // 編碼備份資料（防止明文洩露角色設定）
+  const encodedData = encodeBackupData(data as Record<string, unknown>)
+  const blob = new Blob([encodedData], { type: 'application/octet-stream' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `ai-chat-backup-${new Date().toISOString().split('T')[0]}.json`
+  a.download = `ai-chat-backup-${new Date().toISOString().split('T')[0]}.aichat`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -289,7 +292,9 @@ const handleImportData = (event: Event) => {
     const reader = new FileReader()
     reader.onload = async (e) => {
       try {
-        const data = JSON.parse(e.target?.result as string)
+        const fileContent = e.target?.result as string
+        // 解碼備份資料（自動支援舊版 JSON 格式向下相容）
+        const data = decodeBackupData(fileContent)
 
         if (await confirm('確定要匯入資料嗎？這會覆蓋現有資料！', { type: 'warning' })) {
           // 還原使用者資料
@@ -898,7 +903,7 @@ const handleGoogleRestore = async () => {
             <div class="action-title">匯入資料</div>
             <div class="action-desc">從本地檔案還原資料</div>
           </div>
-          <input type="file" accept=".json" style="display: none" @change="handleImportData">
+          <input type="file" accept=".aichat,.json" style="display: none" @change="handleImportData">
         </label>
 
         <button class="action-btn danger" @click="handleClearData">

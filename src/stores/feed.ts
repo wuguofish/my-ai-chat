@@ -7,6 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Post, PostComment, FeedNotification, PostTriggerEvent } from '@/types'
 import { LIMITS, FEED_EVENT_COOLDOWN } from '@/utils/constants'
+import { obfuscatedSerializer } from '@/utils/dataObfuscation'
 
 export const useFeedStore = defineStore('feed', () => {
   // ==========================================
@@ -452,6 +453,7 @@ export const useFeedStore = defineStore('feed', () => {
 }, {
   persist: {
     key: 'ai-chat-feed',
-    storage: localStorage
+    storage: localStorage,
+    serializer: obfuscatedSerializer
   }
 })

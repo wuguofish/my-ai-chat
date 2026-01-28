@@ -6,6 +6,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import type { Memory, CharacterGlobalMemory, RoomContextMemory, MemorySource } from '@/types'
+import { obfuscatedSerializer } from '@/utils/dataObfuscation'
 
 export const useMemoriesStore = defineStore('memories', () => {
   // State
@@ -677,6 +678,7 @@ export const useMemoriesStore = defineStore('memories', () => {
 }, {
   persist: {
     key: 'ai-chat-memories',
-    storage: localStorage
+    storage: localStorage,
+    serializer: obfuscatedSerializer
   }
 })

@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { ChatRoom, Message } from '@/types'
 import { useCharacterStore } from './characters'
 import { useUserStore } from './user'
+import { obfuscatedSerializer } from '@/utils/dataObfuscation'
 
 export const useChatRoomsStore = defineStore('chatRooms', () => {
   // State
@@ -419,6 +420,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
 }, {
   persist: {
     key: 'ai-chat-rooms',
-    storage: localStorage
+    storage: localStorage,
+    serializer: obfuscatedSerializer
   }
 })
