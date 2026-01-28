@@ -15,6 +15,37 @@ import { getAdapter, getImplementedProviders, LLM_CONFIG, type LLMProvider } fro
 import { encodeBackupData, decodeBackupData } from '@/utils/dataObfuscation'
 import { Eye, EyeOff } from 'lucide-vue-next'
 import PageHeader from '@/components/common/PageHeader.vue'
+import type { UserProfile } from '@/types'
+
+// 備份資料結構類型（用於匯入時的類型檢查）
+// 使用 any 是因為備份資料來自外部，需要動態處理
+/* eslint-disable @typescript-eslint/no-explicit-any */
+interface BackupData {
+  user?: UserProfile
+  characters?: any[]
+  chatRooms?: any[]
+  messages?: Record<string, any>
+  memories?: {
+    characterMemories?: Record<string, any>
+    roomMemories?: Record<string, any>
+  }
+  relationships?: {
+    userToCharacter?: any[]
+    characterToCharacter?: any[]
+  }
+  tracking?: {
+    memory?: any
+    context?: any
+  }
+  feed?: {
+    posts?: any[]
+    notifications?: any[]
+    lastDailyCatchup?: any
+    characterLastFeedCheck?: Record<string, any>
+    lastEventTrigger?: Record<string, any>
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 const { alert, confirm, confirmDanger } = useModal()
 
@@ -294,7 +325,7 @@ const handleImportData = (event: Event) => {
       try {
         const fileContent = e.target?.result as string
         // 解碼備份資料（自動支援舊版 JSON 格式向下相容）
-        const data = decodeBackupData(fileContent)
+        const data = decodeBackupData(fileContent) as BackupData
 
         if (await confirm('確定要匯入資料嗎？這會覆蓋現有資料！', { type: 'warning' })) {
           // 還原使用者資料
