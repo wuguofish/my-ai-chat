@@ -210,11 +210,13 @@ export class GeminiAdapter implements LLMAdapter {
    */
   async validateApiKey(apiKey: string): Promise<ValidateApiKeyResult> {
     try {
-      if (!apiKey || !apiKey.trim()) {
+      // 防護：確保 apiKey 是字串
+      const safeApiKey = typeof apiKey === 'string' ? apiKey : String(apiKey ?? '')
+      if (!safeApiKey || !safeApiKey.trim()) {
         return { valid: false, error: 'API Key 不能為空' }
       }
 
-      const genAI = new GoogleGenerativeAI(apiKey)
+      const genAI = new GoogleGenerativeAI(safeApiKey)
       const model = genAI.getGenerativeModel({
         model: getModelName('gemini', 'lite')
       })
@@ -449,7 +451,9 @@ export class GeminiAdapter implements LLMAdapter {
           throw new ContentBlockedError(blocked.reason, blocked.message)
         }
 
-        const responseText = response.text() ?? ''
+        // 防護：確保 responseText 是字串（response.text() 可能返回非字串類型）
+        const rawText = response.text()
+        const responseText = typeof rawText === 'string' ? rawText : String(rawText ?? '')
         return { text: responseText, response }
       }
 
@@ -492,6 +496,11 @@ export class GeminiAdapter implements LLMAdapter {
         } else {
           throw firstError
         }
+      }
+
+      // 防護：確保 text 是字串（避免 trim() 報錯）
+      if (typeof text !== 'string') {
+        text = String(text ?? '')
       }
 
       // 處理群聊格式
@@ -541,16 +550,20 @@ export class GeminiAdapter implements LLMAdapter {
       }
 
       // 解析好感度
-      const lines = text.trim().split('\n')
-      const lastLine = (lines.length > 0 ? lines[lines.length - 1] : '') ?? ''
+      // 防護：確保 text 是字串後再調用 trim()
+      const safeText = typeof text === 'string' ? text : String(text ?? '')
+      const lines = safeText.trim().split('\n')
+      const rawLastLine = lines.length > 0 ? lines[lines.length - 1] : ''
+      // 防護：確保 lastLine 是字串
+      const lastLine = typeof rawLastLine === 'string' ? rawLastLine : String(rawLastLine ?? '')
 
       // 嘗試從最後一行提取好感度數字
       // 支援格式：「6」、「好感度：6」、「好感度:6」、「好感度: 6」等
-      let affectionStr = lastLine.trim()
-      const affectionPrefixMatch = affectionStr.match(/^好感度[：:]\s*(-?\d+)$/)
-      if (affectionPrefixMatch && affectionPrefixMatch[1]) {
-        affectionStr = affectionPrefixMatch[1]
-      }
+      const trimmedLastLine = lastLine.trim()
+      const affectionPrefixMatch = trimmedLastLine.match(/^好感度[：:]\s*(-?\d+)$/)
+      const affectionStr = (affectionPrefixMatch && affectionPrefixMatch[1])
+        ? affectionPrefixMatch[1]
+        : trimmedLastLine
       const parsedAffection = parseInt(affectionStr, 10)
 
       const checkEmptyResponseAndThrow = (textToCheck: string) => {
@@ -580,7 +593,7 @@ export class GeminiAdapter implements LLMAdapter {
       }
 
       // 檢查最後一行是否為好感度格式（純數字或「好感度：數字」）
-      const isAffectionLine = /^-?\d+$/.test(lastLine.trim()) || affectionPrefixMatch !== null
+      const isAffectionLine = /^-?\d+$/.test(trimmedLastLine) || affectionPrefixMatch !== null
       if (!isNaN(parsedAffection) && isAffectionLine) {
         let cleanText = lines.slice(0, -1).join('\n').trim()
 
@@ -676,5 +689,8 @@ export async function sendGeminiRequest(userPrompt: string, model: GenerativeMod
  */
 export async function sendGeminiRequestText(userPrompt: string, model: GenerativeModel): Promise<string> {
   const response = await sendGeminiRequest(userPrompt, model)
-  return (response.text() ?? '').trim()
+  // 防護：確保是字串後再調用 trim()
+  const rawText = response.text()
+  const text = typeof rawText === 'string' ? rawText : String(rawText ?? '')
+  return text.trim()
 }

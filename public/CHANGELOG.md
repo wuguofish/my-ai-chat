@@ -1,5 +1,17 @@
 # 更新履歷
 
+## [1.7.15] - 2026-01-28
+
+### 🐛 Bug 修正
+
+- **修復 Gemini 對話時 e.trim is not a function 錯誤**
+  - 當 `response.text()` 返回非字串類型時，直接調用 `.trim()` 會導致錯誤
+  - gemini.ts: `getCharacterResponse` 函數內多處 `trim()` 調用添加類型防護
+  - gemini.ts: `sendGeminiRequestText` 函數添加類型防護
+  - gemini.ts: `validateApiKey` 函數添加類型防護
+
+---
+
 ## [1.7.14] - 2026-01-28
 
 ### 🐛 Bug 修正
@@ -9,17 +21,17 @@
   - memoryService.ts: `extractLongTermMemories` 添加類型防護檢查
   - birthdayService.ts: `generateBirthdayGreeting` 添加類型防護
   - holidayGreetingService.ts: `generateHolidayGreeting` 添加類型防護
-
----
-
-## [1.7.13] - 2026-01-28
-
-### 🐛 Bug 修正
-- **修復聊天時 e.trim is not a function 錯誤**
   - 當 AI 回應的 JSON 中沒有 mood 字段時，傳入 undefined 給 getActuallyContent 導致錯誤
   - 在 getActuallyContent 函數添加防護性類型檢查
   - 修復 memoryService.ts 中的調用邏輯
   - 修復 CharacterForm.vue 中 events 字段的載入和過濾邏輯
+
+---
+
+## [1.7.13] - 2026-01-27
+
+### ✨ 新增功能
+- **新增圖片上傳功能**
 
 ---
 
