@@ -116,7 +116,9 @@ ${relationship.note ? `- 關係備註：${relationship.note}` : ''}
       throw new Error('生日祝福生成失敗：' + (response.blockReason || '空回應'))
     }
 
-    return response.text.trim()
+    // 防護性檢查：確保 response.text 是字符串
+    const responseText = typeof response.text === 'string' ? response.text : ''
+    return responseText.trim()
   } catch (error) {
     console.error('生成生日祝福失敗:', error)
     // Fallback：根據關係等級選擇不同的模板

@@ -1493,5 +1493,12 @@ ${wasMentioned ? '注意：你被 @ 點名了，請針對被點名的內容回�
     safeMode: !isAdult
   })
 
-  return response.text.trim()
+  // 檢查回應是否有效
+  if (response.blocked || !response.text) {
+    throw new Error('無法生成上線回應：' + (response.blockReason || '空回應'))
+  }
+
+  // 防護性檢查：確保 response.text 是字符串
+  const responseText = typeof response.text === 'string' ? response.text : ''
+  return responseText.trim()
 }

@@ -304,6 +304,11 @@ ${memoriesText}
       throw new Error(`長期記憶提取失敗: ${response.blockReason}`)
     }
 
+    // 防護性檢查：確保 response.text 是字符串
+    if (!response.text || typeof response.text !== 'string') {
+      return []
+    }
+
     const responseText = response.text.trim()
 
     // 如果沒有內容，當作沒有需要提取的記憶

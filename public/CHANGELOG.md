@@ -1,5 +1,17 @@
 # 更新履歷
 
+## [1.7.14] - 2026-01-28
+
+### 🐛 Bug 修正
+- **修復多處 response.text.trim() 可能導致的 e.trim is not a function 錯誤**
+  - 當 AI API 回應異常（被封鎖、超時或返回非預期格式）時，response.text 可能為 undefined 或非字符串類型
+  - chatHelpers.ts: `generateCatchUpResponse` 添加回應有效性檢查和類型防護
+  - memoryService.ts: `extractLongTermMemories` 添加類型防護檢查
+  - birthdayService.ts: `generateBirthdayGreeting` 添加類型防護
+  - holidayGreetingService.ts: `generateHolidayGreeting` 添加類型防護
+
+---
+
 ## [1.7.13] - 2026-01-28
 
 ### 🐛 Bug 修正
