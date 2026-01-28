@@ -275,7 +275,7 @@ describe('dataObfuscation', () => {
       expect(isObfuscated(mockStorage['ai-chat-characters'])).toBe(true)
 
       // 驗證資料完整性
-      const decoded = deobfuscate(mockStorage['ai-chat-characters'])
+      const decoded = deobfuscate(mockStorage['ai-chat-characters']!)
       expect(decoded).toEqual(legacyData)
     })
 
@@ -308,7 +308,7 @@ describe('dataObfuscation', () => {
       expect(isObfuscated(mockStorage['ai-chat-relationships'])).toBe(true)
 
       // 驗證資料完整性
-      const decoded = deobfuscate(mockStorage['ai-chat-relationships'])
+      const decoded = deobfuscate(mockStorage['ai-chat-relationships']!)
       expect(decoded).toEqual(relationshipData)
     })
 
@@ -323,7 +323,7 @@ describe('dataObfuscation', () => {
       // 舊 key 應該被移除
       expect(mockStorage['relationships']).toBeUndefined()
       // 新 key 應該保持不變
-      const decoded = deobfuscate(mockStorage['ai-chat-relationships'])
+      const decoded = deobfuscate(mockStorage['ai-chat-relationships']!)
       expect(decoded).toEqual(newData)
     })
 
