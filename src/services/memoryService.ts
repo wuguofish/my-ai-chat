@@ -181,7 +181,7 @@ ${conversation}
 
     return {
       summary: getActuallyContent(parsed.summary || ''),
-      mood: getActuallyContent(parsed.mood) || undefined
+      mood: parsed.mood ? getActuallyContent(parsed.mood) : undefined
     }
   } catch (error) {
     console.error('生成記憶摘要（含情緒）失敗:', error)
