@@ -53,6 +53,10 @@ export function isAdultConversation(userAge?: string, characterAge?: string): bo
  * 避免誤判回覆中本身就包含多個引號的情況
  */
 export function getActuallyContent(msg: string): string {
+  // 防護性檢查：確保輸入是字符串
+  if (typeof msg !== 'string') {
+    return ''
+  }
   let _msg = msg.trim()
 
   // 檢查是否整個訊息被引號包住（開頭是引號，結尾是引號）

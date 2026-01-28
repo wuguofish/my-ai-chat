@@ -82,7 +82,7 @@ onMounted(() => {
       systemPrompt.value = character.systemPrompt || ''
       maxOutputTokens.value = character.maxOutputTokens || 2048
       llmProvider.value = character.llmProvider || ''
-      events.value = [...character.events]
+      events.value = (character.events || []).filter((e): e is string => typeof e === 'string')
 
       // 載入作息時間設定
       if (character.schedule) {
@@ -155,7 +155,7 @@ const handleSubmit = () => {
     systemPrompt: systemPrompt.value.trim() || undefined,
     maxOutputTokens: maxOutputTokens.value || undefined,
     llmProvider: llmProvider.value || undefined,  // 空字串存為 undefined
-    events: events.value.filter(e => e.trim() !== ''),
+    events: events.value.filter(e => typeof e === 'string' && e.trim() !== ''),
 
     // 儲存作息時間（使用最新的 schedule 格式）
     schedule: scheduleMode.value === 'template'
