@@ -13,8 +13,9 @@ import { googleDriveService } from '@/services/googleDrive'
 import { fetchServerVersion, clearCacheAndReload, getVersionInfo, type VersionInfo } from '@/utils/version'
 import { getAdapter, getImplementedProviders, LLM_CONFIG, type LLMProvider } from '@/services/llm'
 import { encodeBackupData, decodeBackupData } from '@/utils/dataObfuscation'
-import { Eye, EyeOff } from 'lucide-vue-next'
+import { Eye, EyeOff, Camera } from 'lucide-vue-next'
 import PageHeader from '@/components/common/PageHeader.vue'
+import AvatarCropper from '@/components/common/AvatarCropper.vue'
 import type { UserProfile } from '@/types'
 
 // 備份資料結構類型（用於匯入時的類型檢查）
@@ -124,6 +125,42 @@ const getProviderConfig = (provider: string) => {
 // 檢查服務商是否已實作
 const isProviderImplemented = (provider: string) => {
   return implementedProviders.includes(provider as LLMProvider)
+}
+
+// 頭像更換
+const showAvatarCropper = ref(false)
+const originalAvatarImage = ref('')
+const avatarFileInput = ref<HTMLInputElement | null>(null)
+
+const handleAvatarClick = () => {
+  avatarFileInput.value?.click()
+}
+
+const handleAvatarFileChange = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (file) {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      originalAvatarImage.value = e.target?.result as string
+      showAvatarCropper.value = true
+    }
+    reader.readAsDataURL(file)
+  }
+  // 清空 input，允許重複選擇同一檔案
+  target.value = ''
+}
+
+const handleAvatarCropConfirm = async (croppedImage: string) => {
+  userStore.updateProfile({ avatar: croppedImage })
+  showAvatarCropper.value = false
+  originalAvatarImage.value = ''
+  await alert('頭像已更新', { type: 'success' })
+}
+
+const handleAvatarCropCancel = () => {
+  showAvatarCropper.value = false
+  originalAvatarImage.value = ''
 }
 
 // 使用者個人資訊編輯
@@ -632,9 +669,19 @@ const handleGoogleRestore = async () => {
       </div>
 
       <div v-if="!showEditProfile" class="user-info">
-        <div class="user-avatar">
+        <div class="user-avatar clickable" @click="handleAvatarClick" title="更換頭像">
           <img :src="userStore.userAvatar" alt="頭像">
+          <div class="avatar-edit-overlay">
+            <Camera :size="14" color="white" />
+          </div>
         </div>
+        <input
+          ref="avatarFileInput"
+          type="file"
+          accept="image/*"
+          style="display: none"
+          @change="handleAvatarFileChange"
+        >
         <div class="user-details">
           <div class="user-name">{{ userStore.userName }}</div>
           <div class="user-meta">
@@ -1010,6 +1057,13 @@ const handleGoogleRestore = async () => {
         </div>
       </div>
     </div>
+    <!-- 頭像裁剪器 -->
+    <AvatarCropper
+      v-if="showAvatarCropper"
+      :image="originalAvatarImage"
+      @confirm="handleAvatarCropConfirm"
+      @cancel="handleAvatarCropCancel"
+    />
   </div>
 </template>
 
@@ -1063,12 +1117,42 @@ const handleGoogleRestore = async () => {
   border-radius: var(--radius-full);
   overflow: hidden;
   border: 2px solid var(--color-border);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.user-avatar.clickable {
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+
+.user-avatar.clickable:hover {
+  border-color: var(--color-primary);
 }
 
 .user-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.avatar-edit-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--transition);
+  font-size: 12px;
+}
+
+.user-avatar.clickable:hover .avatar-edit-overlay {
+  opacity: 1;
 }
 
 .user-details {

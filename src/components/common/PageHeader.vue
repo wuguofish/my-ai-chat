@@ -228,7 +228,7 @@ const showSnow = computed(() => {
   border-bottom: 2px solid var(--color-border);
   box-shadow: var(--shadow-sm);
   padding: var(--spacing-xs) var(--spacing-xl);
-  overflow: hidden; /* 確保雪花不會溢出 */
+  /* overflow 由 .falling-items 自行控制，不在 wrapper 設定，避免擋住下拉選單 */
 }
 
 /* 確保內容在雪花之上 */
