@@ -13,10 +13,10 @@ import { googleDriveService } from '@/services/googleDrive'
 import { fetchServerVersion, clearCacheAndReload, getVersionInfo, type VersionInfo } from '@/utils/version'
 import { getAdapter, getImplementedProviders, LLM_CONFIG, type LLMProvider } from '@/services/llm'
 import { encodeBackupData, decodeBackupData } from '@/utils/dataObfuscation'
-import { Eye, EyeOff, Camera } from 'lucide-vue-next'
+import { Eye, EyeOff, Camera, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import PageHeader from '@/components/common/PageHeader.vue'
 import AvatarCropper from '@/components/common/AvatarCropper.vue'
-import type { UserProfile } from '@/types'
+import type { UserProfile, Message } from '@/types'
 
 // 備份資料結構類型（用於匯入時的類型檢查）
 // 使用 any 是因為備份資料來自外部，需要動態處理
@@ -438,6 +438,259 @@ const handleImportData = (event: Event) => {
       }
     }
     reader.readAsText(file)
+  }
+}
+
+// ========== 儲存空間管理 ==========
+const showStorageDetail = ref(false)
+const cleanupKeepCount = ref(60) // 預設保留最近 60 則
+const exportFormat = ref<'md' | 'json'>('md') // 匯出格式
+
+/** 計算 LocalStorage 各 key 的使用量 */
+/**
+ * 偵測 LocalStorage 的真實容量上限（字元數）
+ * 使用二分搜尋法，在不破壞現有資料的前提下測試可寫入的最大容量
+ * 結果會快取，避免每次 computed 都重測
+ */
+const detectedQuotaChars = ref(0)
+
+function detectLocalStorageQuota(): number {
+  const testKey = '__storage_quota_test__'
+  // 先計算目前已用的字元數（所有 key + value 的 length）
+  let currentChars = 0
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)!
+    currentChars += key.length + (localStorage.getItem(key)?.length || 0)
+  }
+  // 二分搜尋剩餘可用空間
+  let low = 0
+  let high = 15 * 1024 * 1024 // 最多測到 15M 字元
+  while (high - low > 1024) {
+    const mid = Math.floor((low + high) / 2)
+    try {
+      localStorage.setItem(testKey, 'a'.repeat(mid))
+      low = mid
+    } catch {
+      high = mid
+    }
+  }
+  localStorage.removeItem(testKey)
+  return currentChars + low
+}
+
+// 初始化時偵測一次
+try {
+  detectedQuotaChars.value = detectLocalStorageQuota()
+} catch {
+  detectedQuotaChars.value = 5 * 1024 * 1024 // 偵測失敗時預設 5MB
+}
+
+const storageUsage = computed(() => {
+  const keys = [
+    { key: 'ai-chat-user', label: '使用者資料' },
+    { key: 'ai-chat-characters', label: '好友資料' },
+    { key: 'ai-chat-rooms', label: '聊天室與訊息' },
+    { key: 'ai-chat-memories', label: '記憶系統' },
+    { key: 'ai-chat-relationships', label: '關係資料' },
+    { key: 'ai-chat-feed', label: '動態牆' },
+    { key: 'ai-chat-settings', label: '設定' },
+  ]
+  // localStorage 的限制是以「字元數」計算，不是 UTF-8 位元組
+  let totalChars = 0
+  const details = keys.map(({ key, label }) => {
+    const data = localStorage.getItem(key) || ''
+    const chars = key.length + data.length
+    totalChars += chars
+    return { key, label, chars, sizeKB: Math.round(chars / 1024) }
+  })
+  // 加上其他未列出的 ai-chat key
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i)
+    if (k && k.startsWith('ai-chat-') && !keys.find(d => d.key === k)) {
+      const data = localStorage.getItem(k) || ''
+      const chars = k.length + data.length
+      totalChars += chars
+      details.push({ key: k, label: k, chars, sizeKB: Math.round(chars / 1024) })
+    }
+  }
+  const quotaChars = detectedQuotaChars.value
+  const quotaMB = (quotaChars / 1024 / 1024).toFixed(1)
+  return {
+    totalChars,
+    totalKB: Math.round(totalChars / 1024),
+    totalMB: (totalChars / 1024 / 1024).toFixed(2),
+    details: details.sort((a, b) => b.chars - a.chars),
+    quotaMB,
+    usagePercent: Math.min(100, Math.round((totalChars / quotaChars) * 100))
+  }
+})
+
+/** 各聊天室訊息統計 */
+const messageStats = computed(() => chatRoomStore.getMessageStats())
+
+/** 總訊息數 */
+const totalMessageCount = computed(() => messageStats.value.reduce((sum, s) => sum + s.messageCount, 0))
+
+/** 將訊息格式化為 Markdown */
+function formatMessagesToMarkdown(roomName: string, messages: Message[]): string {
+  const exportDate = new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
+  const lines: string[] = [
+    `# ${roomName} - 聊天記錄`,
+    '',
+    `> 匯出時間：${exportDate}`,
+    `> 訊息數量：${messages.length} 則`,
+    '',
+    '---',
+    ''
+  ]
+
+  let lastDate = ''
+  for (const msg of messages) {
+    // 日期分隔線
+    const msgDate = new Date(msg.timestamp).toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' })
+    if (msgDate !== lastDate) {
+      lines.push(`## ${msgDate}`, '')
+      lastDate = msgDate
+    }
+
+    const time = new Date(msg.timestamp).toLocaleTimeString('zh-TW', {
+      timeZone: 'Asia/Taipei',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+
+    if (msg.type === 'system') {
+      // 系統訊息
+      lines.push(`*\`${time}\` ── ${msg.content} ──*`, '')
+    } else {
+      // 一般訊息
+      const sender = msg.senderId === 'user' ? `**${msg.senderName}**` : `**${msg.senderName}**`
+      lines.push(`\`${time}\` ${sender}`, '')
+      // 訊息內容（保留換行，每行加 > 引用）
+      const contentLines = msg.content.split('\n')
+      for (const line of contentLines) {
+        lines.push(`> ${line}`)
+      }
+      // 圖片附件
+      if (msg.images && msg.images.length > 0) {
+        lines.push(`> 📷 *（${msg.images.length} 張圖片）*`)
+      }
+      lines.push('')
+    }
+  }
+
+  return lines.join('\n')
+}
+
+/** 匯出單一聊天室的訊息 */
+const handleExportRoomMessages = async (roomId: string, roomName: string) => {
+  const roomMessages = chatRoomStore.getMessages(roomId)
+  if (roomMessages.length === 0) {
+    await alert('這個聊天室沒有訊息', { type: 'warning' })
+    return
+  }
+  const dateStr = new Date().toISOString().split('T')[0]
+  let blob: Blob
+  let filename: string
+
+  if (exportFormat.value === 'md') {
+    const markdown = formatMessagesToMarkdown(roomName, roomMessages)
+    blob = new Blob([markdown], { type: 'text/markdown; charset=utf-8' })
+    filename = `chat-${roomName}-${dateStr}.md`
+  } else {
+    const data = JSON.stringify({
+      roomName,
+      exportedAt: new Date().toISOString(),
+      messageCount: roomMessages.length,
+      messages: roomMessages
+    }, null, 2)
+    blob = new Blob([data], { type: 'application/json; charset=utf-8' })
+    filename = `chat-${roomName}-${dateStr}.json`
+  }
+
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+/** 清理單一聊天室的舊訊息 */
+const handleCleanupRoomMessages = async (roomId: string, roomName: string, currentCount: number) => {
+  if (currentCount <= cleanupKeepCount.value) {
+    await alert(`「${roomName}」目前只有 ${currentCount} 則訊息，不需要清理`, { type: 'warning' })
+    return
+  }
+  const deleteCount = currentCount - cleanupKeepCount.value
+  const confirmed = await confirm(
+    `確定要清理「${roomName}」的舊訊息嗎？\n\n將刪除最早的 ${deleteCount} 則訊息，保留最近 ${cleanupKeepCount.value} 則。`,
+    { type: 'warning', confirmText: '清理', cancelText: '取消' }
+  )
+  if (confirmed) {
+    chatRoomStore.deleteOldMessages(roomId, cleanupKeepCount.value)
+    await alert(`已清理 ${deleteCount} 則舊訊息`, { type: 'success' })
+  }
+}
+
+/** 批次清理所有聊天室的舊訊息 */
+const handleCleanupAllMessages = async () => {
+  const roomsToClean = messageStats.value.filter(s => s.messageCount > cleanupKeepCount.value)
+  if (roomsToClean.length === 0) {
+    await alert(`所有聊天室的訊息都在 ${cleanupKeepCount.value} 則以內，不需要清理`, { type: 'warning' })
+    return
+  }
+  const totalDelete = roomsToClean.reduce((sum, s) => sum + (s.messageCount - cleanupKeepCount.value), 0)
+  const confirmed = await confirm(
+    `確定要批次清理 ${roomsToClean.length} 個聊天室的舊訊息嗎？\n\n每個聊天室保留最近 ${cleanupKeepCount.value} 則，共將刪除 ${totalDelete} 則訊息。`,
+    { type: 'warning', confirmText: '批次清理', cancelText: '取消' }
+  )
+  if (confirmed) {
+    roomsToClean.forEach(s => chatRoomStore.deleteOldMessages(s.roomId, cleanupKeepCount.value))
+    await alert(`已清理 ${totalDelete} 則舊訊息`, { type: 'success' })
+  }
+}
+
+/** 動態牆清理天數 */
+const feedCleanupDays = ref(7)
+
+/** 動態牆貼文數 */
+const feedPostCount = computed(() => feedStore.posts?.length || 0)
+
+/** 清理動態牆舊貼文 */
+const handleCleanupFeed = async () => {
+  if (feedPostCount.value === 0) {
+    await alert('目前沒有任何動態', { type: 'warning' })
+    return
+  }
+  const cutoffTime = Date.now() - feedCleanupDays.value * 24 * 60 * 60 * 1000
+  const oldCount = feedStore.posts.filter(p => p.timestamp < cutoffTime).length
+  if (oldCount === 0) {
+    await alert(`沒有超過 ${feedCleanupDays.value} 天的動態`, { type: 'warning' })
+    return
+  }
+  const confirmed = await confirm(
+    `確定要清理 ${oldCount} 則超過 ${feedCleanupDays.value} 天的動態嗎？`,
+    { type: 'warning', confirmText: '清理', cancelText: '取消' }
+  )
+  if (confirmed) {
+    feedStore.clearOldPosts(feedCleanupDays.value)
+    await alert(`已清理 ${oldCount} 則舊動態`, { type: 'success' })
+  }
+}
+
+/** 清除所有動態牆資料 */
+const handleClearAllFeed = async () => {
+  if (feedPostCount.value === 0) {
+    await alert('目前沒有任何動態', { type: 'warning' })
+    return
+  }
+  const confirmed = await confirmDanger(
+    `確定要清除所有動態牆資料嗎？（共 ${feedPostCount.value} 則動態）`
+  )
+  if (confirmed) {
+    feedStore.clearAll()
+    await alert('已清除所有動態牆資料', { type: 'success' })
   }
 }
 
@@ -959,6 +1212,123 @@ const handleGoogleRestore = async () => {
               <div class="action-desc">從雲端還原資料</div>
             </div>
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 儲存空間管理 -->
+    <div class="settings-section">
+      <h3>儲存空間管理</h3>
+
+      <!-- 使用量概覽 -->
+      <div class="storage-overview">
+        <div class="storage-bar-container">
+          <div class="storage-bar" :style="{ width: storageUsage.usagePercent + '%' }"
+            :class="{ warning: storageUsage.usagePercent > 70, danger: storageUsage.usagePercent > 90 }">
+          </div>
+        </div>
+        <div class="storage-info">
+          <span class="storage-used">{{ storageUsage.totalMB }} MB</span>
+          <span class="storage-total">/ {{ storageUsage.quotaMB }} MB 上限（{{ storageUsage.usagePercent }}%）</span>
+        </div>
+      </div>
+
+      <!-- 展開詳細 -->
+      <button class="storage-toggle-btn" @click="showStorageDetail = !showStorageDetail">
+        <span>各項資料佔用明細</span>
+        <ChevronUp v-if="showStorageDetail" :size="16" />
+        <ChevronDown v-else :size="16" />
+      </button>
+
+      <div v-if="showStorageDetail" class="storage-details">
+        <div v-for="item in storageUsage.details" :key="item.key" class="storage-detail-row">
+          <span class="storage-detail-label">{{ item.label }}</span>
+          <span class="storage-detail-size">{{ item.sizeKB }} KB</span>
+        </div>
+      </div>
+
+      <!-- 聊天訊息統計 -->
+      <div class="storage-messages-section">
+        <div class="section-header">
+          <h4>聊天訊息（共 {{ totalMessageCount }} 則）</h4>
+          <div class="export-format-selector">
+            <label>匯出格式</label>
+            <select v-model="exportFormat" class="input-field cleanup-select">
+              <option value="md">Markdown</option>
+              <option value="json">JSON</option>
+            </select>
+          </div>
+        </div>
+
+        <div v-if="messageStats.length === 0" class="empty-hint">還沒有任何聊天室</div>
+
+        <div v-else class="message-stats-list">
+          <div v-for="stat in messageStats" :key="stat.roomId" class="message-stat-item">
+            <div class="stat-info">
+              <span class="stat-name">
+                {{ stat.roomType === 'group' ? '👥' : '💬' }}
+                {{ stat.roomName }}
+              </span>
+              <span class="stat-count">{{ stat.messageCount }} 則 ≈ {{ stat.estimatedSizeKB }} KB</span>
+            </div>
+            <div class="stat-actions">
+              <button class="btn-sm btn-ghost" @click="handleExportRoomMessages(stat.roomId, stat.roomName)"
+                title="匯出訊息">
+                💾
+              </button>
+              <button class="btn-sm btn-ghost" @click="handleCleanupRoomMessages(stat.roomId, stat.roomName, stat.messageCount)"
+                title="清理舊訊息" :disabled="stat.messageCount <= cleanupKeepCount">
+                🧹
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 批次清理 -->
+        <div v-if="messageStats.length > 0" class="cleanup-controls">
+          <div class="cleanup-setting">
+            <label>每個聊天室保留最近</label>
+            <select v-model.number="cleanupKeepCount" class="input-field cleanup-select">
+              <option :value="30">30 則</option>
+              <option :value="60">60 則</option>
+              <option :value="100">100 則</option>
+              <option :value="200">200 則</option>
+              <option :value="500">500 則</option>
+            </select>
+          </div>
+          <button class="btn btn-warning" @click="handleCleanupAllMessages">
+            🧹 批次清理所有聊天室
+          </button>
+        </div>
+      </div>
+
+      <!-- 動態牆清理 -->
+      <div class="storage-messages-section">
+        <div class="section-header">
+          <h4>動態牆（共 {{ feedPostCount }} 則）</h4>
+        </div>
+
+        <div v-if="feedPostCount === 0" class="empty-hint">目前沒有任何動態</div>
+
+        <div v-else class="cleanup-controls">
+          <div class="cleanup-setting">
+            <label>清理超過</label>
+            <select v-model.number="feedCleanupDays" class="input-field cleanup-select">
+              <option :value="3">3 天</option>
+              <option :value="7">7 天</option>
+              <option :value="14">14 天</option>
+              <option :value="30">30 天</option>
+            </select>
+            <label>的動態</label>
+          </div>
+          <div class="button-group">
+            <button class="btn btn-warning" @click="handleCleanupFeed">
+              🧹 清理舊動態
+            </button>
+            <button class="btn btn-danger" @click="handleClearAllFeed">
+              🗑️ 清除全部
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1565,6 +1935,207 @@ const handleGoogleRestore = async () => {
   color: var(--color-text-primary);
 }
 
+/* 儲存空間管理 */
+.storage-overview {
+  margin-bottom: var(--spacing-lg);
+}
+
+.storage-bar-container {
+  height: 12px;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-bottom: var(--spacing-sm);
+}
+
+.storage-bar {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+  transition: width 0.5s ease;
+  min-width: 2px;
+}
+
+.storage-bar.warning {
+  background: #f59e0b;
+}
+
+.storage-bar.danger {
+  background: #ef4444;
+}
+
+.storage-info {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-xs);
+}
+
+.storage-used {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.storage-total {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+.storage-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-bg-secondary);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  transition: background var(--transition);
+}
+
+.storage-toggle-btn:hover {
+  background: var(--color-bg-hover);
+}
+
+.storage-details {
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+}
+
+.storage-detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--spacing-xs) 0;
+  font-size: var(--text-sm);
+}
+
+.storage-detail-label {
+  color: var(--color-text-secondary);
+}
+
+.storage-detail-size {
+  color: var(--color-text-primary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.storage-messages-section {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-xl);
+  border-top: 1px solid var(--color-border);
+}
+
+.storage-messages-section h4 {
+  font-size: var(--text-lg);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.export-format-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.empty-hint {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  padding: var(--spacing-md) 0;
+}
+
+.message-stats-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.message-stat-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius);
+}
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.stat-name {
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-count {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
+
+.stat-actions .btn-sm {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: 16px;
+  line-height: 1;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: background var(--transition);
+}
+
+.stat-actions .btn-sm:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+}
+
+.stat-actions .btn-sm:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.cleanup-controls {
+  margin-top: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.cleanup-setting {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.cleanup-select {
+  width: auto;
+  min-width: 90px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--text-sm);
+}
+
 @media (max-width: 768px) {
 
   .page {
@@ -1577,6 +2148,16 @@ const handleGoogleRestore = async () => {
 
   .about-links {
     flex-direction: column;
+  }
+
+  .message-stat-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+  }
+
+  .stat-actions {
+    align-self: flex-end;
   }
 }
 </style>

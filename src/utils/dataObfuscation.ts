@@ -142,6 +142,39 @@ export const obfuscatedSerializer = {
 }
 
 /**
+ * 安全的 localStorage 包裝器，供 Pinia persist 使用
+ * 當混淆編碼後的資料寫入 localStorage 時遇到 QuotaExceededError，
+ * 會自動退回明文 JSON 格式寫入（smartDecode 支援讀取明文，不影響功能）
+ * 這解決了「清理訊息後仍因 Base64 膨脹而寫不回去」的問題
+ */
+export const safeStorage: Storage = {
+  get length() { return localStorage.length },
+  key: (index: number) => localStorage.key(index),
+  getItem: (key: string) => localStorage.getItem(key),
+  setItem: (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value)
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+        // 混淆編碼格式寫不下，嘗試用明文 JSON 寫入（體積較小）
+        try {
+          const data = smartDecode(value)
+          const plaintext = JSON.stringify(data)
+          localStorage.setItem(key, plaintext)
+          console.warn(`⚠️ ${key} 容量不足，已改用明文格式儲存`)
+        } catch {
+          console.error(`❌ ${key} 儲存失敗，即使明文格式也寫不下`)
+        }
+      } else {
+        throw e
+      }
+    }
+  },
+  removeItem: (key: string) => localStorage.removeItem(key),
+  clear: () => localStorage.clear()
+}
+
+/**
  * 匯出/備份用的編碼函數
  * 將整個備份物件編碼
  */
@@ -195,27 +228,45 @@ function isLegacyFormat(value: string | null): boolean {
 
 /**
  * 遷移單一 LocalStorage key 從舊格式到新格式
- * @returns 是否成功遷移
+ * 如果遇到容量不足（QuotaExceededError），直接保留明文格式
+ * （smartDecode 支援讀取明文，不影響功能）
+ * 不會自動刪減訊息，避免使用者尚未匯出備份就遺失對話
+ * @returns 'migrated' | 'skipped' | 'failed'
  */
-function migrateStorageKey(key: string): boolean {
+function migrateStorageKey(key: string): 'migrated' | 'skipped' | 'failed' {
   try {
     const value = localStorage.getItem(key)
     if (!isLegacyFormat(value)) {
-      return false // 不需要遷移
+      return 'skipped'
     }
 
-    // 解析舊資料
+    // 解析舊資料（存在記憶體中）
     const data = JSON.parse(value!)
 
-    // 編碼並存回
+    // 先編碼（在記憶體中產生新格式字串）
     const encoded = obfuscate(data)
-    localStorage.setItem(key, encoded)
 
-    console.log(`✅ 已遷移 LocalStorage key: ${key}`)
-    return true
+    // 關鍵：先移除舊值騰出空間，再寫入新值
+    // 這樣就不會同時存兩份，大幅降低 quota 超出的機率
+    localStorage.removeItem(key)
+    try {
+      localStorage.setItem(key, encoded)
+      console.log(`✅ 已遷移 LocalStorage key: ${key}`)
+      return 'migrated'
+    } catch (writeError) {
+      // 寫入失敗，還原明文格式（保護使用者資料不遺失）
+      try { localStorage.setItem(key, value!) } catch { /* 連還原都失敗就放棄 */ }
+
+      if (writeError instanceof DOMException && writeError.name === 'QuotaExceededError') {
+        console.warn(`⚠️ 遷移 ${key} 時容量不足，保留明文格式（不影響功能，請先匯出備份再清理空間）`)
+      } else {
+        console.error(`❌ 遷移 ${key} 寫入失敗:`, writeError)
+      }
+      return 'failed'
+    }
   } catch (error) {
     console.error(`❌ 遷移 LocalStorage key 失敗: ${key}`, error)
-    return false
+    return 'failed'
   }
 }
 
@@ -245,10 +296,11 @@ export function migrateLocalStorage(): { migrated: number; skipped: number; fail
     }
 
     // 嘗試遷移
-    if (migrateStorageKey(key)) {
-      result.migrated++
-    } else {
-      result.failed++
+    const status = migrateStorageKey(key)
+    switch (status) {
+      case 'migrated': result.migrated++; break
+      case 'failed': result.failed++; break
+      // 'skipped' 不計入（isLegacyFormat 回傳 false）
     }
   }
 
@@ -270,8 +322,25 @@ export function migrateLocalStorage(): { migrated: number; skipped: number; fail
       console.log(`✅ 已將 '${oldRelationshipsKey}' 遷移到 '${newRelationshipsKey}' 並移除舊 key`)
       result.migrated++
     } catch (error) {
-      console.error(`❌ 遷移 relationships key 失敗:`, error)
-      result.failed++
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        // 容量不足，先移除舊 key 騰出空間再試
+        try {
+          localStorage.removeItem(oldRelationshipsKey)
+          const data = JSON.parse(oldRelationshipsValue)
+          const encoded = obfuscate(data)
+          localStorage.setItem(newRelationshipsKey, encoded)
+          console.log(`✅ 移除舊 key 後成功遷移 relationships`)
+          result.migrated++
+        } catch {
+          // 還是不行，用明文存到新 key
+          localStorage.setItem(newRelationshipsKey, oldRelationshipsValue)
+          console.warn(`⚠️ relationships 容量不足，以明文格式遷移到新 key`)
+          result.failed++
+        }
+      } else {
+        console.error(`❌ 遷移 relationships key 失敗:`, error)
+        result.failed++
+      }
     }
   } else if (oldRelationshipsValue && localStorage.getItem(newRelationshipsKey)) {
     // 兩個 key 都存在，移除舊的
@@ -280,7 +349,9 @@ export function migrateLocalStorage(): { migrated: number; skipped: number; fail
   }
 
   if (result.migrated > 0) {
-    console.log(`✅ LocalStorage 遷移完成：${result.migrated} 個 key 已遷移`)
+    const parts = [`${result.migrated} 個 key 已遷移`]
+    if (result.failed > 0) parts.push(`${result.failed} 個 key 保留明文（容量不足，請先匯出備份再清理）`)
+    console.log(`✅ LocalStorage 遷移完成：${parts.join('，')}`)
   } else {
     console.log('ℹ️ LocalStorage 不需要遷移（已是新格式或無資料）')
   }

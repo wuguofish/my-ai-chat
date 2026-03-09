@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { ChatRoom, Message } from '@/types'
 import { useCharacterStore } from './characters'
 import { useUserStore } from './user'
-import { obfuscatedSerializer } from '@/utils/dataObfuscation'
+import { obfuscatedSerializer, safeStorage } from '@/utils/dataObfuscation'
 
 export const useChatRoomsStore = defineStore('chatRooms', () => {
   // State
@@ -355,6 +355,46 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     return !charId || !getCharacterById(charId)
   }
 
+  /**
+   * 清理指定聊天室的舊訊息，保留最近 keepCount 則
+   * @returns 被刪除的訊息數量
+   */
+  function deleteOldMessages(roomId: string, keepCount: number): number {
+    const roomMessages = messages.value[roomId]
+    if (!roomMessages || roomMessages.length <= keepCount) return 0
+
+    const deleteCount = roomMessages.length - keepCount
+    messages.value[roomId] = roomMessages.slice(deleteCount)
+    return deleteCount
+  }
+
+  /**
+   * 取得各聊天室的訊息統計
+   */
+  function getMessageStats(): Array<{
+    roomId: string
+    roomName: string
+    roomType: 'single' | 'group'
+    messageCount: number
+    estimatedSizeKB: number
+  }> {
+    return chatRooms.value.map(room => {
+      const roomMessages = messages.value[room.id] || []
+      // 粗估每則訊息的大小（序列化後的 JSON 字串長度）
+      const estimatedSize = roomMessages.reduce((acc, msg) => {
+        return acc + (msg.content?.length || 0) + (msg.senderName?.length || 0) + 150 // 150 = 其他欄位的大約長度
+          + (msg.images?.reduce((sum, img) => sum + (img.data?.length || 0), 0) || 0)
+      }, 0)
+      return {
+        roomId: room.id,
+        roomName: room.name,
+        roomType: room.type,
+        messageCount: roomMessages.length,
+        estimatedSizeKB: Math.round(estimatedSize / 1024)
+      }
+    }).sort((a, b) => b.estimatedSizeKB - a.estimatedSizeKB)
+  }
+
   function clearAllData() {
     chatRooms.value = []
     messages.value = {}
@@ -408,6 +448,8 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     updateRoomName,
     removeCharacterFromRooms,
     isRoomCharacterDeleted,
+    deleteOldMessages,
+    getMessageStats,
     clearAllData,
     // 草稿相關
     getDraft,
@@ -420,7 +462,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
 }, {
   persist: {
     key: 'ai-chat-rooms',
-    storage: localStorage,
+    storage: safeStorage,
     serializer: obfuscatedSerializer
   }
 })
