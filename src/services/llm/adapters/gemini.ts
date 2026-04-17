@@ -341,35 +341,28 @@ export class GeminiAdapter implements LLMAdapter {
     try {
       const apiKey = await this.getApiKey()
 
-      // 判斷是否為群聊
       const isGroupChat = room?.type === 'group'
       const useShortIds = isGroupChat && context?.otherCharactersInRoom && context.otherCharactersInRoom.length > 0
-
-      // 判斷是否為成年人對話
       const isAdult = isAdultConversation(user.age, character.age)
 
-      // 產生 system prompt
       const systemPrompt = generateSystemPrompt({
-        character,
-        user,
-        room,
-        ...context,
-        useShortIds,
-        isAdultMode: isAdult
+        character, user, room, ...context, useShortIds, isAdultMode: isAdult
       })
 
-      // 建立模型
-      const model = createGeminiModel(apiKey, {
-        modelType: 'main',
+      const ai = new GoogleGenAI({ apiKey })
+      const modelName = getModelName('gemini', 'main')
+      const baseConfig = {
+        ...buildGenerationConfig({
+          temperature: 0.95,
+          maxOutputTokens: character.maxOutputTokens || 2048,
+          topP: 0.95,
+          topK: 40
+        }),
         systemInstruction: systemPrompt,
-        temperature: 0.95,
-        topP: 0.95,
-        topK: 40,
-        maxOutputTokens: character.maxOutputTokens || 2048,
-        safeMode: !isAdult
-      })
+        safetySettings: buildSafetySettings(!isAdult) as SDKSafetySetting[]
+      }
 
-      // 處理對話歷史
+      // 處理對話歷史（保留原 useShortIds 邏輯）
       const processedMessages = useShortIds && context?.otherCharactersInRoom
         ? messages.map(msg => ({
             ...msg,
@@ -385,102 +378,75 @@ export class GeminiAdapter implements LLMAdapter {
         _userMsg = convertToShortIds(_userMsg, context.otherCharactersInRoom)
       }
 
-      // 取最後 20 條訊息並轉換格式
-      let history: Content[] = processedMessages.slice(-20).map(msg => {
+      // TODO(Task 6): 遷移完成後改為 Content[]（from @google/genai）
+      let history: any[] = processedMessages.slice(-20).map(msg => {
         const isUser = msg.senderId === 'user'
         let content = msg.content
-
         if (isGroupChat) {
           content = `[${msg.senderName}]: ${msg.content}`
         }
-
         return {
           role: isUser ? 'user' : 'model',
           parts: [{ text: content }]
         }
       })
 
-      // 確保歷史的第一條訊息是 user
-      const ensureHistoryStartsWithUser = (hist: Content[]) => {
+      const ensureHistoryStartsWithUser = (hist: any[]) => {
         if (hist.length > 0 && hist[0]?.role !== 'user') {
           const firstUserIndex = hist.findIndex(msg => msg.role === 'user')
-          if (firstUserIndex > 0) {
-            return hist.slice(firstUserIndex)
-          } else {
-            return []
-          }
+          if (firstUserIndex > 0) return hist.slice(firstUserIndex)
+          return []
         }
         return hist
       }
 
       history = ensureHistoryStartsWithUser(history)
 
-      // 建立使用者訊息的 parts（包含圖片）
-      const buildUserMessageParts = (text: string): Part[] => {
-        const parts: Part[] = []
-
-        // 如果有圖片，先加入圖片
+      const buildUserMessageParts = (text: string): any[] => {
+        const parts: any[] = []
         if (userImages && userImages.length > 0) {
           for (const img of userImages) {
             const { mimeType, data } = imageAttachmentToLLMFormat(img)
-            parts.push({
-              inlineData: { mimeType, data }
-            })
+            parts.push({ inlineData: { mimeType, data } })
           }
         }
-
-        // 加入文字
-        if (text) {
-          parts.push({ text })
-        }
-
-        // 確保至少有一個 part（Gemini API 要求每個 Content 至少有一個 part）
-        // 這種情況發生在群聊後續輪，需要一個 placeholder 來維持 user/model 交替
-        if (parts.length === 0) {
-          parts.push({ text: '（對話繼續）' })
-        }
-
+        if (text) parts.push({ text })
+        // Gemini API 要求每個 Content 至少有一個 part
+        if (parts.length === 0) parts.push({ text: '（對話繼續）' })
         return parts
       }
 
-      // 發送訊息並檢查回應
-      const sendAndCheck = async (chatHistory: Content[], userMsg: string): Promise<{ text: string; response: any }> => {
+      const sendAndCheck = async (chatHistory: any[], userMsg: string): Promise<{ text: string; response: any }> => {
         const historyWithUserMsg = [...chatHistory]
+        historyWithUserMsg.push({ role: 'user', parts: buildUserMessageParts(userMsg) })
+        historyWithUserMsg.push({ role: 'model', parts: [{ text: `[${character.name}]:` }] })
 
-        historyWithUserMsg.push({
-          role: 'user',
-          parts: buildUserMessageParts(userMsg)
+        const chat = ai.chats.create({
+          model: modelName,
+          history: historyWithUserMsg,
+          config: baseConfig
         })
 
-        historyWithUserMsg.push({
-          role: 'model',
-          parts: [{ text: `[${character.name}]:` }]
-        })
-
-        const chat = model.startChat({ history: historyWithUserMsg })
-
-        const result = await enqueueGeminiRequest(
-          () => chat.sendMessage(''),
+        const response = await enqueueGeminiRequest(
+          () => chat.sendMessage({ message: '' }),
           getGeminiModelName('main'),
           `對話：${character.name}`
         )
-        const response = result.response
 
         const blocked = checkResponseBlocked(response)
         if (blocked) {
           throw new ContentBlockedError(blocked.reason, blocked.message)
         }
 
-        // 防護：確保 responseText 是字串（response.text() 可能返回非字串類型）
-        const rawText = response.text()
+        // ⚠️ 新 SDK：text 是 property（不是 method）
+        const rawText = response.text
         const responseText = typeof rawText === 'string' ? rawText : String(rawText ?? '')
         return { text: responseText, response }
       }
 
-      // 多層降級重試
+      // 三層降級重試（保留原邏輯）
       let text: string
       let response: any
-
       try {
         const result = await sendAndCheck(history, _userMsg)
         text = result.text
@@ -488,7 +454,6 @@ export class GeminiAdapter implements LLMAdapter {
       } catch (firstError: any) {
         if (isBlockedError(firstError) && history.length > 0) {
           console.warn('⚠️ 內容被封鎖（完整歷史），嘗試縮短對話歷史重試...')
-
           try {
             let shorterHistory = history.slice(-5)
             shorterHistory = ensureHistoryStartsWithUser(shorterHistory)
@@ -499,7 +464,6 @@ export class GeminiAdapter implements LLMAdapter {
           } catch (secondError: any) {
             if (isBlockedError(secondError)) {
               console.warn('⚠️ 內容仍被封鎖（短歷史），嘗試無歷史模式...')
-
               try {
                 const result = await sendAndCheck([], _userMsg)
                 text = result.text
@@ -518,12 +482,9 @@ export class GeminiAdapter implements LLMAdapter {
         }
       }
 
-      // 防護：確保 text 是字串（避免 trim() 報錯）
-      if (typeof text !== 'string') {
-        text = String(text ?? '')
-      }
+      if (typeof text !== 'string') text = String(text ?? '')
 
-      // 處理群聊格式
+      // 處理群聊格式（保留原邏輯）
       if (isGroupChat) {
         const characterName = character.name
         const segments: string[] = []
@@ -533,9 +494,7 @@ export class GeminiAdapter implements LLMAdapter {
         let match: RegExpExecArray | null
 
         const firstTagMatch = text.match(/^\[([^\]]+)\]:[ ]?/)
-        if (!firstTagMatch) {
-          currentSpeaker = characterName
-        }
+        if (!firstTagMatch) currentSpeaker = characterName
 
         while ((match = tagPattern.exec(text)) !== null) {
           if (lastIndex < match.index && currentSpeaker === characterName) {
@@ -544,42 +503,32 @@ export class GeminiAdapter implements LLMAdapter {
           currentSpeaker = match[1] ?? null
           lastIndex = match.index + match[0].length
         }
-
         if (lastIndex < text.length && currentSpeaker === characterName) {
           segments.push(text.slice(lastIndex))
         }
-
         text = segments.join('').trim()
       } else {
         text = text.replace(/^\[.*?\]:[ ]?/gm, '')
       }
 
-      // 將短 ID 轉換回長 ID
       if (useShortIds && context?.otherCharactersInRoom) {
         text = convertToLongIds(text, context.otherCharactersInRoom)
       }
 
-      // 註：@ 標記的處理（過濾無效 ID、去重、處理冗餘名字）
-      // 統一在 chatRooms.ts 的 addMessage → cleanMessageMentions 中處理
-
-      // 檢查是否因為 MAX_TOKENS 被截斷
       const finishReasonCheck = response?.candidates?.[0]?.finishReason
       if (finishReasonCheck === 'MAX_TOKENS') {
         console.warn('⚠️ AI 回應因達到 token 上限而被截斷')
         throw new Error('MAX_TOKENS_REACHED')
       }
 
-      // 解析好感度
-      // 防護：確保 text 是字串後再調用 trim()
+      // 解析好感度（保留原邏輯）
       const safeText = typeof text === 'string' ? text : String(text ?? '')
       const lines = safeText.trim().split('\n')
       const rawLastLine = lines.length > 0 ? lines[lines.length - 1] : ''
-      // 防護：確保 lastLine 是字串
       const lastLine = typeof rawLastLine === 'string' ? rawLastLine : String(rawLastLine ?? '')
 
-      // 嘗試從最後一行提取好感度數字
-      // 支援格式：「6」、「好感度：6」、「好感度:6」、「好感度: 6」等
       const trimmedLastLine = lastLine.trim()
+      // ⚠️ 重要：此 regex 同時支援全形冒號 ： 與半形冒號 :
       const affectionPrefixMatch = trimmedLastLine.match(/^好感度[：:]\s*(-?\d+)$/)
       const affectionStr = (affectionPrefixMatch && affectionPrefixMatch[1])
         ? affectionPrefixMatch[1]
@@ -594,55 +543,31 @@ export class GeminiAdapter implements LLMAdapter {
 
         console.warn('⚠️ AI 回應內容為空，檢查封鎖原因:', { blockReason, finishReason })
 
-        if (blockReason === 'SAFETY' ||
-            blockReason === 'PROHIBITED_CONTENT' ||
-            finishReason === 'SAFETY' ||
-            finishReason === 'PROHIBITED_CONTENT') {
+        if (blockReason === 'SAFETY' || blockReason === 'PROHIBITED_CONTENT' ||
+            finishReason === 'SAFETY' || finishReason === 'PROHIBITED_CONTENT') {
           throw new Error('BLOCKED_BY_SAFETY')
         }
-
-        if (finishReason === 'MAX_TOKENS') {
-          throw new Error('MAX_TOKENS_REACHED')
-        }
-
-        if (blockReason || finishReason) {
-          throw new Error(`BLOCKED: ${blockReason || finishReason}`)
-        }
-
+        if (finishReason === 'MAX_TOKENS') throw new Error('MAX_TOKENS_REACHED')
+        if (blockReason || finishReason) throw new Error(`BLOCKED: ${blockReason || finishReason}`)
         throw new Error('EMPTY_RESPONSE')
       }
 
-      // 檢查最後一行是否為好感度格式（純數字或「好感度：數字」）
       const isAffectionLine = /^-?\d+$/.test(trimmedLastLine) || affectionPrefixMatch !== null
       if (!isNaN(parsedAffection) && isAffectionLine) {
         let cleanText = lines.slice(0, -1).join('\n').trim()
-
         if (!cleanText) {
           console.warn('⚠️ AI 只回傳了好感度，無實際對話內容')
-          return {
-            text: '',
-            newAffection: parsedAffection,
-            silentUpdate: true
-          }
+          return { text: '', newAffection: parsedAffection, silentUpdate: true }
         }
-
         cleanText = cleanExcessiveQuotes(cleanText)
-
-        return {
-          text: cleanText,
-          newAffection: parsedAffection
-        }
+        return { text: cleanText, newAffection: parsedAffection }
       }
 
       let finalText = text.trim()
       checkEmptyResponseAndThrow(finalText)
-
       finalText = cleanExcessiveQuotes(finalText)
 
-      return {
-        text: finalText,
-        newAffection: undefined
-      }
+      return { text: finalText, newAffection: undefined }
     } catch (error: any) {
       console.error('Gemini API 錯誤:', error)
       throw new Error(formatErrorMessage(error))
