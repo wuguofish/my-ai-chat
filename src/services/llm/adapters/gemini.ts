@@ -4,6 +4,7 @@
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, type GenerativeModel, type Content, type EnhancedGenerateContentResponse } from '@google/generative-ai'
 import { GoogleGenAI } from '@google/genai'
+import type { SafetySetting as SDKSafetySetting } from '@google/genai'
 import type {
   LLMAdapter,
   LLMMessage,
@@ -278,6 +279,8 @@ export class GeminiAdapter implements LLMAdapter {
     const historyMessages = lastUserIndex > 0 ? messages.slice(0, lastUserIndex) : []
 
     // 轉換歷史訊息為 Gemini 格式（支援多模態）
+    // TODO(Task 6): 遷移完成後改為 Content[]（from @google/genai）。
+    // 目前因為 convertToGeminiParts() 仍回傳舊 SDK 的 Part 型別，暫用 any[]
     const history: any[] = historyMessages.map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
       parts: convertToGeminiParts(msg.content)
@@ -296,7 +299,7 @@ export class GeminiAdapter implements LLMAdapter {
       config: {
         ...buildGenerationConfig({ temperature, maxOutputTokens, topP, topK, responseMimeType }),
         ...(systemInstruction && { systemInstruction }),
-        safetySettings: buildSafetySettings(safeMode) as any
+        safetySettings: buildSafetySettings(safeMode) as SDKSafetySetting[]
       }
     })
 
