@@ -3,6 +3,7 @@
  */
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, type GenerativeModel, type Content, type EnhancedGenerateContentResponse } from '@google/generative-ai'
+import { GoogleGenAI } from '@google/genai'
 import type {
   LLMAdapter,
   LLMMessage,
@@ -210,21 +211,19 @@ export class GeminiAdapter implements LLMAdapter {
    */
   async validateApiKey(apiKey: string): Promise<ValidateApiKeyResult> {
     try {
-      // 防護：確保 apiKey 是字串
       const safeApiKey = typeof apiKey === 'string' ? apiKey : String(apiKey ?? '')
       if (!safeApiKey || !safeApiKey.trim()) {
         return { valid: false, error: 'API Key 不能為空' }
       }
 
-      const genAI = new GoogleGenerativeAI(safeApiKey)
-      const model = genAI.getGenerativeModel({
-        model: getModelName('gemini', 'lite')
-      })
+      const ai = new GoogleGenAI({ apiKey: safeApiKey })
 
       // 使用 countTokens 來驗證 API Key（免費，不消耗額度）
-      const result = await model.countTokens('test')
+      const result = await ai.models.countTokens({
+        model: getModelName('gemini', 'lite'),
+        contents: 'test'
+      })
 
-      // 如果能成功回傳 token 數量，表示 API Key 有效
       if (result && typeof result.totalTokens === 'number') {
         return { valid: true }
       }
