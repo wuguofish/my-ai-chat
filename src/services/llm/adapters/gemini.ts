@@ -28,6 +28,7 @@ import {
 } from '../utils'
 import { generateSystemPrompt, convertToShortIds, convertToLongIds } from '@/utils/chatHelpers'
 import { enqueueGeminiRequest } from '@/services/apiQueue'
+import { buildGenerationConfig, buildSafetySettings } from './geminiHelpers'
 
 /**
  * 安全模式的設定（保護未成年人）
@@ -255,9 +256,20 @@ export class GeminiAdapter implements LLMAdapter {
     messages: LLMMessage[],
     options?: GenerateOptions
   ): Promise<GenerateResponse> {
-    // 優先使用 options 傳入的 apiKey，否則從 userStore 取得
     const apiKey = options?.apiKey || await this.getApiKey()
-    const model = createGeminiModel(apiKey, options)
+    const {
+      modelType = 'main',
+      systemInstruction,
+      temperature = 0.7,
+      maxOutputTokens = 2048,
+      topP,
+      topK,
+      safeMode = true,
+      responseMimeType
+    } = options || {}
+
+    const ai = new GoogleGenAI({ apiKey })
+    const modelName = getModelName('gemini', modelType)
 
     // 分離 history 和最後的 prompt
     const lastUserIndex = messages.map(m => m.role).lastIndexOf('user')
@@ -266,31 +278,35 @@ export class GeminiAdapter implements LLMAdapter {
     const historyMessages = lastUserIndex > 0 ? messages.slice(0, lastUserIndex) : []
 
     // 轉換歷史訊息為 Gemini 格式（支援多模態）
-    const history: Content[] = historyMessages.map(msg => ({
+    const history: any[] = historyMessages.map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
       parts: convertToGeminiParts(msg.content)
     }))
 
-    // 加入 workaround：先加 user prompt，再加假的 model 回應
-    history.push({
-      role: 'user',
-      parts: convertToGeminiParts(userPromptContent)
-    })
+    // workaround：先加 user prompt，再加假的 model 回應（繞過過度審查）
+    history.push({ role: 'user', parts: convertToGeminiParts(userPromptContent) })
     history.push({
       role: 'model',
       parts: [{ text: '好的，我知道了，我已經依據你的說明產生內容，如下：' }]
     })
 
-    const chat = model.startChat({ history })
-    const result = await enqueueGeminiRequest(
-      () => chat.sendMessage(''),
-      getGeminiModelName(options?.modelType === 'lite' ? 'lite' : 'main'),
+    const chat = ai.chats.create({
+      model: modelName,
+      history,
+      config: {
+        ...buildGenerationConfig({ temperature, maxOutputTokens, topP, topK, responseMimeType }),
+        ...(systemInstruction && { systemInstruction }),
+        safetySettings: buildSafetySettings(safeMode) as any
+      }
+    })
+
+    const response = await enqueueGeminiRequest(
+      () => chat.sendMessage({ message: '' }),
+      getGeminiModelName(modelType === 'lite' ? 'lite' : 'main'),
       options?.queueDescription || '內容生成'
     )
 
-    const response = result.response
     const blocked = checkResponseBlocked(response)
-
     if (blocked) {
       return {
         text: '',
@@ -301,7 +317,9 @@ export class GeminiAdapter implements LLMAdapter {
       }
     }
 
-    const text = response.text() ?? ''
+    // ⚠️ 注意：新 SDK 的 text 是 property（不是 method）
+    const rawText = response.text
+    const text = typeof rawText === 'string' ? rawText : String(rawText ?? '')
     return {
       text: getActuallyContent(text),
       raw: response,
