@@ -44,11 +44,7 @@ export {
 // 匯出 adapters
 export {
   geminiAdapter,
-  GeminiAdapter,
-  createGeminiModel,
-  prepareGeminiChat,
-  sendGeminiRequest,
-  sendGeminiRequestText
+  GeminiAdapter
 } from './adapters/gemini'
 
 export {
