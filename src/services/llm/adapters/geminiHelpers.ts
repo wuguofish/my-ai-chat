@@ -3,14 +3,6 @@
  * 抽出來方便 TDD 與單元測試
  */
 
-export interface GenerationConfigInput {
-  temperature: number
-  maxOutputTokens: number
-  topP?: number
-  topK?: number
-  responseMimeType?: string
-}
-
 export interface GenerationConfig {
   temperature: number
   maxOutputTokens: number
@@ -19,7 +11,7 @@ export interface GenerationConfig {
   responseMimeType?: string
 }
 
-export function buildGenerationConfig(input: GenerationConfigInput): GenerationConfig {
+export function buildGenerationConfig(input: GenerationConfig): GenerationConfig {
   const config: GenerationConfig = {
     temperature: input.temperature,
     maxOutputTokens: input.maxOutputTokens
@@ -30,9 +22,22 @@ export function buildGenerationConfig(input: GenerationConfigInput): GenerationC
   return config
 }
 
+export type HarmCategory =
+  | 'HARM_CATEGORY_HATE_SPEECH'
+  | 'HARM_CATEGORY_SEXUALLY_EXPLICIT'
+  | 'HARM_CATEGORY_HARASSMENT'
+  | 'HARM_CATEGORY_DANGEROUS_CONTENT'
+  | 'HARM_CATEGORY_CIVIC_INTEGRITY'
+
+export type HarmBlockThreshold =
+  | 'BLOCK_NONE'
+  | 'BLOCK_ONLY_HIGH'
+  | 'BLOCK_MEDIUM_AND_ABOVE'
+  | 'BLOCK_LOW_AND_ABOVE'
+
 export interface SafetySetting {
-  category: string
-  threshold: string
+  category: HarmCategory
+  threshold: HarmBlockThreshold
 }
 
 export function buildSafetySettings(safeMode: boolean): SafetySetting[] {
