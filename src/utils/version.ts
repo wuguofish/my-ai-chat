@@ -1,0 +1,238 @@
+/**
+ * 版本管理工具
+ */
+
+// 當前版本號（會在 build 時從 CHANGELOG.md 自動同步到 version.json）
+export const CURRENT_VERSION = '1.4.0'
+
+/**
+ * 版本資訊介面
+ */
+export interface VersionInfo {
+  version: string
+  date: string
+  features: string[]
+}
+
+// 快取的 CHANGELOG 資料
+let cachedChangelog: VersionInfo[] | null = null
+
+/**
+ * 從伺服器取得 CHANGELOG.md 並解析
+ */
+export async function fetchChangelog(): Promise<VersionInfo[]> {
+  // 如果已經快取，直接返回
+  if (cachedChangelog) {
+    return cachedChangelog
+  }
+
+  try {
+    const timestamp = new Date().getTime()
+    const response = await fetch(`${import.meta.env.BASE_URL}CHANGELOG.md?t=${timestamp}`, {
+      cache: 'no-cache',
+      headers: {
+        'Cache-Control': 'no-cache'
+      }
+    })
+
+    if (!response.ok) {
+      console.warn('無法取得 CHANGELOG，使用空陣列')
+      return []
+    }
+
+    const markdown = await response.text()
+    cachedChangelog = parseChangelog(markdown)
+    return cachedChangelog
+  } catch (error) {
+    console.error('讀取 CHANGELOG 失敗:', error)
+    return []
+  }
+}
+
+/**
+ * 解析 CHANGELOG.md 格式
+ */
+function parseChangelog(markdown: string): VersionInfo[] {
+  const versions: VersionInfo[] = []
+  const lines = markdown.split('\n')
+
+  let currentVersion: VersionInfo | null = null
+
+  for (const line of lines) {
+    // 匹配版本標題：## [1.2.0] - 2025-01-17
+    const versionMatch = line.match(/##\s+\[([^\]]+)\]\s+-\s+(.+)/)
+    if (versionMatch && versionMatch[1] && versionMatch[2]) {
+      // 如果有前一個版本，儲存它
+      if (currentVersion) {
+        versions.push(currentVersion)
+      }
+
+      // 開始新版本
+      currentVersion = {
+        version: versionMatch[1],
+        date: versionMatch[2].trim(),
+        features: []
+      }
+      continue
+    }
+
+    // 匹配功能項目（開頭是 - 或 *）
+    const featureMatch = line.match(/^\s*[-*]\s+(.+)/)
+    if (featureMatch && featureMatch[1] && currentVersion) {
+      const feature = featureMatch[1].trim()
+      // 移除 Markdown 加粗語法 **text**
+      const cleanFeature = feature.replace(/\*\*(.+?)\*\*/g, '$1')
+      currentVersion.features.push(cleanFeature)
+      if (currentVersion.features.length > 5) { 
+        break;
+      }
+    }
+  }
+
+  // 加入最後一個版本
+  if (currentVersion) {
+    versions.push(currentVersion)
+  }
+
+  return versions
+}
+
+/**
+ * 從伺服器取得最新版本號
+ * @returns 伺服器上的版本號，若失敗則返回本地版本號
+ */
+export async function fetchServerVersion(): Promise<string> {
+  try {
+    // 加上時間戳避免快取
+    const timestamp = new Date().getTime()
+    const response = await fetch(`${import.meta.env.BASE_URL}version.json?t=${timestamp}`, {
+      cache: 'no-cache',
+      headers: {
+        'Cache-Control': 'no-cache'
+      }
+    })
+
+    if (!response.ok) {
+      console.warn('無法取得伺服器版本，使用本地版本')
+      return CURRENT_VERSION
+    }
+
+    const data = await response.json()
+    return data.version || CURRENT_VERSION
+  } catch (error) {
+    console.warn('取得伺服器版本失敗:', error)
+    return CURRENT_VERSION
+  }
+}
+
+/**
+ * 檢查是否有新版本（比較本地和伺服器版本）
+ * @returns 如果是新版本返回 true，否則返回 false
+ */
+export async function checkVersion(): Promise<boolean> {
+  const storedVersion = localStorage.getItem('app_version')
+  const serverVersion = await fetchServerVersion()
+
+  // 如果本地沒有儲存版本，或儲存的版本與伺服器版本不同
+  if (!storedVersion || storedVersion !== serverVersion) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * 同步版本檢查（舊版相容，但建議使用 async 版本）
+ * @deprecated 請使用 async checkVersion()
+ */
+export function checkVersionSync(): boolean {
+  const storedVersion = localStorage.getItem('app_version')
+
+  if (!storedVersion || storedVersion !== CURRENT_VERSION) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * 更新儲存的版本號（使用伺服器版本）
+ */
+export async function updateStoredVersion(): Promise<void> {
+  const serverVersion = await fetchServerVersion()
+  localStorage.setItem('app_version', serverVersion)
+}
+
+/**
+ * 取得特定版本的更新說明（從 CHANGELOG 取得）
+ */
+export async function getVersionInfo(version: string): Promise<VersionInfo | undefined> {
+  const changelog = await fetchChangelog()
+  return changelog.find(v => v.version === version)
+}
+
+/**
+ * 清除應用快取並重新載入
+ * 採用多重策略確保真正繞過瀏覽器快取
+ */
+export async function clearCacheAndReload(): Promise<void> {
+  console.log('[清除快取] 開始清除應用快取...')
+
+  try {
+    // 1. 清除 Service Worker 快取
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations()
+      console.log(`[清除快取] 找到 ${registrations.length} 個 Service Worker`)
+      for (const registration of registrations) {
+        await registration.unregister()
+        console.log('[清除快取] Service Worker 已解除註冊')
+      }
+    }
+
+    // 2. 清除 Cache API
+    if ('caches' in window) {
+      const cacheNames = await caches.keys()
+      console.log(`[清除快取] 找到 ${cacheNames.length} 個快取`)
+      await Promise.all(
+        cacheNames.map(async cacheName => {
+          await caches.delete(cacheName)
+          console.log(`[清除快取] 已刪除快取: ${cacheName}`)
+        })
+      )
+    }
+
+    // 3. 清除 localStorage 中的版本資訊
+    try {
+      localStorage.removeItem('app-last-checked-version')
+      console.log('[清除快取] localStorage 版本資訊已清除')
+    } catch (e) {
+      console.warn('[清除快取] 無法清除 localStorage:', e)
+    }
+
+    // 4. 延遲確保清除完成
+    await new Promise(resolve => setTimeout(resolve, 200))
+    console.log('[清除快取] 快取清除完成，準備重新載入...')
+
+    // 5. 使用 hard reload 的方式重新載入
+    // 清除當前 URL 的查詢參數，然後加上新的時間戳
+    const baseUrl = window.location.origin + window.location.pathname
+    const newUrl = `${baseUrl}?_reload=${Date.now()}`
+
+    console.log(`[清除快取] 重新導向至: ${newUrl}`)
+
+    // 使用 location.replace() 不會留下歷史記錄
+    window.location.replace(newUrl)
+  } catch (error) {
+    console.error('[清除快取] 清除快取時發生錯誤:', error)
+
+    // 最後手段：直接嘗試 hard reload
+    try {
+      // @ts-ignore - 某些瀏覽器支援 reload(true)
+      window.location.reload(true)
+    } catch {
+      // 如果 reload(true) 不支援，使用 replace 加時間戳
+      const baseUrl = window.location.origin + window.location.pathname
+      window.location.replace(`${baseUrl}?_reload=${Date.now()}`)
+    }
+  }
+}

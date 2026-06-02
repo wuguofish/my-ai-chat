@@ -1,0 +1,470 @@
+/**
+ * Gemini LLM Adapter
+ */
+
+import { GoogleGenAI } from '@google/genai'
+import type { SafetySetting as SDKSafetySetting, Content, Part } from '@google/genai'
+import type {
+  LLMAdapter,
+  LLMMessage,
+  LLMMessageContent,
+  GenerateOptions,
+  GenerateResponse,
+  ValidateApiKeyResult,
+  GetCharacterResponseParams,
+  CharacterResponse
+} from '../types'
+import { imageAttachmentToLLMFormat } from '@/utils/imageHelpers'
+import { ContentBlockedError } from '../types'
+import { getModelName, getGeminiModelName } from '../config'
+import {
+  isAdultConversation,
+  getActuallyContent,
+  cleanExcessiveQuotes,
+  isBlockedError,
+  formatErrorMessage,
+  BLOCKED_FINISH_REASONS
+} from '../utils'
+import { generateSystemPrompt, convertToShortIds, convertToLongIds } from '@/utils/chatHelpers'
+import { enqueueGeminiRequest } from '@/services/apiQueue'
+import { buildGenerationConfig, buildSafetySettings } from './geminiHelpers'
+
+/**
+ * 將 LLMMessageContent 轉換為 Gemini 的 Part 陣列
+ */
+function convertToGeminiParts(content: LLMMessageContent): Part[] {
+  if (typeof content === 'string') {
+    return [{ text: content }]
+  }
+
+  return content.map(item => {
+    if (item.type === 'text') {
+      return { text: item.text }
+    }
+    // 圖片
+    return {
+      inlineData: {
+        mimeType: item.mimeType,
+        data: item.data
+      }
+    }
+  })
+}
+
+/**
+ * 檢查 Gemini 回應是否被封鎖
+ */
+function checkResponseBlocked(response: any): { reason: string; message: string } | null {
+  // 檢查 promptFeedback（輸入被封鎖）
+  const promptBlockReason = response?.promptFeedback?.blockReason
+  if (promptBlockReason) {
+    return {
+      reason: promptBlockReason,
+      message: `輸入內容被封鎖: ${promptBlockReason}`
+    }
+  }
+
+  // 檢查 candidates[0].finishReason（輸出被封鎖）
+  const finishReason = response?.candidates?.[0]?.finishReason
+  if (finishReason && BLOCKED_FINISH_REASONS.includes(finishReason)) {
+    const hasContent = response?.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!hasContent) {
+      return {
+        reason: finishReason,
+        message: `回應被封鎖: ${finishReason}`
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * Gemini Adapter 實作
+ */
+export class GeminiAdapter implements LLMAdapter {
+  readonly provider = 'gemini' as const
+
+  /**
+   * 從 userStore 取得 API Key
+   */
+  private async getApiKey(): Promise<string> {
+    const { useUserStore } = await import('@/stores/user')
+    const userStore = useUserStore()
+    const apiKey = userStore.getApiKey(this.provider)
+
+    if (!apiKey) {
+      throw new Error(`請先設定 ${this.provider} 的 API Key`)
+    }
+
+    return apiKey
+  }
+
+  /**
+   * 驗證 API Key
+   * 使用 countTokens API（免費）來驗證，不消耗免費額度
+   */
+  async validateApiKey(apiKey: string): Promise<ValidateApiKeyResult> {
+    try {
+      const safeApiKey = typeof apiKey === 'string' ? apiKey : String(apiKey ?? '')
+      if (!safeApiKey || !safeApiKey.trim()) {
+        return { valid: false, error: 'API Key 不能為空' }
+      }
+
+      const ai = new GoogleGenAI({ apiKey: safeApiKey })
+
+      // 使用 countTokens 來驗證 API Key（免費，不消耗額度）
+      const result = await ai.models.countTokens({
+        model: getModelName('gemini', 'lite'),
+        contents: 'test'
+      })
+
+      if (result && typeof result.totalTokens === 'number') {
+        return { valid: true }
+      }
+
+      return { valid: false, error: '無法取得回應' }
+    } catch (error: any) {
+      console.error('API Key 驗證失敗:', error)
+
+      if (error.message?.includes('API_KEY_INVALID') || error.message?.includes('invalid')) {
+        return { valid: false, error: 'API Key 無效' }
+      } else if (error.message?.includes('quota') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+        return { valid: false, error: 'API 額度已用盡，請稍後再試或至 Google AI Studio 查看配額' }
+      } else if (error.message?.includes('permission') || error.message?.includes('PERMISSION_DENIED')) {
+        return { valid: false, error: 'API Key 權限不足' }
+      } else {
+        return { valid: false, error: `驗證失敗：${error.message || '未知錯誤'}` }
+      }
+    }
+  }
+
+  /**
+   * 生成內容（單次請求）
+   * API Key 自動從 userStore 取得，或可透過 options.apiKey 傳入
+   *
+   * @param messages 訊息陣列（最後一條 user 訊息作為 prompt，其餘作為 history）
+   * @param options 生成選項
+   */
+  async generate(
+    messages: LLMMessage[],
+    options?: GenerateOptions
+  ): Promise<GenerateResponse> {
+    const apiKey = options?.apiKey || await this.getApiKey()
+    const {
+      modelType = 'main',
+      systemInstruction,
+      temperature = 0.7,
+      maxOutputTokens = 2048,
+      topP,
+      topK,
+      safeMode = true,
+      responseMimeType
+    } = options || {}
+
+    const ai = new GoogleGenAI({ apiKey })
+    const modelName = getModelName('gemini', modelType)
+
+    // 分離 history 和最後的 prompt
+    const lastUserIndex = messages.map(m => m.role).lastIndexOf('user')
+    const lastUserMessage = lastUserIndex >= 0 ? messages[lastUserIndex] : null
+    const userPromptContent = lastUserMessage?.content || ''
+    const historyMessages = lastUserIndex > 0 ? messages.slice(0, lastUserIndex) : []
+
+    // 轉換歷史訊息為 Gemini 格式（支援多模態）
+    const history: Content[] = historyMessages.map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: convertToGeminiParts(msg.content)
+    }))
+
+    // workaround：先加 user prompt，再加假的 model 回應（繞過過度審查）
+    history.push({ role: 'user', parts: convertToGeminiParts(userPromptContent) })
+    history.push({
+      role: 'model',
+      parts: [{ text: '好的，我知道了，我已經依據你的說明產生內容，如下：' }]
+    })
+
+    const chat = ai.chats.create({
+      model: modelName,
+      history,
+      config: {
+        ...buildGenerationConfig({ temperature, maxOutputTokens, topP, topK, responseMimeType }),
+        ...(systemInstruction && { systemInstruction }),
+        safetySettings: buildSafetySettings(safeMode) as SDKSafetySetting[]
+      }
+    })
+
+    const response = await enqueueGeminiRequest(
+      () => chat.sendMessage({ message: '' }),
+      getGeminiModelName(modelType === 'lite' ? 'lite' : 'main'),
+      options?.queueDescription || '內容生成'
+    )
+
+    const blocked = checkResponseBlocked(response)
+    if (blocked) {
+      return {
+        text: '',
+        raw: response,
+        blocked: true,
+        blockReason: blocked.reason,
+        finishReason: response?.candidates?.[0]?.finishReason
+      }
+    }
+
+    // ⚠️ 注意：新 SDK 的 text 是 property（不是 method）
+    const rawText = response.text
+    const text = typeof rawText === 'string' ? rawText : String(rawText ?? '')
+    return {
+      text: getActuallyContent(text),
+      raw: response,
+      blocked: false,
+      finishReason: response?.candidates?.[0]?.finishReason
+    }
+  }
+
+  /**
+   * 取得角色回應（完整流程）
+   * API Key 自動從 userStore 取得
+   */
+  async getCharacterResponse(params: GetCharacterResponseParams): Promise<CharacterResponse> {
+    const { character, user, room, messages, userMessage, userImages, context } = params
+
+    try {
+      const apiKey = await this.getApiKey()
+
+      const isGroupChat = room?.type === 'group'
+      const useShortIds = isGroupChat && context?.otherCharactersInRoom && context.otherCharactersInRoom.length > 0
+      const isAdult = isAdultConversation(user.age, character.age)
+
+      const systemPrompt = generateSystemPrompt({
+        character, user, room, ...context, useShortIds, isAdultMode: isAdult
+      })
+
+      const ai = new GoogleGenAI({ apiKey })
+      const modelName = getModelName('gemini', 'main')
+      const baseConfig = {
+        ...buildGenerationConfig({
+          temperature: 0.95,
+          maxOutputTokens: character.maxOutputTokens || 2048,
+          topP: 0.95,
+          topK: 40
+        }),
+        systemInstruction: systemPrompt,
+        safetySettings: buildSafetySettings(!isAdult) as SDKSafetySetting[]
+      }
+
+      // 處理對話歷史（保留原 useShortIds 邏輯）
+      const processedMessages = useShortIds && context?.otherCharactersInRoom
+        ? messages.map(msg => ({
+            ...msg,
+            content: convertToShortIds(msg.content, context.otherCharactersInRoom!)
+          }))
+        : messages
+
+      let _userMsg = isGroupChat && userMessage.length > 0
+        ? "[" + user.nickname + "]: " + userMessage
+        : userMessage
+
+      if (useShortIds && context?.otherCharactersInRoom) {
+        _userMsg = convertToShortIds(_userMsg, context.otherCharactersInRoom)
+      }
+
+      let history: Content[] = processedMessages.slice(-20).map(msg => {
+        const isUser = msg.senderId === 'user'
+        let content = msg.content
+        if (isGroupChat) {
+          content = `[${msg.senderName}]: ${msg.content}`
+        }
+        return {
+          role: isUser ? 'user' : 'model',
+          parts: [{ text: content }]
+        }
+      })
+
+      const ensureHistoryStartsWithUser = (hist: Content[]) => {
+        if (hist.length > 0 && hist[0]?.role !== 'user') {
+          const firstUserIndex = hist.findIndex(msg => msg.role === 'user')
+          if (firstUserIndex > 0) return hist.slice(firstUserIndex)
+          return []
+        }
+        return hist
+      }
+
+      history = ensureHistoryStartsWithUser(history)
+
+      const buildUserMessageParts = (text: string): any[] => {
+        const parts: any[] = []
+        if (userImages && userImages.length > 0) {
+          for (const img of userImages) {
+            const { mimeType, data } = imageAttachmentToLLMFormat(img)
+            parts.push({ inlineData: { mimeType, data } })
+          }
+        }
+        if (text) parts.push({ text })
+        // Gemini API 要求每個 Content 至少有一個 part
+        if (parts.length === 0) parts.push({ text: '（對話繼續）' })
+        return parts
+      }
+
+      const sendAndCheck = async (chatHistory: Content[], userMsg: string): Promise<{ text: string; response: any }> => {
+        const historyWithUserMsg = [...chatHistory]
+        historyWithUserMsg.push({ role: 'user', parts: buildUserMessageParts(userMsg) })
+        historyWithUserMsg.push({ role: 'model', parts: [{ text: `[${character.name}]:` }] })
+
+        const chat = ai.chats.create({
+          model: modelName,
+          history: historyWithUserMsg,
+          config: baseConfig
+        })
+
+        const response = await enqueueGeminiRequest(
+          () => chat.sendMessage({ message: '' }),
+          getGeminiModelName('main'),
+          `對話：${character.name}`
+        )
+
+        const blocked = checkResponseBlocked(response)
+        if (blocked) {
+          throw new ContentBlockedError(blocked.reason, blocked.message)
+        }
+
+        // ⚠️ 新 SDK：text 是 property（不是 method）
+        const rawText = response.text
+        const responseText = typeof rawText === 'string' ? rawText : String(rawText ?? '')
+        return { text: responseText, response }
+      }
+
+      // 三層降級重試（保留原邏輯）
+      let text: string
+      let response: any
+      try {
+        const result = await sendAndCheck(history, _userMsg)
+        text = result.text
+        response = result.response
+      } catch (firstError: any) {
+        if (isBlockedError(firstError) && history.length > 0) {
+          console.warn('⚠️ 內容被封鎖（完整歷史），嘗試縮短對話歷史重試...')
+          try {
+            let shorterHistory = history.slice(-5)
+            shorterHistory = ensureHistoryStartsWithUser(shorterHistory)
+            const result = await sendAndCheck(shorterHistory, _userMsg)
+            text = result.text
+            response = result.response
+            console.log('✅ 縮短歷史後重試成功（5 則）')
+          } catch (secondError: any) {
+            if (isBlockedError(secondError)) {
+              console.warn('⚠️ 內容仍被封鎖（短歷史），嘗試無歷史模式...')
+              try {
+                const result = await sendAndCheck([], _userMsg)
+                text = result.text
+                response = result.response
+                console.log('✅ 無歷史模式重試成功')
+              } catch (thirdError: any) {
+                console.error('❌ 三層降級重試均失敗')
+                throw thirdError
+              }
+            } else {
+              throw secondError
+            }
+          }
+        } else {
+          throw firstError
+        }
+      }
+
+      if (typeof text !== 'string') text = String(text ?? '')
+
+      // 處理群聊格式（保留原邏輯）
+      if (isGroupChat) {
+        const characterName = character.name
+        const segments: string[] = []
+        const tagPattern = /\[([^\]]+)\]:[ ]?/g
+        let lastIndex = 0
+        let currentSpeaker: string | null = null
+        let match: RegExpExecArray | null
+
+        const firstTagMatch = text.match(/^\[([^\]]+)\]:[ ]?/)
+        if (!firstTagMatch) currentSpeaker = characterName
+
+        while ((match = tagPattern.exec(text)) !== null) {
+          if (lastIndex < match.index && currentSpeaker === characterName) {
+            segments.push(text.slice(lastIndex, match.index))
+          }
+          currentSpeaker = match[1] ?? null
+          lastIndex = match.index + match[0].length
+        }
+        if (lastIndex < text.length && currentSpeaker === characterName) {
+          segments.push(text.slice(lastIndex))
+        }
+        text = segments.join('').trim()
+      } else {
+        text = text.replace(/^\[.*?\]:[ ]?/gm, '')
+      }
+
+      if (useShortIds && context?.otherCharactersInRoom) {
+        text = convertToLongIds(text, context.otherCharactersInRoom)
+      }
+
+      const finishReasonCheck = response?.candidates?.[0]?.finishReason
+      if (finishReasonCheck === 'MAX_TOKENS') {
+        console.warn('⚠️ AI 回應因達到 token 上限而被截斷')
+        throw new Error('MAX_TOKENS_REACHED')
+      }
+
+      // 解析好感度（保留原邏輯）
+      const safeText = typeof text === 'string' ? text : String(text ?? '')
+      const lines = safeText.trim().split('\n')
+      const rawLastLine = lines.length > 0 ? lines[lines.length - 1] : ''
+      const lastLine = typeof rawLastLine === 'string' ? rawLastLine : String(rawLastLine ?? '')
+
+      const trimmedLastLine = lastLine.trim()
+      // ⚠️ 重要：此 regex 同時支援全形冒號 ： 與半形冒號 :
+      const affectionPrefixMatch = trimmedLastLine.match(/^好感度[：:]\s*(-?\d+)$/)
+      const affectionStr = (affectionPrefixMatch && affectionPrefixMatch[1])
+        ? affectionPrefixMatch[1]
+        : trimmedLastLine
+      const parsedAffection = parseInt(affectionStr, 10)
+
+      const checkEmptyResponseAndThrow = (textToCheck: string) => {
+        if (textToCheck && textToCheck.length > 0) return
+
+        const blockReason = response?.promptFeedback?.blockReason
+        const finishReason = response?.candidates?.[0]?.finishReason
+
+        console.warn('⚠️ AI 回應內容為空，檢查封鎖原因:', { blockReason, finishReason })
+
+        if (blockReason === 'SAFETY' || blockReason === 'PROHIBITED_CONTENT' ||
+            finishReason === 'SAFETY' || finishReason === 'PROHIBITED_CONTENT') {
+          throw new Error('BLOCKED_BY_SAFETY')
+        }
+        if (finishReason === 'MAX_TOKENS') throw new Error('MAX_TOKENS_REACHED')
+        if (blockReason || finishReason) throw new Error(`BLOCKED: ${blockReason || finishReason}`)
+        throw new Error('EMPTY_RESPONSE')
+      }
+
+      const isAffectionLine = /^-?\d+$/.test(trimmedLastLine) || affectionPrefixMatch !== null
+      if (!isNaN(parsedAffection) && isAffectionLine) {
+        let cleanText = lines.slice(0, -1).join('\n').trim()
+        if (!cleanText) {
+          console.warn('⚠️ AI 只回傳了好感度，無實際對話內容')
+          return { text: '', newAffection: parsedAffection, silentUpdate: true }
+        }
+        cleanText = cleanExcessiveQuotes(cleanText)
+        return { text: cleanText, newAffection: parsedAffection }
+      }
+
+      let finalText = text.trim()
+      checkEmptyResponseAndThrow(finalText)
+      finalText = cleanExcessiveQuotes(finalText)
+
+      return { text: finalText, newAffection: undefined }
+    } catch (error: any) {
+      console.error('Gemini API 錯誤:', error)
+      throw new Error(formatErrorMessage(error))
+    }
+  }
+}
+
+// 匯出單例
+export const geminiAdapter = new GeminiAdapter()
+
