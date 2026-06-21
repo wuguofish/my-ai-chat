@@ -699,6 +699,11 @@ const handleClearData = async () => {
     if (await confirmDanger('再次確認：真的要清除所有資料嗎？')) {
       characterStore.clearCharacters()
       chatRoomStore.clearAllData()
+      memoriesStore.clearAllData()
+      relationshipsStore.clearAllRelationships()
+      feedStore.clearAll()
+      localStorage.removeItem('ai-chat-memory-tracking')
+      localStorage.removeItem('ai-chat-context-tracking')
       userStore.clearProfile()
       router.push('/onboarding')
     }
