@@ -9,6 +9,7 @@ import { useMemoriesStore } from '@/stores/memories'
 import { useToast } from '@/composables/useToast'
 import { useModal } from '@/composables/useModal'
 import type { Character, ImageAttachment } from '@/types'
+import { getImageSrc } from '@/utils/imageStore'
 import {
   formatMessageTime,
   formatMessageForAI,
@@ -2059,10 +2060,10 @@ onBeforeUnmount(() => {
               <img
                 v-for="img in message.images"
                 :key="img.id"
-                :src="img.data"
+                :src="getImageSrc(img)"
                 :alt="'圖片'"
                 class="message-image"
-                @click="openImagePreview(img.data)"
+                @click="openImagePreview(getImageSrc(img))"
               />
             </div>
             <div v-if="message.content" class="message-text" v-html="formatMessageContent(message.content)"></div>
