@@ -185,6 +185,16 @@ export const FEED_COMMENT_REPLY = {
   repliedToBonus: 0.2,
 } as const
 
+/** 動態/留言生成的品質檢查設定（偵測 LLM 異常輸出） */
+export const FEED_CONTENT_GUARD = {
+  /** 異常輸出時最多嘗試幾次（含第一次） */
+  maxAttempts: 2,
+  /** 動態至少需要的有效字數 */
+  postMinMeaningfulChars: 10,
+  /** 留言至少需要的有效字數 */
+  commentMinMeaningfulChars: 2,
+} as const
+
 // ==========================================
 // 作息時間模板（新版：區分平日/假日）
 // ==========================================
