@@ -13,6 +13,8 @@ import { googleDriveService } from '@/services/googleDrive'
 import { fetchServerVersion, clearCacheAndReload, getVersionInfo, type VersionInfo } from '@/utils/version'
 import { getAdapter, getImplementedProviders, LLM_CONFIG, type LLMProvider } from '@/services/llm'
 import { encodeBackupData, decodeBackupData } from '@/utils/dataObfuscation'
+import { getStorageUsage, type StorageUsage } from '@/utils/persistentStorage'
+import { flushPersistedStores } from '@/stores/plugins/persist'
 import { Eye, EyeOff, Camera, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import PageHeader from '@/components/common/PageHeader.vue'
 import AvatarCropper from '@/components/common/AvatarCropper.vue'
@@ -431,6 +433,8 @@ const handleImportData = (event: Event) => {
           userStore.migrateApiConfig()
 
           await alert('匯入成功！', { type: 'success' })
+          // 確保還原的資料已寫入儲存空間再重新整理
+          await flushPersistedStores()
           window.location.reload()
         }
       } catch (error) {
@@ -447,81 +451,61 @@ const cleanupKeepCount = ref(60) // 預設保留最近 60 則
 const exportFormat = ref<'md' | 'json'>('md') // 匯出格式
 
 /** 計算 LocalStorage 各 key 的使用量 */
-/**
- * 偵測 LocalStorage 的真實容量上限（字元數）
- * 使用二分搜尋法，在不破壞現有資料的前提下測試可寫入的最大容量
- * 結果會快取，避免每次 computed 都重測
- */
-const detectedQuotaChars = ref(0)
-
-function detectLocalStorageQuota(): number {
-  const testKey = '__storage_quota_test__'
-  // 先計算目前已用的字元數（所有 key + value 的 length）
-  let currentChars = 0
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i)!
-    currentChars += key.length + (localStorage.getItem(key)?.length || 0)
-  }
-  // 二分搜尋剩餘可用空間
-  let low = 0
-  let high = 15 * 1024 * 1024 // 最多測到 15M 字元
-  while (high - low > 1024) {
-    const mid = Math.floor((low + high) / 2)
-    try {
-      localStorage.setItem(testKey, 'a'.repeat(mid))
-      low = mid
-    } catch {
-      high = mid
-    }
-  }
-  localStorage.removeItem(testKey)
-  return currentChars + low
+/** 儲存空間各項資料的顯示名稱 */
+const STORAGE_LABELS: Record<string, string> = {
+  'ai-chat-user': '使用者資料',
+  'ai-chat-characters': '好友資料',
+  'ai-chat-rooms': '聊天室與訊息',
+  'ai-chat-memories': '記憶系統',
+  'ai-chat-relationships': '關係資料',
+  'ai-chat-feed': '動態牆',
+  'ai-chat-settings': '設定',
 }
 
-// 初始化時偵測一次
-try {
-  detectedQuotaChars.value = detectLocalStorageQuota()
-} catch {
-  detectedQuotaChars.value = 5 * 1024 * 1024 // 偵測失敗時預設 5MB
+/** localStorage 備援模式下的預估上限（字元數） */
+const LOCAL_STORAGE_QUOTA_CHARS = 5 * 1024 * 1024
+
+const storageUsageRaw = ref<StorageUsage | null>(null)
+
+async function refreshStorageUsage() {
+  try {
+    storageUsageRaw.value = await getStorageUsage()
+  } catch (error) {
+    console.error('讀取儲存空間用量失敗:', error)
+  }
 }
+
+void refreshStorageUsage()
 
 const storageUsage = computed(() => {
-  const keys = [
-    { key: 'ai-chat-user', label: '使用者資料' },
-    { key: 'ai-chat-characters', label: '好友資料' },
-    { key: 'ai-chat-rooms', label: '聊天室與訊息' },
-    { key: 'ai-chat-memories', label: '記憶系統' },
-    { key: 'ai-chat-relationships', label: '關係資料' },
-    { key: 'ai-chat-feed', label: '動態牆' },
-    { key: 'ai-chat-settings', label: '設定' },
-  ]
-  // localStorage 的限制是以「字元數」計算，不是 UTF-8 位元組
-  let totalChars = 0
-  const details = keys.map(({ key, label }) => {
-    const data = localStorage.getItem(key) || ''
-    const chars = key.length + data.length
-    totalChars += chars
-    return { key, label, chars, sizeKB: Math.round(chars / 1024) }
-  })
-  // 加上其他未列出的 ai-chat key
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i)
-    if (k && k.startsWith('ai-chat-') && !keys.find(d => d.key === k)) {
-      const data = localStorage.getItem(k) || ''
-      const chars = k.length + data.length
-      totalChars += chars
-      details.push({ key: k, label: k, chars, sizeKB: Math.round(chars / 1024) })
+  const raw = storageUsageRaw.value
+  const items = raw?.items ?? []
+  const totalChars = items.reduce((sum, item) => sum + item.chars, 0)
+  const details = items
+    .map(({ key, chars }) => ({ key, label: STORAGE_LABELS[key] ?? key, chars, sizeKB: Math.round(chars / 1024) }))
+    .sort((a, b) => b.chars - a.chars)
+
+  // IndexedDB：使用瀏覽器回報的整體用量與上限（bytes）
+  if (raw?.backend === 'indexeddb' && raw.estimate) {
+    const { usage, quota } = raw.estimate
+    return {
+      backendLabel: 'IndexedDB',
+      totalMB: (usage / 1024 / 1024).toFixed(2),
+      quotaMB: (quota / 1024 / 1024).toFixed(0),
+      details,
+      usagePercent: Math.min(100, Math.round((usage / quota) * 100))
     }
   }
-  const quotaChars = detectedQuotaChars.value
-  const quotaMB = (quotaChars / 1024 / 1024).toFixed(1)
+
+  // localStorage 備援（或瀏覽器不支援 estimate）：以字元數估算
   return {
-    totalChars,
-    totalKB: Math.round(totalChars / 1024),
+    backendLabel: raw?.backend === 'indexeddb' ? 'IndexedDB' : 'localStorage',
     totalMB: (totalChars / 1024 / 1024).toFixed(2),
-    details: details.sort((a, b) => b.chars - a.chars),
-    quotaMB,
-    usagePercent: Math.min(100, Math.round((totalChars / quotaChars) * 100))
+    quotaMB: (LOCAL_STORAGE_QUOTA_CHARS / 1024 / 1024).toFixed(1),
+    details,
+    usagePercent: raw?.backend === 'indexeddb'
+      ? 0
+      : Math.min(100, Math.round((totalChars / LOCAL_STORAGE_QUOTA_CHARS) * 100))
   }
 })
 
@@ -629,6 +613,8 @@ const handleCleanupRoomMessages = async (roomId: string, roomName: string, curre
   )
   if (confirmed) {
     chatRoomStore.deleteOldMessages(roomId, cleanupKeepCount.value)
+    await flushPersistedStores()
+    void refreshStorageUsage()
     await alert(`已清理 ${deleteCount} 則舊訊息`, { type: 'success' })
   }
 }
@@ -647,6 +633,8 @@ const handleCleanupAllMessages = async () => {
   )
   if (confirmed) {
     roomsToClean.forEach(s => chatRoomStore.deleteOldMessages(s.roomId, cleanupKeepCount.value))
+    await flushPersistedStores()
+    void refreshStorageUsage()
     await alert(`已清理 ${totalDelete} 則舊訊息`, { type: 'success' })
   }
 }
@@ -882,6 +870,8 @@ const handleGoogleRestore = async () => {
     userStore.migrateApiConfig()
 
     await alert('從 Google Drive 還原成功！', { type: 'success' })
+    // 確保還原的資料已寫入儲存空間再重新整理
+    await flushPersistedStores()
     window.location.reload()
   } catch (error) {
     console.error('還原失敗:', error)
@@ -1234,7 +1224,7 @@ const handleGoogleRestore = async () => {
         </div>
         <div class="storage-info">
           <span class="storage-used">{{ storageUsage.totalMB }} MB</span>
-          <span class="storage-total">/ {{ storageUsage.quotaMB }} MB 上限（{{ storageUsage.usagePercent }}%）</span>
+          <span class="storage-total">/ {{ storageUsage.quotaMB }} MB 上限（{{ storageUsage.usagePercent }}%）・{{ storageUsage.backendLabel }}</span>
         </div>
       </div>
 

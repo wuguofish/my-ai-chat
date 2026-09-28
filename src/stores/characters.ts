@@ -6,7 +6,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Character } from '@/types'
 import { LIMITS, SCHEDULE_TEMPLATES_V2, SCHEDULE_TEMPLATES } from '@/utils/constants'
-import { obfuscatedSerializer, safeStorage } from '@/utils/dataObfuscation'
 
 export const useCharacterStore = defineStore('characters', () => {
   // State
@@ -241,7 +240,6 @@ export const useCharacterStore = defineStore('characters', () => {
 }, {
   persist: {
     key: 'ai-chat-characters',
-    storage: safeStorage,
-    serializer: obfuscatedSerializer
+    obfuscate: true
   }
 })
