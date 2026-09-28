@@ -6,7 +6,7 @@
  * - 頁面隱藏或關閉時立即寫入尚未存檔的變更
  */
 
-import type { PiniaPluginContext } from 'pinia'
+import type { PiniaPluginContext, StateTree } from 'pinia'
 import { obfuscate, smartDecode } from '@/utils/dataObfuscation'
 import { getPreloadedItem, writeItem } from '@/utils/persistentStorage'
 
@@ -54,7 +54,7 @@ export function persistPlugin({ store, options }: PiniaPluginContext): void {
     try {
       const data = smartDecode(raw)
       if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
-        store.$patch(data as Record<string, unknown>)
+        store.$patch(data as StateTree)
       }
     } catch (error) {
       console.error(`❌ 還原 ${persist.key} 失敗:`, error)
