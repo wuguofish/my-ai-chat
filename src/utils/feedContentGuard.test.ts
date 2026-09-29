@@ -41,6 +41,18 @@ describe('detectDegenerateContent', () => {
   it('單一字元重複（情緒表達）不應被當成迴圈', () => {
     expect(detectDegenerateContent('今天終於拿到期待很久的演唱會門票了！！！！！！！！！！！！', post)).toBeNull()
   })
+
+  it('短詞、emoji、空白分隔的情緒重複不應被當成迴圈', () => {
+    expect(detectDegenerateContent('太棒了👍🏻👍🏻👍🏻👍🏻👍🏻👍🏻', comment)).toBeNull()
+    expect(detectDegenerateContent('好耶好耶好耶好耶好耶好耶', comment)).toBeNull()
+    expect(detectDegenerateContent('嗚嗚嗚嗚 嗚嗚嗚嗚 嗚嗚嗚嗚 想哭', comment)).toBeNull()
+  })
+
+  it('長文中少量刻意重複的句子不應被當成迴圈', () => {
+    const text = '今天去看了期待已久的電影，劇情非常精彩，尤其是最後的反轉讓人印象深刻。' +
+      '好好看好好看好好看！下次還想再和朋友一起去電影院看續集，希望不要等太久。'
+    expect(detectDegenerateContent(text, post)).toBeNull()
+  })
 })
 
 describe('escapeHtml', () => {

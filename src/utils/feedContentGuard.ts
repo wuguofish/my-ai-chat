@@ -31,6 +31,12 @@ const MARKUP_CHAR = /[*#_`|\\<>[\]{}=]/g
 /** 連續重複片段：同一段文字（至少 4 字）連續出現 3 次以上 */
 const REPEATED_FRAGMENT = /(.{4,}?)\1{2,}/gsu
 
+/** 重複片段至少要有幾種不同的文字/數字，才算迴圈（排除「好耶好耶」「👍🏻👍🏻」這類情緒重複） */
+const LOOP_MIN_DISTINCT_CHARS = 3
+
+/** 重複片段至少要佔全文多少比例，才算迴圈（模型陷入迴圈時通常會佔掉大半內容） */
+const LOOP_MIN_RATIO = 0.5
+
 export interface DegenerateCheckOptions {
   /** 至少需要多少個有意義的字元（文字或數字） */
   minMeaningfulChars: number
@@ -60,9 +66,14 @@ export function detectDegenerateContent(
     return '符號過多'
   }
 
-  // 模型陷入重複迴圈（排除「哈哈哈哈」這種單一字元的正常情緒表達）
+  // 模型陷入重複迴圈
+  // 只計算文字/數字（空白、emoji、膚色修飾符不算），並要求重複段落佔大半內容，
+  // 避免把「好耶好耶好耶」「嗚嗚嗚嗚 嗚嗚嗚嗚」這類正常情緒表達誤判
+  const textLength = [...text].length
   for (const match of text.matchAll(REPEATED_FRAGMENT)) {
-    if (new Set(match[1]).size >= 2) {
+    const distinctChars = new Set(match[1]!.match(MEANINGFUL_CHAR) ?? []).size
+    const ratio = [...match[0]].length / textLength
+    if (distinctChars >= LOOP_MIN_DISTINCT_CHARS && ratio >= LOOP_MIN_RATIO) {
       return '內容重複'
     }
   }
