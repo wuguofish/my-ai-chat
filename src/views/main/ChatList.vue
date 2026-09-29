@@ -5,6 +5,7 @@ import { useUserStore } from '@/stores/user'
 import { useCharacterStore } from '@/stores/characters'
 import { useChatRoomsStore } from '@/stores/chatRooms'
 import { formatMessageTime, getCharacterStatus, formatMessageForDisplay } from '@/utils/chatHelpers'
+import { escapeHtml } from '@/utils/html'
 import { useModal } from '@/composables/useModal'
 import PageHeader from '@/components/common/PageHeader.vue'
 import type { ChatRoom } from '@/types'
@@ -132,7 +133,8 @@ const getLastMessagePreview = (roomId: string) => {
 
   let contentPreview = formatMessageForDisplay(lastMessage.content, allCharacters.value, userName.value);
 
-  return `${lastMessage.senderName}: ${contentPreview}`
+  // 結果會用 v-html 顯示，名稱也要跳脫（內容已在 formatMessageForDisplay 跳脫過）
+  return `${escapeHtml(lastMessage.senderName)}: ${contentPreview}`
 }
 
 const getLastMessageTime = (room: ChatRoom) => {

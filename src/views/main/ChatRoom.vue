@@ -10,6 +10,7 @@ import { useToast } from '@/composables/useToast'
 import { useModal } from '@/composables/useModal'
 import type { Character, ImageAttachment } from '@/types'
 import { getImageSrc } from '@/utils/imageStore'
+import { escapeHtml } from '@/utils/html'
 import {
   formatMessageTime,
   formatMessageForAI,
@@ -189,7 +190,8 @@ const handleAvatarClick = (senderId: string, event: Event) => {
 
 // 格式化訊息內容（將 @ID 轉換為 @名字）
 const formatMessageContent = (content: string) => {
-  if (!room.value) return content
+  // 結果會用 v-html 顯示，所以沒有聊天室資料時也要跳脫
+  if (!room.value) return escapeHtml(content)
 
   var _content = chatRoomStore.cleanMessageMentions(content)
   _content = cleanExcessiveQuotes(_content)

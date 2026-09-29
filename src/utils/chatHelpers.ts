@@ -8,6 +8,7 @@ import type {
   Message
 } from '@/types'
 import { getRelationshipLevelName, getCharacterRelationshipTypeText } from './relationshipHelpers'
+import { escapeHtml } from './html'
 
 /**
  * 安全地檢查字串是否有內容（非空白）
@@ -453,22 +454,28 @@ export function generateChatRoomName(characterNames: string[]): string {
 /**
  * 將訊息中的 @ID 轉換為 @名字（供使用者閱讀）
  * 同時將 *動作* 轉換為 <i>動作</i>
+ * 回傳的是 HTML（給 v-html 用），原始內容與名稱都會先跳脫
  */
 export function formatMessageForDisplay(message: string, characters: Character[], userName: string = '你'): string {
-  let formatted = message
+  // 先跳脫 HTML，避免 AI 回覆或使用者輸入的 < > 等字元被 v-html 當成標籤渲染
+  // 之後加入的 @ 標籤、粗體、斜體都是自己產生的，所以要在跳脫之後處理
+  let formatted = escapeHtml(message)
 
   // 處理 @all（不區分大小寫，統一轉為 @all）
   formatted = formatted.replace(/@all/gi, '<span class="tag-text">@all</span>')
 
   // 先處理 @user
-  formatted = formatted.replace(/@user/g, `<span class="tag-text">@${userName}</span>`)
+  // 用函式當替換值，名稱裡的 $ 才不會被當成替換樣式
+  const userTag = `<span class="tag-text">@${escapeHtml(userName)}</span>`
+  formatted = formatted.replace(/@user/g, () => userTag)
 
   // 處理 @角色ID
   characters.forEach(char => {
     // Escape 特殊字元，避免正則表達式錯誤
-    const escapedId = char.id.replace(/[\.*+?^${}()|[\]\\]/g, '\\$&')
+    const escapedId = escapeHtml(char.id).replace(/[\.*+?^${}()|[\]\\]/g, '\\$&')
     const regex = new RegExp(`@${escapedId}`, 'g')
-    formatted = formatted.replace(regex, `<span class="tag-text">@${char.name}</span>`)
+    const charTag = `<span class="tag-text">@${escapeHtml(char.name)}</span>`
+    formatted = formatted.replace(regex, () => charTag)
   })
 
   // 處理未知的 @UUID（已刪除的角色），轉換為 @unknown
