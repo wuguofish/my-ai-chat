@@ -152,11 +152,24 @@ export async function deleteImagesExcept(keepIds: Set<string>): Promise<number> 
 }
 
 /** 所有圖片佔用的大小（bytes） */
-export async function getImagesTotalBytes(): Promise<number> {
-  if (!db) return 0
+export function getImagesTotalBytes(): Promise<number> {
+  if (!db) return Promise.resolve(0)
   const tx = db.transaction(IMAGE_STORE, 'readonly')
-  const all = await promisifyRequest(tx.objectStore(IMAGE_STORE).getAll()) as StoredImage[]
-  return all.reduce((sum, img) => sum + (img?.buffer?.byteLength ?? 0), 0)
+  // 用 cursor 逐筆累加，不要一次把所有圖片的二進位讀進記憶體
+  const request = tx.objectStore(IMAGE_STORE).openCursor()
+  let total = 0
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) {
+        resolve(total)
+        return
+      }
+      total += (cursor.value as StoredImage | undefined)?.buffer?.byteLength ?? 0
+      cursor.continue()
+    }
+    request.onerror = () => reject(request.error)
+  })
 }
 
 // ==========================================

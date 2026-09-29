@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { createPinia, setActivePinia } from 'pinia'
@@ -40,8 +40,12 @@ function freshPinia() {
 
 const image = (id: string): ImageAttachment => ({ id, data: PNG, mimeType: 'image/png', width: 1, height: 1 })
 
-/** 等待背景的圖片搬移完成 */
-const settle = () => new Promise(resolve => setTimeout(resolve, 50))
+/** 等待背景的圖片搬移完成（訊息裡的圖片都不再帶 Base64） */
+const waitForOffload = (store: ReturnType<typeof useChatRoomsStore>, roomId: string) =>
+  vi.waitFor(() => {
+    const pending = store.getMessages(roomId).some(m => m.images?.some(img => img.data))
+    expect(pending).toBe(false)
+  })
 
 describe('data URL 與二進位資料互轉', () => {
   it('轉換後再轉回應相同', () => {
@@ -67,7 +71,7 @@ describe('聊天圖片存進 IndexedDB', () => {
     const roomId = store.createChatRoom('測試', ['c1'])
     const sent = [image('img-1')]
     store.addMessage(roomId, { roomId, senderId: 'user', senderName: '我', content: '看圖', images: sent })
-    await settle()
+    await waitForOffload(store, roomId)
 
     const saved = store.getMessages(roomId)[0]!
     expect(saved.images?.[0]).toEqual({ id: 'img-1', mimeType: 'image/png', width: 1, height: 1 })
@@ -80,7 +84,7 @@ describe('聊天圖片存進 IndexedDB', () => {
     const store = useChatRoomsStore()
     const roomId = store.createChatRoom('測試', ['c1'])
     store.addMessage(roomId, { roomId, senderId: 'user', senderName: '我', content: '', images: [image('img-2')] })
-    await settle()
+    await waitForOffload(store, roomId)
 
     const exported = await store.getMessagesWithImageData(roomId)
     expect(exported[0]!.images?.[0]?.data).toBe(PNG)
@@ -118,7 +122,7 @@ describe('聊天圖片存進 IndexedDB', () => {
     const roomId = store.createChatRoom('測試', ['c1'])
     store.addMessage(roomId, { roomId, senderId: 'user', senderName: '我', content: '', images: [image('keep')] })
     const removed = store.addMessage(roomId, { roomId, senderId: 'user', senderName: '我', content: '', images: [image('drop')] })
-    await settle()
+    await waitForOffload(store, roomId)
     const bytesBefore = await getImagesTotalBytes()
 
     store.deleteMessage(roomId, removed.id)
@@ -132,7 +136,7 @@ describe('聊天圖片存進 IndexedDB', () => {
     const store = useChatRoomsStore()
     const roomId = store.createChatRoom('測試', ['c1'])
     store.addMessage(roomId, { roomId, senderId: 'user', senderName: '我', content: '', images: [image('precious')] })
-    await settle()
+    await waitForOffload(store, roomId)
     await nextTick()
     await flushPersistedStores()
     await writeItem(`ai-chat-rooms/messages/${roomId}`, 'AICHAT_V1:!!!壞掉')
@@ -148,7 +152,41 @@ describe('聊天圖片存進 IndexedDB', () => {
     const store = useChatRoomsStore()
     const roomId = store.createChatRoom('測試', ['c1'])
     store.addMessage(roomId, { roomId, senderId: 'user', senderName: '我', content: '', images: [image('inline')] })
-    await settle()
     expect(store.getMessages(roomId)[0]!.images?.[0]?.data).toBe(PNG)
+  })
+
+  it('存檔不是存在 IndexedDB 時（退回 localStorage），不應清理圖片', async () => {
+    const store = useChatRoomsStore()
+    const roomId = store.createChatRoom('測試', ['c1'])
+    store.addMessage(roomId, { roomId, senderId: 'user', senderName: '我', content: '', images: [image('kept')] })
+    await waitForOffload(store, roomId)
+
+    // 模擬主資料庫開不起來、退回 localStorage：store 是空的，但圖片資料庫仍可用
+    await initPersistentStorage(['ai-chat-rooms'], null)
+    freshPinia()
+    expect(await useChatRoomsStore().cleanupOrphanImages()).toBe(0)
+    expect(await getImageDataUrl('kept')).toBe(PNG)
+  })
+
+  it('刪除聊天室、清理舊訊息、清除所有資料後，應自動刪掉沒人用的圖片', async () => {
+    const store = useChatRoomsStore()
+    const roomA = store.createChatRoom('A', ['c1'])
+    const roomB = store.createChatRoom('B', ['c1'])
+    store.addMessage(roomA, { roomId: roomA, senderId: 'user', senderName: '我', content: '', images: [image('a1')] })
+    store.addMessage(roomA, { roomId: roomA, senderId: 'user', senderName: '我', content: '', images: [image('a2')] })
+    store.addMessage(roomB, { roomId: roomB, senderId: 'user', senderName: '我', content: '', images: [image('b1')] })
+    await waitForOffload(store, roomA)
+    await waitForOffload(store, roomB)
+
+    store.deleteOldMessages(roomA, 1)
+    await vi.waitFor(async () => expect(await getImageDataUrl('a1')).toBeNull())
+    expect(await getImageDataUrl('a2')).toBe(PNG)
+
+    store.deleteChatRoom(roomB)
+    await vi.waitFor(async () => expect(await getImageDataUrl('b1')).toBeNull())
+    expect(await getImageDataUrl('a2')).toBe(PNG)
+
+    store.clearAllData()
+    await vi.waitFor(async () => expect(await getImagesTotalBytes()).toBe(0))
   })
 })

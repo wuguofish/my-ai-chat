@@ -69,6 +69,24 @@ if (typeof window !== 'undefined') {
   })
 }
 
+/**
+ * 子項目內容的指紋（長度 + 53-bit 雜湊），用來判斷有沒有變動
+ * 不保留整份 JSON，避免同一份訊息在記憶體裡多存一份
+ */
+function fingerprint(json: string): string {
+  // cyrb53：碰撞機率極低，再加上長度一起比對
+  let h1 = 0xdeadbeef
+  let h2 = 0x41c6ce57
+  for (let i = 0; i < json.length; i++) {
+    const ch = json.charCodeAt(i)
+    h1 = Math.imul(h1 ^ ch, 2654435761)
+    h2 = Math.imul(h2 ^ ch, 1597334677)
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+  return `${json.length}:${4294967296 * (2097151 & h2) + (h1 >>> 0)}`
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -81,7 +99,7 @@ export function persistPlugin({ store, options }: PiniaPluginContext): void {
   const encode = (value: unknown) => persist.obfuscate ? obfuscate(value) : JSON.stringify(value)
   const subPrefix = splitBy ? `${key}${SUB_KEY_SEPARATOR}${splitBy}${SUB_KEY_SEPARATOR}` : ''
 
-  /** 上次寫入的子項目 JSON（用來判斷哪些子項目有變動） */
+  /** 上次寫入的子項目指紋（用來判斷哪些子項目有變動） */
   const lastWrittenParts = new Map<string, string>()
   /** 還原時發現舊格式（子項目還包在主資料裡），需要立即改寫成拆開的格式 */
   let needsSplitMigration = false
@@ -105,7 +123,7 @@ export function persistPlugin({ store, options }: PiniaPluginContext): void {
         const partKey = subKey.slice(subPrefix.length)
         try {
           parts[partKey] = smartDecode(value)
-          lastWrittenParts.set(partKey, JSON.stringify(parts[partKey]))
+          lastWrittenParts.set(partKey, fingerprint(JSON.stringify(parts[partKey])))
         } catch (error) {
           // 解析失敗的子項目不載入也不追蹤，之後既不會覆寫也不會刪除它
           partFailed = true
@@ -138,8 +156,9 @@ export function persistPlugin({ store, options }: PiniaPluginContext): void {
     const writes: Promise<void>[] = []
     for (const [partKey, value] of Object.entries(parts)) {
       const json = JSON.stringify(value)
-      if (lastWrittenParts.get(partKey) === json) continue
-      lastWrittenParts.set(partKey, json)
+      const print = fingerprint(json)
+      if (lastWrittenParts.get(partKey) === print) continue
+      lastWrittenParts.set(partKey, print)
       writes.push(writeItem(subPrefix + partKey, persist.obfuscate ? obfuscate(value) : json))
     }
     await Promise.all(writes)

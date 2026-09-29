@@ -10,6 +10,7 @@ import { useCharacterStore } from './characters'
 import { useUserStore } from './user'
 import { getHydrationStatus } from './plugins/persist'
 import { deleteImagesExcept, getImageDataUrl, isImageStoreAvailable, saveImage } from '@/utils/imageStore'
+import { getStorageBackendName } from '@/utils/persistentStorage'
 
 /** 持久化用的 key */
 const PERSIST_KEY = 'ai-chat-rooms'
@@ -85,6 +86,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
       if (currentRoomId.value === roomId) {
         currentRoomId.value = null
       }
+      void cleanupOrphanImages()
     }
   }
 
@@ -280,11 +282,17 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
 
   /**
    * 刪除沒有任何訊息使用的圖片（訊息被刪除後留下的）
-   * 聊天室存檔還原失敗時不執行，避免誤刪
+   * 只在確定手上的訊息是完整存檔時執行，避免誤刪（圖片刪掉就無法復原）：
+   * - 存檔不是從 IndexedDB 讀的（退回 localStorage 時，訊息可能還在 IndexedDB 裡）
+   * - 聊天室存檔還原失敗
    * @returns 刪除的圖片數量
    */
   async function cleanupOrphanImages(): Promise<number> {
     if (!isImageStoreAvailable()) return 0
+    if (getStorageBackendName() !== 'indexeddb') {
+      console.warn('⚠️ 存檔目前不是存在 IndexedDB，略過清理圖片')
+      return 0
+    }
     if (getHydrationStatus(PERSIST_KEY) === 'failed') {
       console.warn('⚠️ 聊天室存檔還原不完整，略過清理圖片')
       return 0
@@ -472,6 +480,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
 
     const deleteCount = roomMessages.length - keepCount
     messages.value[roomId] = roomMessages.slice(deleteCount)
+    void cleanupOrphanImages()
     return deleteCount
   }
 
@@ -507,6 +516,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     messages.value = {}
     currentRoomId.value = null
     drafts.value = {}
+    void cleanupOrphanImages()
   }
 
   // 草稿相關函數
