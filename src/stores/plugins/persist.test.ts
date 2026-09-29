@@ -3,7 +3,7 @@ import { IDBFactory } from 'fake-indexeddb'
 import { createPinia, defineStore, setActivePinia } from 'pinia'
 import { createApp, ref, nextTick } from 'vue'
 import { persistPlugin, flushPersistedStores } from './persist'
-import { initPersistentStorage, getPreloadedItem } from '@/utils/persistentStorage'
+import { initPersistentStorage, readItem } from '@/utils/persistentStorage'
 import { obfuscate, isObfuscated, smartDecode } from '@/utils/dataObfuscation'
 
 function installLocalStorage(initial: Record<string, string> = {}) {
@@ -74,15 +74,15 @@ describe('persistPlugin', () => {
     await flushPersistedStores()
 
     // 依設定決定是否混淆
-    expect(isObfuscated(getPreloadedItem('test-secret'))).toBe(true)
-    expect(JSON.parse(getPreloadedItem('test-plain')!)).toEqual({ count: 3 })
+    expect(isObfuscated(await readItem('test-secret'))).toBe(true)
+    expect(JSON.parse((await readItem('test-plain'))!)).toEqual({ count: 3 })
 
     // 模擬重新開啟 App
     await initPersistentStorage(KEYS, factory)
     freshPinia()
     expect(useSecretStore().items).toEqual(['x'])
     expect(usePlainStore().count).toBe(3)
-    expect(smartDecode(getPreloadedItem('test-secret')!)).toEqual({ items: ['x'] })
+    expect(smartDecode((await readItem('test-secret'))!)).toEqual({ items: ['x'] })
   })
 
   it('連續多次變更後應保存最後狀態', async () => {

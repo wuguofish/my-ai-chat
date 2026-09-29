@@ -8,6 +8,8 @@
  *
  * 第一次啟動時會把舊的 localStorage 資料搬進 IndexedDB，確認寫入成功後才刪除 localStorage 的舊資料
  * 如果瀏覽器不支援 IndexedDB（或開啟失敗），會退回使用 localStorage，行為與舊版相同
+ * 但已經用過 IndexedDB 的玩家，資料只存在 IndexedDB 裡，這時開啟失敗會拋出 StorageUnavailableError，
+ * 不能退回 localStorage 用空資料啟動（玩家會以為存檔不見，之後的操作也會寫到錯的地方）
  */
 
 import { safeStorage } from '@/utils/dataObfuscation'
@@ -15,6 +17,24 @@ import { safeStorage } from '@/utils/dataObfuscation'
 const DB_NAME = 'ai-chat'
 const DB_VERSION = 1
 const KV_STORE = 'kv'
+
+/** 開啟 IndexedDB 的逾時（舊版 iOS Safari 有 open 永遠不回應的問題） */
+const OPEN_TIMEOUT_MS = 10_000
+
+/** 記錄「這個瀏覽器的存檔已經放在 IndexedDB」的 localStorage key */
+const BACKEND_MARKER_KEY = 'ai-chat-storage-backend'
+
+/** 存檔在 IndexedDB 裡，但這次開不起來 */
+export class StorageUnavailableError extends Error {
+  /** 開啟失敗的原因 */
+  readonly reason: unknown
+
+  constructor(reason: unknown) {
+    super('存檔資料庫暫時無法開啟')
+    this.name = 'StorageUnavailableError'
+    this.reason = reason
+  }
+}
 
 /** 由 Pinia persist 管理的 key（需要從 localStorage 搬到 IndexedDB 的資料） */
 export const PERSISTED_KEYS = [
@@ -46,8 +66,14 @@ function promisifyRequest<T>(request: IDBRequest<T>): Promise<T> {
   })
 }
 
-function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
+function openDatabase(factory: IDBFactory, timeoutMs: number): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    let settled = false
+    const timer = setTimeout(() => {
+      settled = true
+      reject(new Error(`IndexedDB 開啟逾時（${timeoutMs}ms）`))
+    }, timeoutMs)
+
     const request = factory.open(DB_NAME, DB_VERSION)
     request.onupgradeneeded = () => {
       const db = request.result
@@ -55,8 +81,18 @@ function openDatabase(factory: IDBFactory): Promise<IDBDatabase> {
         db.createObjectStore(KV_STORE)
       }
     }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      clearTimeout(timer)
+      // 已經逾時放棄了，就把晚到的連線關掉
+      if (settled) request.result.close()
+      else resolve(request.result)
+      settled = true
+    }
+    request.onerror = () => {
+      clearTimeout(timer)
+      settled = true
+      reject(request.error)
+    }
     // blocked 代表其他分頁還開著舊版資料庫，等它關閉後仍會觸發 success，所以只提示不中斷
     request.onblocked = () => console.warn('⚠️ IndexedDB 升級等待其他分頁關閉中')
   })
@@ -103,7 +139,19 @@ const localStorageBackend: StorageBackend = {
 // ==========================================
 
 let backend: StorageBackend = localStorageBackend
-const cache = new Map<string, string>()
+
+/**
+ * 啟動時預先讀取的存檔，只給 store 還原用一次（讀取後就移除）
+ * 存檔經過混淆後體積很大，不能一直留在記憶體裡
+ */
+const preloaded = new Map<string, string>()
+
+/** 各 key 目前存檔的大小（字元數），給容量統計用 */
+const sizes = new Map<string, number>()
+
+function hasLegacyData(keys: readonly string[]): boolean {
+  return keys.some(key => localStorage.getItem(key) !== null)
+}
 
 export interface InitResult {
   backend: StorageBackendName
@@ -117,16 +165,22 @@ export interface InitResult {
  */
 export async function initPersistentStorage(
   keys: readonly string[] = PERSISTED_KEYS,
-  factory: IDBFactory | undefined = globalThis.indexedDB
+  factory: IDBFactory | undefined = globalThis.indexedDB,
+  openTimeoutMs: number = OPEN_TIMEOUT_MS
 ): Promise<InitResult> {
-  cache.clear()
+  preloaded.clear()
+  sizes.clear()
   const migrated: string[] = []
 
   let db: IDBDatabase | null = null
   if (factory) {
     try {
-      db = await openDatabase(factory)
+      db = await openDatabase(factory, openTimeoutMs)
     } catch (error) {
+      // 存檔已經搬進 IndexedDB（localStorage 沒有舊資料）時，退回 localStorage 等於用空資料啟動
+      if (localStorage.getItem(BACKEND_MARKER_KEY) === 'indexeddb' && !hasLegacyData(keys)) {
+        throw new StorageUnavailableError(error)
+      }
       console.warn('⚠️ IndexedDB 無法使用，改用 localStorage 儲存:', error)
     }
   }
@@ -135,12 +189,20 @@ export async function initPersistentStorage(
     backend = localStorageBackend
     for (const key of keys) {
       const value = localStorage.getItem(key)
-      if (value !== null) cache.set(key, value)
+      if (value !== null) {
+        preloaded.set(key, value)
+        sizes.set(key, value.length)
+      }
     }
     return { backend: backend.name, migrated }
   }
 
   backend = createIndexedDbBackend(db)
+  try {
+    localStorage.setItem(BACKEND_MARKER_KEY, 'indexeddb')
+  } catch {
+    // 記不起來也不影響這次使用
+  }
 
   for (const key of keys) {
     let value = await backend.getItem(key)
@@ -167,7 +229,10 @@ export async function initPersistentStorage(
       }
     }
 
-    if (value !== null) cache.set(key, value)
+    if (value !== null) {
+      preloaded.set(key, value)
+      sizes.set(key, value.length)
+    }
   }
 
   // 請求瀏覽器不要在空間不足時自動清掉資料（不支援或被拒絕都沒關係）
@@ -176,15 +241,27 @@ export async function initPersistentStorage(
   return { backend: backend.name, migrated }
 }
 
-/** 取得啟動時預先讀取的資料（同步），供 Pinia store 還原用 */
+/**
+ * 取得啟動時預先讀取的資料（同步），供 Pinia store 還原用
+ * 每個 key 只能取一次，取完就從記憶體移除
+ */
 export function getPreloadedItem(key: string): string | null {
-  return cache.get(key) ?? null
+  const value = preloaded.get(key) ?? null
+  preloaded.delete(key)
+  return value
 }
 
 /** 寫入資料 */
 export async function writeItem(key: string, value: string): Promise<void> {
-  cache.set(key, value)
+  // 還沒被 store 取走的預先讀取資料已經過時，一併移除
+  preloaded.delete(key)
+  sizes.set(key, value.length)
   await backend.setItem(key, value)
+}
+
+/** 直接從儲存空間讀取目前的資料（非同步） */
+export async function readItem(key: string): Promise<string | null> {
+  return backend.getItem(key)
 }
 
 /** 目前使用的儲存後端 */
@@ -202,7 +279,7 @@ export interface StorageUsage {
 
 /** 取得儲存空間使用量 */
 export async function getStorageUsage(keys: readonly string[] = PERSISTED_KEYS): Promise<StorageUsage> {
-  const items = keys.map(key => ({ key, chars: key.length + (cache.get(key)?.length ?? 0) }))
+  const items = keys.map(key => ({ key, chars: key.length + (sizes.get(key) ?? 0) }))
 
   let estimate: StorageUsage['estimate'] = null
   try {

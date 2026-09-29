@@ -2,6 +2,8 @@
  * 版本管理工具
  */
 
+import { flushPersistedStores } from '@/stores/plugins/persist'
+
 // 當前版本號（會在 build 時從 CHANGELOG.md 自動同步到 version.json）
 export const CURRENT_VERSION = '1.4.0'
 
@@ -177,6 +179,9 @@ export async function getVersionInfo(version: string): Promise<VersionInfo | und
  */
 export async function clearCacheAndReload(): Promise<void> {
   console.log('[清除快取] 開始清除應用快取...')
+
+  // 存檔是非同步寫入的，重新載入前先確認寫完
+  await flushPersistedStores()
 
   try {
     // 1. 清除 Service Worker 快取
