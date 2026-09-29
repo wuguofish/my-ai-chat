@@ -30,12 +30,16 @@ npm run preview # 預覽生產版本
 ### 核心架構模式
 
 #### 1. 資料持久化架構
-- 所有應用資料存儲在 **LocalStorage**，無後端伺服器
-- Pinia stores 自動持久化，刷新頁面不會遺失資料
-- LocalStorage Keys:
-  - `ai-chat-user-profile` - 使用者資料
-  - `ai-chat-app-data` - 應用程式主要資料（Pinia persist）
-  - `ai-chat-settings` - 應用程式設定
+- 所有應用資料存儲在瀏覽器的 **IndexedDB**（資料庫 `ai-chat`、object store `kv`），無後端伺服器
+  - 不支援 IndexedDB 時自動退回 **LocalStorage**
+  - 舊版存在 LocalStorage 的資料，會在第一次啟動時自動搬進 IndexedDB（驗證成功才刪除舊資料）
+  - 存檔已搬進 IndexedDB 後，若 IndexedDB 開不起來（含 10 秒逾時），會顯示錯誤頁，不會退回 LocalStorage 用空資料啟動
+- Pinia stores 透過自製 plugin（`src/stores/plugins/persist.ts`）持久化，store 設定 `persist: { key, obfuscate? }`
+  - `main.ts` 會先 `await initPersistentStorage()`（`src/utils/persistentStorage.ts`）預先讀取資料，才初始化 router 與 App
+  - 寫入有 300ms 節流；在 `location.reload()` / `location.replace()` 之前要先 `await flushPersistedStores()`
+  - 預先讀取的資料每個 key 只給 store 還原用一次，之後就從記憶體移除；要讀目前存檔請用 `readItem()`
+- 儲存 Keys：`ai-chat-user`、`ai-chat-characters`、`ai-chat-rooms`、`ai-chat-memories`、`ai-chat-relationships`、`ai-chat-feed`、`ai-chat-settings`
+- 小型的追蹤資料（記憶追蹤、節日紀錄、Google token 等）仍直接存在 LocalStorage
 
 #### 2. 狀態管理結構（Pinia Stores）
 ```
@@ -394,11 +398,15 @@ A: 在組件的 `<style scoped>` 中重新定義：
 
 ## 專案特定規範
 
-### LocalStorage Keys
+### 儲存 Keys（IndexedDB，見 `PERSISTED_KEYS`）
 ```typescript
-'ai-chat-user-profile'  // 使用者資料
-'ai-chat-app-data'      // 應用程式資料
-'ai-chat-settings'      // 設定
+'ai-chat-user'           // 使用者資料
+'ai-chat-characters'     // 好友
+'ai-chat-rooms'          // 聊天室與訊息
+'ai-chat-memories'       // 記憶
+'ai-chat-relationships'  // 關係
+'ai-chat-feed'           // 動態牆
+'ai-chat-settings'       // 設定
 ```
 
 ### 功能限制（參考 `src/utils/constants.ts`）

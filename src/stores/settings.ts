@@ -6,7 +6,6 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { AppSettings } from '@/types'
 import { DEFAULT_APP_SETTINGS } from '@/utils/constants'
-import { safeStorage } from '@/utils/dataObfuscation'
 
 export const useSettingsStore = defineStore('settings', () => {
   // State
@@ -51,7 +50,6 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 }, {
   persist: {
-    key: 'ai-chat-settings',
-    storage: safeStorage
+    key: 'ai-chat-settings'
   }
 })

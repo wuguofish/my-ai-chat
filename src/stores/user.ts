@@ -5,7 +5,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { UserProfile, LLMProviderType, LLMSettings } from '@/types'
-import { obfuscatedSerializer, safeStorage } from '@/utils/dataObfuscation'
 
 /** 預設 LLM 設定 */
 const DEFAULT_LLM_SETTINGS: LLMSettings = {
@@ -201,7 +200,6 @@ export const useUserStore = defineStore('user', () => {
 }, {
   persist: {
     key: 'ai-chat-user',
-    storage: safeStorage,
-    serializer: obfuscatedSerializer
+    obfuscate: true
   }
 })
