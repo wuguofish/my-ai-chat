@@ -4,7 +4,7 @@ import { IDBFactory } from 'fake-indexeddb'
 import { createPinia, defineStore, setActivePinia } from 'pinia'
 import { createApp, ref, nextTick } from 'vue'
 import { persistPlugin, flushPersistedStores, getHydrationStatus } from './persist'
-import { initPersistentStorage, getPreloadedItem, getPreloadedItemsWithPrefix, writeItem } from '@/utils/persistentStorage'
+import { initPersistentStorage, readItem, readItemsWithPrefix, writeItem } from '@/utils/persistentStorage'
 import { obfuscate, isObfuscated, smartDecode } from '@/utils/dataObfuscation'
 
 function installLocalStorage(initial: Record<string, string> = {}) {
@@ -75,15 +75,15 @@ describe('persistPlugin', () => {
     await flushPersistedStores()
 
     // 依設定決定是否混淆
-    expect(isObfuscated(getPreloadedItem('test-secret'))).toBe(true)
-    expect(JSON.parse(getPreloadedItem('test-plain')!)).toEqual({ count: 3 })
+    expect(isObfuscated(await readItem('test-secret'))).toBe(true)
+    expect(JSON.parse((await readItem('test-plain'))!)).toEqual({ count: 3 })
 
     // 模擬重新開啟 App
     await initPersistentStorage(KEYS, factory)
     freshPinia()
     expect(useSecretStore().items).toEqual(['x'])
     expect(usePlainStore().count).toBe(3)
-    expect(smartDecode(getPreloadedItem('test-secret')!)).toEqual({ items: ['x'] })
+    expect(smartDecode((await readItem('test-secret'))!)).toEqual({ items: ['x'] })
   })
 
   it('連續多次變更後應保存最後狀態', async () => {
@@ -119,8 +119,8 @@ describe('persistPlugin（splitBy：依子項目分開存）', () => {
     factory = new IDBFactory()
   })
 
-  const writtenParts = () => Object.fromEntries(
-    getPreloadedItemsWithPrefix(PREFIX).map(([k, v]) => [k.slice(PREFIX.length), smartDecode(v)])
+  const writtenParts = async () => Object.fromEntries(
+    (await readItemsWithPrefix(PREFIX)).map(([k, v]) => [k.slice(PREFIX.length), smartDecode(v)])
   )
 
   it('舊格式（訊息包在主資料裡）應還原，並立刻改寫成分開存', async () => {
@@ -132,8 +132,8 @@ describe('persistPlugin（splitBy：依子項目分開存）', () => {
     expect(store.messages).toEqual({ a: ['hi'], b: ['yo'] })
 
     await flushPersistedStores()
-    expect(writtenParts()).toEqual({ a: ['hi'], b: ['yo'] })
-    expect(smartDecode(getPreloadedItem('test-rooms')!)).toEqual({ rooms: ['a', 'b'] })
+    expect(await writtenParts()).toEqual({ a: ['hi'], b: ['yo'] })
+    expect(smartDecode((await readItem('test-rooms'))!)).toEqual({ rooms: ['a', 'b'] })
 
     // 重新啟動後仍完整
     await initPersistentStorage(ROOM_KEYS, factory)
@@ -154,14 +154,14 @@ describe('persistPlugin（splitBy：依子項目分開存）', () => {
     await initPersistentStorage(ROOM_KEYS, factory)
     freshPinia()
     const reloaded = useRoomsStore()
-    const bBefore = getPreloadedItem(PREFIX + 'b')
+    const bBefore = (await readItem(PREFIX + 'b'))
 
     reloaded.messages.a!.push('3')
     await nextTick()
     await flushPersistedStores()
 
-    expect(writtenParts()).toEqual({ a: ['1', '3'], b: ['2'] })
-    expect(getPreloadedItem(PREFIX + 'b')).toBe(bBefore)
+    expect(await writtenParts()).toEqual({ a: ['1', '3'], b: ['2'] })
+    expect((await readItem(PREFIX + 'b'))).toBe(bBefore)
   })
 
   it('刪除聊天室時應刪除對應的存檔', async () => {
@@ -176,10 +176,10 @@ describe('persistPlugin（splitBy：依子項目分開存）', () => {
     delete store.messages.b
     await nextTick()
     await flushPersistedStores()
-    expect(writtenParts()).toEqual({ a: ['1'] })
+    expect(await writtenParts()).toEqual({ a: ['1'] })
 
     await initPersistentStorage(ROOM_KEYS, factory)
-    expect(getPreloadedItem(PREFIX + 'b')).toBeNull()
+    expect((await readItem(PREFIX + 'b'))).toBeNull()
   })
 
   it('某個聊天室存檔解析失敗時，不應被刪除或覆寫，並回報 failed', async () => {
@@ -201,6 +201,6 @@ describe('persistPlugin（splitBy：依子項目分開存）', () => {
     reloaded.messages.a!.push('2')
     await nextTick()
     await flushPersistedStores()
-    expect(getPreloadedItem(PREFIX + 'broken')).toBe('AICHAT_V1:!!!壞掉的資料')
+    expect((await readItem(PREFIX + 'broken'))).toBe('AICHAT_V1:!!!壞掉的資料')
   })
 })

@@ -33,9 +33,11 @@ npm run preview # 預覽生產版本
 - 所有應用資料存儲在瀏覽器的 **IndexedDB**（資料庫 `ai-chat`、object store `kv`），無後端伺服器
   - 不支援 IndexedDB 時自動退回 **LocalStorage**
   - 舊版存在 LocalStorage 的資料，會在第一次啟動時自動搬進 IndexedDB（驗證成功才刪除舊資料）
+  - 存檔已搬進 IndexedDB 後，若 IndexedDB 開不起來（含 10 秒逾時），會顯示錯誤頁，不會退回 LocalStorage 用空資料啟動
 - Pinia stores 透過自製 plugin（`src/stores/plugins/persist.ts`）持久化，store 設定 `persist: { key, obfuscate? }`
   - `main.ts` 會先 `await initPersistentStorage()`（`src/utils/persistentStorage.ts`）預先讀取資料，才初始化 router 與 App
-  - 寫入有 300ms 節流；在 `location.reload()` 之前要先 `await flushPersistedStores()`
+  - 寫入有 300ms 節流；在 `location.reload()` / `location.replace()` 之前要先 `await flushPersistedStores()`
+  - 預先讀取的資料每個 key 只給 store 還原用一次，之後就從記憶體移除；要讀目前存檔請用 `readItem()`
 - 儲存 Keys：`ai-chat-user`、`ai-chat-characters`、`ai-chat-rooms`、`ai-chat-memories`、`ai-chat-relationships`、`ai-chat-feed`、`ai-chat-settings`
 - 聊天訊息依聊天室分開存（`persist.splitBy: 'messages'`）：`ai-chat-rooms/messages/<roomId>`，存檔時只寫有變動的聊天室
 - 聊天圖片存在獨立的 IndexedDB 資料庫 `ai-chat-images`（`src/utils/imageStore.ts`），訊息的 `images[].data` 會被移除、只留 id

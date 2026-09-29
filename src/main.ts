@@ -19,7 +19,8 @@ async function bootstrap() {
   try {
     await Promise.all([initPersistentStorage(), initImageStore()])
   } catch (error) {
-    // 讀檔中途失敗（例如其他分頁正在升級資料庫）：不要用空資料啟動，避免玩家以為存檔不見
+    // 讀檔失敗（例如其他分頁正在升級資料庫、瀏覽器暫時無法開啟 IndexedDB）：
+    // 不要用空資料啟動，避免玩家以為存檔不見
     console.error('❌ 讀取存檔失敗:', error)
     showStartupError()
     return
