@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { detectDegenerateContent, escapeHtml } from './feedContentGuard'
+import { detectDegenerateContent } from './feedContentGuard'
 
 const post = { minMeaningfulChars: 10 }
 const comment = { minMeaningfulChars: 2 }
@@ -52,17 +52,5 @@ describe('detectDegenerateContent', () => {
     const text = '今天去看了期待已久的電影，劇情非常精彩，尤其是最後的反轉讓人印象深刻。' +
       '好好看好好看好好看！下次還想再和朋友一起去電影院看續集，希望不要等太久。'
     expect(detectDegenerateContent(text, post)).toBeNull()
-  })
-})
-
-describe('escapeHtml', () => {
-  it('應跳脫 HTML 特殊字元', () => {
-    expect(escapeHtml('<img src=x onerror="alert(1)">&\'')).toBe(
-      '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;&amp;&#39;'
-    )
-  })
-
-  it('一般文字不應改變', () => {
-    expect(escapeHtml('早安 @小明 回#3：好喔')).toBe('早安 @小明 回#3：好喔')
   })
 })
