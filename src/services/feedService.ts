@@ -9,9 +9,12 @@ import {
   FEED_EVENT_COOLDOWN,
   FEED_INTERACTION_PROBABILITY,
   FEED_INTERACTION_DELAY,
-  FEED_COMMENT_REPLY
+  FEED_COMMENT_REPLY,
+  FEED_CONTENT_GUARD
 } from '@/utils/constants'
 import { getDefaultAdapter, isAdultConversation } from '@/services/llm'
+import type { GenerateOptions, LLMMessage } from '@/services/llm/types'
+import { detectDegenerateContent, escapeHtml } from '@/utils/feedContentGuard'
 import { getRelationshipLevelName, getCharacterRelationshipTypeText } from '@/utils/relationshipHelpers'
 import { getCharacterStatus, getGenderText } from '@/utils/chatHelpers'
 import { getTodayHoliday, HOLIDAYS, type HolidayType } from '@/services/holidayGreetingService'
@@ -215,6 +218,10 @@ export function formatFeedContentForDisplay(
     content = content.substring(3).trim()
   }
 
+  // 先跳脫 HTML，避免 LLM 或使用者輸入的 < > 等字元被 v-html 當成標籤渲染
+  // 之後加入的 mention / 樓層標籤都是自己產生的，所以要在跳脫之後處理
+  content = escapeHtml(content)
+
   // 先清理 AI 打錯的不完整樓層回覆格式（如「回#：」），保留完整格式（如「回#7：」）
   let formatted = removeIncompleteFloorReply(content)
 
@@ -240,15 +247,18 @@ export function formatFeedContentForDisplay(
   formatted = formatted.replace(/@all(?![\w])/gi, '<span class="mention">@all</span>')
 
   // 處理 @角色名
+  // 內容已跳脫過 HTML，名稱也要用跳脫後的版本比對與顯示
   for (const char of characters) {
-    const escapedName = char.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const htmlName = escapeHtml(char.name)
+    const escapedName = htmlName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const regex = new RegExp(`@${escapedName}(?![\\w])`, 'g')
-    formatted = formatted.replace(regex, `<span class="mention">@${char.name}</span>`)
+    formatted = formatted.replace(regex, `<span class="mention">@${htmlName}</span>`)
   }
 
   // 處理 @user（使用者被提及）
-  formatted = formatted.replace(/@user(?![\w])/gi, `<span class="mention mention-me">@${userName}</span>`)
-  formatted = formatted.replace(`@${userName}`, `<span class="mention mention-me">@${userName}</span>`)
+  const htmlUserName = escapeHtml(userName)
+  formatted = formatted.replace(/@user(?![\w])/gi, `<span class="mention mention-me">@${htmlUserName}</span>`)
+  formatted = formatted.replace(`@${htmlUserName}`, `<span class="mention mention-me">@${htmlUserName}</span>`)
 
   return formatted
 }
@@ -325,6 +335,39 @@ function advanceCommentSession(postId: string, participants: string[]): void {
 // ==========================================
 // AI 內容生成
 // ==========================================
+
+/**
+ * 呼叫 LLM 生成動態牆文字，並檢查是否為異常輸出（例如「*A *A」碎片或無限重複）
+ * 異常時自動重試，全部失敗則拋出錯誤，避免把壞掉的內容存進動態牆
+ */
+async function generateFeedText(
+  character: Character,
+  messages: LLMMessage[],
+  options: GenerateOptions,
+  minMeaningfulChars: number,
+  label: string
+): Promise<string> {
+  const adapter = await getDefaultAdapter(character)
+  let lastReason = ''
+
+  for (let attempt = 1; attempt <= FEED_CONTENT_GUARD.maxAttempts; attempt++) {
+    const response = await adapter.generate(messages, options)
+
+    if (response.blocked || !response.text) {
+      throw new Error(`${label}失敗：` + (response.blockReason || '空回應'))
+    }
+
+    const reason = detectDegenerateContent(response.text, { minMeaningfulChars })
+    if (!reason) {
+      return response.text
+    }
+
+    lastReason = reason
+    console.warn(`[Feed] ${character.name} ${label}內容異常（${reason}），第 ${attempt} 次:`, response.text.slice(0, 50))
+  }
+
+  throw new Error(`${label}失敗：內容異常（${lastReason}）`)
+}
 
 /**
  * AI 生成角色動態內容
@@ -450,25 +493,20 @@ ${additionalContext ? `\n補充資訊：${additionalContext}` : ''}`
 
 你的動態：`
 
-  // 透過 LLM adapter 發送請求
-  const adapter = await getDefaultAdapter(character)
-  const response = await adapter.generate(
-    [{ role: 'user', content: userPrompt }],  {
+  // 透過 LLM adapter 發送請求（含異常輸出檢查與重試）
+  return generateFeedText(
+    character,
+    [{ role: 'user', content: userPrompt }], {
       modelType: 'lite',
       systemInstruction: systemPrompt,
       temperature: 0.9,
       maxOutputTokens: 1024,
       safeMode: !isAdult,
       queueDescription: `動態牆發文：${character.name}`
-    }
+    },
+    FEED_CONTENT_GUARD.postMinMeaningfulChars,
+    '動態生成'
   )
-
-  if (response.blocked || !response.text) {
-    throw new Error('動態生成失敗：' + (response.blockReason || '空回應'))
-  }
-
-  // 確保不超過 200 字
-  return response.text
 }
 
 /**
@@ -654,9 +692,9 @@ ${replyToComment ? `- 這是回覆 #${replyToComment.floor || ''} ${replyToComme
 
 你的留言：`
 
-  // 透過 LLM adapter 發送請求
-  const adapter = await getDefaultAdapter(character)
-  const response = await adapter.generate(
+  // 透過 LLM adapter 發送請求（含異常輸出檢查與重試）
+  return generateFeedText(
+    character,
     [{ role: 'user', content: userPrompt }], {
       modelType: 'lite',
       systemInstruction: systemPrompt,
@@ -664,14 +702,10 @@ ${replyToComment ? `- 這是回覆 #${replyToComment.floor || ''} ${replyToComme
       maxOutputTokens: 256,
       safeMode: !isAdult,
       queueDescription: `動態牆留言：${character.name}`
-    }
+    },
+    FEED_CONTENT_GUARD.commentMinMeaningfulChars,
+    '留言生成'
   )
-
-  if (response.blocked || !response.text) {
-    throw new Error('留言生成失敗：' + (response.blockReason || '空回應'))
-  }
-
-  return response.text
 }
 
 // ==========================================

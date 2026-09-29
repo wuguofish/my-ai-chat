@@ -1,0 +1,82 @@
+/**
+ * 動態牆內容防護工具
+ * - 偵測 LLM 產生的異常輸出（例如「*A *A」這種碎片或無限重複）
+ * - 跳脫 HTML，讓內容可以安全地透過 v-html 顯示
+ */
+
+/**
+ * 跳脫 HTML 特殊字元
+ */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/** 有意義的字元：文字（含中日韓）與數字 */
+const MEANINGFUL_CHAR = /[\p{L}\p{N}]/gu
+
+/** 中日韓文字 */
+const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
+
+/**
+ * 常見的 markdown / 標記符號（LLM 壞掉時常吐出一堆）
+ * 不含 ~ 和 ^，這兩個在口語（「好開心~~」）和顏文字（^_^）裡很常見
+ */
+const MARKUP_CHAR = /[*#_`|\\<>[\]{}=]/g
+
+/** 連續重複片段：同一段文字（至少 4 字）連續出現 3 次以上 */
+const REPEATED_FRAGMENT = /(.{4,}?)\1{2,}/gsu
+
+/** 重複片段至少要有幾種不同的文字/數字，才算迴圈（排除「好耶好耶」「👍🏻👍🏻」這類情緒重複） */
+const LOOP_MIN_DISTINCT_CHARS = 3
+
+/** 重複片段至少要佔全文多少比例，才算迴圈（模型陷入迴圈時通常會佔掉大半內容） */
+const LOOP_MIN_RATIO = 0.5
+
+export interface DegenerateCheckOptions {
+  /** 至少需要多少個有意義的字元（文字或數字） */
+  minMeaningfulChars: number
+}
+
+/**
+ * 判斷 LLM 產生的動態/留言是否為異常輸出
+ * @returns 異常原因；正常則回傳 null
+ */
+export function detectDegenerateContent(
+  content: string,
+  options: DegenerateCheckOptions
+): string | null {
+  const text = content.trim()
+  if (!text) return '空內容'
+
+  const meaningfulCount = text.match(MEANINGFUL_CHAR)?.length ?? 0
+  if (meaningfulCount < options.minMeaningfulChars) {
+    return `有效字數不足（${meaningfulCount}）`
+  }
+
+  // 標記符號比文字還多，例如「*A *A」
+  // 有中文時放寬一點，避免把「好想睡 >_<」這類顏文字誤判
+  const markupCount = text.match(MARKUP_CHAR)?.length ?? 0
+  const hasCjk = CJK_CHAR.test(text)
+  if (hasCjk ? markupCount > meaningfulCount : markupCount >= meaningfulCount) {
+    return '符號過多'
+  }
+
+  // 模型陷入重複迴圈
+  // 只計算文字/數字（空白、emoji、膚色修飾符不算），並要求重複段落佔大半內容，
+  // 避免把「好耶好耶好耶」「嗚嗚嗚嗚 嗚嗚嗚嗚」這類正常情緒表達誤判
+  const textLength = [...text].length
+  for (const match of text.matchAll(REPEATED_FRAGMENT)) {
+    const distinctChars = new Set(match[1]!.match(MEANINGFUL_CHAR) ?? []).size
+    const ratio = [...match[0]].length / textLength
+    if (distinctChars >= LOOP_MIN_DISTINCT_CHARS && ratio >= LOOP_MIN_RATIO) {
+      return '內容重複'
+    }
+  }
+
+  return null
+}
