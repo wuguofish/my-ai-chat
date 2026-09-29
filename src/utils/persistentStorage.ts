@@ -49,10 +49,19 @@ export const PERSISTED_KEYS = [
 
 export type StorageBackendName = 'indexeddb' | 'localStorage'
 
+/**
+ * 子 key 的分隔符號
+ * 例如聊天訊息依聊天室分開存：`ai-chat-rooms/messages/<roomId>`
+ */
+export const SUB_KEY_SEPARATOR = '/'
+
 interface StorageBackend {
   name: StorageBackendName
   getItem(key: string): Promise<string | null>
   setItem(key: string, value: string): Promise<void>
+  removeItem(key: string): Promise<void>
+  /** 讀取所有以 prefix 開頭的 key */
+  getItemsWithPrefix(prefix: string): Promise<[string, string][]>
 }
 
 // ==========================================
@@ -83,10 +92,16 @@ function openDatabase(factory: IDBFactory, timeoutMs: number): Promise<IDBDataba
     }
     request.onsuccess = () => {
       clearTimeout(timer)
-      // 已經逾時放棄了，就把晚到的連線關掉
-      if (settled) request.result.close()
-      else resolve(request.result)
+      const db = request.result
+      if (settled) {
+        // 已經逾時放棄了，就把晚到的連線關掉
+        db.close()
+        return
+      }
       settled = true
+      // 其他分頁要升級資料庫時，主動關閉連線，避免卡住對方
+      db.onversionchange = () => db.close()
+      resolve(db)
     }
     request.onerror = () => {
       clearTimeout(timer)
@@ -95,6 +110,17 @@ function openDatabase(factory: IDBFactory, timeoutMs: number): Promise<IDBDataba
     }
     // blocked 代表其他分頁還開著舊版資料庫，等它關閉後仍會觸發 success，所以只提示不中斷
     request.onblocked = () => console.warn('⚠️ IndexedDB 升級等待其他分頁關閉中')
+  })
+}
+
+function runWriteTransaction(db: IDBDatabase, action: (store: IDBObjectStore) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(KV_STORE, 'readwrite')
+    action(tx.objectStore(KV_STORE))
+    // 等 transaction 完成才算真的寫入
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
   })
 }
 
@@ -107,14 +133,26 @@ function createIndexedDbBackend(db: IDBDatabase): StorageBackend {
       return typeof value === 'string' ? value : null
     },
     setItem(key, value) {
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(KV_STORE, 'readwrite')
-        tx.objectStore(KV_STORE).put(value, key)
-        // 等 transaction 完成才算真的寫入
-        tx.oncomplete = () => resolve()
-        tx.onerror = () => reject(tx.error)
-        tx.onabort = () => reject(tx.error)
+      return runWriteTransaction(db, store => store.put(value, key))
+    },
+    removeItem(key) {
+      return runWriteTransaction(db, store => store.delete(key))
+    },
+    async getItemsWithPrefix(prefix) {
+      const range = IDBKeyRange.bound(prefix, prefix + '\uffff')
+      const tx = db.transaction(KV_STORE, 'readonly')
+      const store = tx.objectStore(KV_STORE)
+      const [keys, values] = await Promise.all([
+        promisifyRequest(store.getAllKeys(range)),
+        promisifyRequest(store.getAll(range))
+      ])
+      const result: [string, string][] = []
+      keys.forEach((key, i) => {
+        if (typeof key === 'string' && typeof values[i] === 'string') {
+          result.push([key, values[i]])
+        }
       })
+      return result
     }
   }
 }
@@ -131,6 +169,30 @@ const localStorageBackend: StorageBackend = {
   async setItem(key, value) {
     // safeStorage 在容量不足時會退回明文格式
     safeStorage.setItem(key, value)
+  },
+  async removeItem(key) {
+    localStorage.removeItem(key)
+  },
+  async getItemsWithPrefix(prefix) {
+    const result: [string, string][] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(prefix)) {
+        const value = localStorage.getItem(key)
+        if (value !== null) result.push([key, value])
+      }
+    }
+    return result
+  }
+}
+
+/** 預先讀取各 key 底下的子 key（例如各聊天室的訊息） */
+async function preloadSubKeys(keys: readonly string[]): Promise<void> {
+  for (const key of keys) {
+    for (const [subKey, value] of await backend.getItemsWithPrefix(key + SUB_KEY_SEPARATOR)) {
+      preloaded.set(subKey, value)
+      sizes.set(subKey, value.length)
+    }
   }
 }
 
@@ -165,7 +227,7 @@ export interface InitResult {
  */
 export async function initPersistentStorage(
   keys: readonly string[] = PERSISTED_KEYS,
-  factory: IDBFactory | undefined = globalThis.indexedDB,
+  factory: IDBFactory | null | undefined = globalThis.indexedDB,
   openTimeoutMs: number = OPEN_TIMEOUT_MS
 ): Promise<InitResult> {
   preloaded.clear()
@@ -194,6 +256,7 @@ export async function initPersistentStorage(
         sizes.set(key, value.length)
       }
     }
+    await preloadSubKeys(keys)
     return { backend: backend.name, migrated }
   }
 
@@ -235,6 +298,8 @@ export async function initPersistentStorage(
     }
   }
 
+  await preloadSubKeys(keys)
+
   // 請求瀏覽器不要在空間不足時自動清掉資料（不支援或被拒絕都沒關係）
   globalThis.navigator?.storage?.persist?.()?.catch(() => { /* 忽略 */ })
 
@@ -251,6 +316,13 @@ export function getPreloadedItem(key: string): string | null {
   return value
 }
 
+/** 取得啟動時預先讀取、以 prefix 開頭的所有資料（同樣只能取一次） */
+export function getPreloadedItemsWithPrefix(prefix: string): [string, string][] {
+  const entries = [...preloaded.entries()].filter(([key]) => key.startsWith(prefix))
+  entries.forEach(([key]) => preloaded.delete(key))
+  return entries
+}
+
 /** 寫入資料 */
 export async function writeItem(key: string, value: string): Promise<void> {
   // 還沒被 store 取走的預先讀取資料已經過時，一併移除
@@ -259,9 +331,21 @@ export async function writeItem(key: string, value: string): Promise<void> {
   await backend.setItem(key, value)
 }
 
+/** 刪除資料 */
+export async function removeItem(key: string): Promise<void> {
+  preloaded.delete(key)
+  sizes.delete(key)
+  await backend.removeItem(key)
+}
+
 /** 直接從儲存空間讀取目前的資料（非同步） */
 export async function readItem(key: string): Promise<string | null> {
   return backend.getItem(key)
+}
+
+/** 直接從儲存空間讀取以 prefix 開頭的所有資料（非同步） */
+export async function readItemsWithPrefix(prefix: string): Promise<[string, string][]> {
+  return backend.getItemsWithPrefix(prefix)
 }
 
 /** 目前使用的儲存後端 */
@@ -271,7 +355,7 @@ export function getStorageBackendName(): StorageBackendName {
 
 export interface StorageUsage {
   backend: StorageBackendName
-  /** 各 key 的大小（字元數） */
+  /** 各 key 的大小（字元數，包含其子 key） */
   items: { key: string; chars: number }[]
   /** 瀏覽器回報的已用量與上限（bytes），不支援時為 null */
   estimate: { usage: number; quota: number } | null
@@ -279,7 +363,13 @@ export interface StorageUsage {
 
 /** 取得儲存空間使用量 */
 export async function getStorageUsage(keys: readonly string[] = PERSISTED_KEYS): Promise<StorageUsage> {
-  const items = keys.map(key => ({ key, chars: key.length + (sizes.get(key) ?? 0) }))
+  const items = keys.map(key => {
+    let chars = 0
+    for (const [k, size] of sizes) {
+      if (k === key || k.startsWith(key + SUB_KEY_SEPARATOR)) chars += k.length + size
+    }
+    return { key, chars }
+  })
 
   let estimate: StorageUsage['estimate'] = null
   try {

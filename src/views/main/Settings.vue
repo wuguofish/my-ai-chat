@@ -14,6 +14,7 @@ import { fetchServerVersion, clearCacheAndReload, getVersionInfo, type VersionIn
 import { getAdapter, getImplementedProviders, LLM_CONFIG, type LLMProvider } from '@/services/llm'
 import { encodeBackupData, decodeBackupData } from '@/utils/dataObfuscation'
 import { getStorageUsage, type StorageUsage } from '@/utils/persistentStorage'
+import { getImagesTotalBytes } from '@/utils/imageStore'
 import { flushPersistedStores } from '@/stores/plugins/persist'
 import { Eye, EyeOff, Camera, ChevronDown, ChevronUp } from 'lucide-vue-next'
 import PageHeader from '@/components/common/PageHeader.vue'
@@ -310,7 +311,7 @@ const handleValidateApiKey = async (provider: string) => {
   }
 }
 
-const handleExportData = () => {
+const handleExportData = async () => {
   // 讀取記憶/情境追蹤資料
   const memoryTracking = localStorage.getItem('ai-chat-memory-tracking')
   const contextTracking = localStorage.getItem('ai-chat-context-tracking')
@@ -319,7 +320,7 @@ const handleExportData = () => {
     user: userStore.profile,
     characters: characterStore.characters,
     chatRooms: chatRoomStore.chatRooms,
-    messages: chatRoomStore.messages,  // 匯出聊天訊息
+    messages: await chatRoomStore.getMessagesWithImageData(),  // 匯出聊天訊息（圖片補回 Base64）
     memories: {
       characterMemories: memoriesStore.characterMemories,
       roomMemories: memoriesStore.roomMemories
@@ -466,10 +467,13 @@ const STORAGE_LABELS: Record<string, string> = {
 const LOCAL_STORAGE_QUOTA_CHARS = 5 * 1024 * 1024
 
 const storageUsageRaw = ref<StorageUsage | null>(null)
+/** 聊天圖片佔用的大小（bytes） */
+const imagesBytes = ref(0)
 
 async function refreshStorageUsage() {
   try {
     storageUsageRaw.value = await getStorageUsage()
+    imagesBytes.value = await getImagesTotalBytes()
   } catch (error) {
     console.error('讀取儲存空間用量失敗:', error)
   }
@@ -483,7 +487,10 @@ const storageUsage = computed(() => {
   const totalChars = items.reduce((sum, item) => sum + item.chars, 0)
   const details = items
     .map(({ key, chars }) => ({ key, label: STORAGE_LABELS[key] ?? key, chars, sizeKB: Math.round(chars / 1024) }))
-    .sort((a, b) => b.chars - a.chars)
+  if (imagesBytes.value > 0) {
+    details.push({ key: 'images', label: '聊天圖片', chars: imagesBytes.value, sizeKB: Math.round(imagesBytes.value / 1024) })
+  }
+  details.sort((a, b) => b.chars - a.chars)
 
   // IndexedDB：使用瀏覽器回報的整體用量與上限（bytes）
   if (raw?.backend === 'indexeddb' && raw.estimate) {
@@ -586,7 +593,7 @@ const handleExportRoomMessages = async (roomId: string, roomName: string) => {
       roomName,
       exportedAt: new Date().toISOString(),
       messageCount: roomMessages.length,
-      messages: roomMessages
+      messages: await chatRoomStore.getMessagesWithImageData(roomId)
     }, null, 2)
     blob = new Blob([data], { type: 'application/json; charset=utf-8' })
     filename = `chat-${roomName}-${dateStr}.json`
@@ -736,7 +743,7 @@ const handleGoogleBackup = async () => {
       user: userStore.profile,
       characters: characterStore.characters,
       chatRooms: chatRoomStore.chatRooms,
-      messages: chatRoomStore.messages,  // 包含聊天訊息
+      messages: await chatRoomStore.getMessagesWithImageData(),  // 包含聊天訊息（圖片補回 Base64）
       memories: {
         characterMemories: memoriesStore.characterMemories,
         roomMemories: memoriesStore.roomMemories

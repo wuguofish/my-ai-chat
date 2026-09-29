@@ -189,7 +189,11 @@ export type MessageType = 'user' | 'character' | 'system' | 'auto_response'
  */
 export interface ImageAttachment {
   id: string
-  data: string       // Base64 編碼（含 data:image/xxx;base64, 前綴）
+  /**
+   * Base64 編碼（含 data:image/xxx;base64, 前綴）
+   * 圖片存進 IndexedDB（imageStore）後會移除，改用 id 讀取
+   */
+  data?: string
   mimeType: string   // 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'
   width: number
   height: number

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
+import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import {
   initPersistentStorage,
@@ -74,7 +75,7 @@ describe('initPersistentStorage', () => {
   it('沒有 IndexedDB 時應退回 localStorage', async () => {
     const ls = installLocalStorage({ 'ai-chat-user': 'local' })
 
-    const result = await initPersistentStorage(KEYS, undefined)
+    const result = await initPersistentStorage(KEYS, null)
 
     expect(result.backend).toBe('localStorage')
     expect(getStorageBackendName()).toBe('localStorage')

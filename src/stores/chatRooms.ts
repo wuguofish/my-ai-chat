@@ -5,9 +5,15 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
-import type { ChatRoom, Message } from '@/types'
+import type { ChatRoom, ImageAttachment, Message } from '@/types'
 import { useCharacterStore } from './characters'
 import { useUserStore } from './user'
+import { getHydrationStatus } from './plugins/persist'
+import { deleteImagesExcept, getImageDataUrl, isImageStoreAvailable, saveImage } from '@/utils/imageStore'
+import { getStorageBackendName } from '@/utils/persistentStorage'
+
+/** 持久化用的 key */
+const PERSIST_KEY = 'ai-chat-rooms'
 
 export const useChatRoomsStore = defineStore('chatRooms', () => {
   // State
@@ -80,6 +86,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
       if (currentRoomId.value === roomId) {
         currentRoomId.value = null
       }
+      void cleanupOrphanImages()
     }
   }
 
@@ -212,7 +219,116 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
       room.lastMessageAt = newMessage.timestamp
     }
 
+    // 圖片搬進 IndexedDB（背景執行，不影響訊息顯示）
+    if (newMessage.images?.some(img => img.data)) {
+      void offloadMessageImages(roomId, newMessage.id)
+    }
+
     return newMessage
+  }
+
+  // ==========================================
+  // 圖片儲存（圖片存在 IndexedDB，訊息只留 id）
+  // ==========================================
+
+  /**
+   * 把訊息中的圖片存進 IndexedDB，成功後移除訊息裡的 Base64 資料
+   * 圖片儲存空間無法使用或寫入失敗時，圖片維持存在訊息裡
+   * @returns 搬移的圖片數量
+   */
+  async function offloadMessageImages(roomId: string, messageId: string): Promise<number> {
+    if (!isImageStoreAvailable()) return 0
+
+    const target = messages.value[roomId]?.find(m => m.id === messageId)
+    if (!target?.images?.some(img => img.data)) return 0
+
+    const savedIds = new Set<string>()
+    for (const img of target.images) {
+      if (img.data && await saveImage(img.id, img.data)) {
+        savedIds.add(img.id)
+      }
+    }
+    if (savedIds.size === 0) return 0
+
+    // 儲存期間訊息可能已被刪除，重新找一次
+    const message = messages.value[roomId]?.find(m => m.id === messageId)
+    if (!message?.images) return 0
+
+    // 建立新的物件，不直接修改原物件（呼叫端可能還拿著同一份圖片要送給 AI）
+    message.images = message.images.map((img): ImageAttachment => {
+      if (!savedIds.has(img.id)) return img
+      const { data: _data, ...rest } = img
+      return rest
+    })
+    return savedIds.size
+  }
+
+  /**
+   * 把所有還存在訊息裡的圖片搬進 IndexedDB
+   * 用於舊存檔升級，以及匯入備份後（備份檔裡的圖片是 Base64）
+   * @returns 搬移的圖片數量
+   */
+  async function migrateInlineImages(): Promise<number> {
+    if (!isImageStoreAvailable()) return 0
+    let count = 0
+    for (const [roomId, roomMessages] of Object.entries(messages.value)) {
+      const ids = roomMessages.filter(m => m.images?.some(img => img.data)).map(m => m.id)
+      for (const messageId of ids) {
+        count += await offloadMessageImages(roomId, messageId)
+      }
+    }
+    return count
+  }
+
+  /**
+   * 刪除沒有任何訊息使用的圖片（訊息被刪除後留下的）
+   * 只在確定手上的訊息是完整存檔時執行，避免誤刪（圖片刪掉就無法復原）：
+   * - 存檔不是從 IndexedDB 讀的（退回 localStorage 時，訊息可能還在 IndexedDB 裡）
+   * - 聊天室存檔還原失敗
+   * @returns 刪除的圖片數量
+   */
+  async function cleanupOrphanImages(): Promise<number> {
+    if (!isImageStoreAvailable()) return 0
+    if (getStorageBackendName() !== 'indexeddb') {
+      console.warn('⚠️ 存檔目前不是存在 IndexedDB，略過清理圖片')
+      return 0
+    }
+    if (getHydrationStatus(PERSIST_KEY) === 'failed') {
+      console.warn('⚠️ 聊天室存檔還原不完整，略過清理圖片')
+      return 0
+    }
+    const usedIds = new Set<string>()
+    for (const roomMessages of Object.values(messages.value)) {
+      for (const msg of roomMessages) {
+        msg.images?.forEach(img => usedIds.add(img.id))
+      }
+    }
+    return deleteImagesExcept(usedIds)
+  }
+
+  /**
+   * 取得訊息的完整副本，圖片補回 Base64 資料（匯出/備份用）
+   * @param roomId 指定聊天室；不指定則回傳所有聊天室
+   */
+  async function getMessagesWithImageData(): Promise<Record<string, Message[]>>
+  async function getMessagesWithImageData(roomId: string): Promise<Message[]>
+  async function getMessagesWithImageData(roomId?: string): Promise<Record<string, Message[]> | Message[]> {
+    const fillImages = async (list: Message[]): Promise<Message[]> => Promise.all(list.map(async msg => {
+      if (!msg.images?.length) return { ...msg }
+      const images = await Promise.all(msg.images.map(async img =>
+        img.data ? { ...img } : { ...img, data: await getImageDataUrl(img.id) ?? undefined }
+      ))
+      return { ...msg, images }
+    }))
+
+    if (roomId !== undefined) {
+      return fillImages(messages.value[roomId] || [])
+    }
+    const result: Record<string, Message[]> = {}
+    for (const [id, list] of Object.entries(messages.value)) {
+      result[id] = await fillImages(list)
+    }
+    return result
   }
 
   function deleteMessage(roomId: string, messageId: string) {
@@ -364,6 +480,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
 
     const deleteCount = roomMessages.length - keepCount
     messages.value[roomId] = roomMessages.slice(deleteCount)
+    void cleanupOrphanImages()
     return deleteCount
   }
 
@@ -399,6 +516,7 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     messages.value = {}
     currentRoomId.value = null
     drafts.value = {}
+    void cleanupOrphanImages()
   }
 
   // 草稿相關函數
@@ -456,11 +574,17 @@ export const useChatRoomsStore = defineStore('chatRooms', () => {
     clearDraft,
     // @ 提及處理
     cleanMessageMentions,
-    buildIdToNameMap
+    buildIdToNameMap,
+    // 圖片儲存
+    migrateInlineImages,
+    cleanupOrphanImages,
+    getMessagesWithImageData
   }
 }, {
   persist: {
-    key: 'ai-chat-rooms',
-    obfuscate: true
+    key: PERSIST_KEY,
+    obfuscate: true,
+    // 訊息依聊天室分開存，新增訊息時只需寫入該聊天室
+    splitBy: 'messages'
   }
 })

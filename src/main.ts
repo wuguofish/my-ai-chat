@@ -5,6 +5,8 @@ import router from './router'
 import pinia from './stores'
 import { migrateLocalStorage } from './utils/dataObfuscation'
 import { initPersistentStorage } from './utils/persistentStorage'
+import { initImageStore } from './utils/imageStore'
+import { useChatRoomsStore } from './stores/chatRooms'
 
 async function bootstrap() {
   // 在 Pinia 初始化之前遷移舊格式 LocalStorage 資料
@@ -13,8 +15,9 @@ async function bootstrap() {
 
   // 開啟 IndexedDB（必要時從 localStorage 搬移資料），並預先讀取所有存檔
   // 必須在 router 之前完成，因為路由守衛會用到 userStore
+  // 同時開啟聊天圖片的資料庫（失敗時圖片維持存在訊息裡）
   try {
-    await initPersistentStorage()
+    await Promise.all([initPersistentStorage(), initImageStore()])
   } catch (error) {
     // 讀檔失敗（例如其他分頁正在升級資料庫、瀏覽器暫時無法開啟 IndexedDB）：
     // 不要用空資料啟動，避免玩家以為存檔不見
@@ -29,6 +32,9 @@ async function bootstrap() {
   app.use(router)
 
   app.mount('#app')
+
+  // 背景整理聊天圖片：舊存檔/匯入備份裡的 Base64 圖片搬進 IndexedDB，並清掉已無訊息使用的圖片
+  void organizeChatImages()
 }
 
 function showStartupError() {
@@ -46,6 +52,19 @@ function showStartupError() {
   box.appendChild(document.createElement('br'))
   box.appendChild(button)
   root.replaceChildren(box)
+}
+
+async function organizeChatImages() {
+  try {
+    const chatRoomStore = useChatRoomsStore()
+    const migrated = await chatRoomStore.migrateInlineImages()
+    const removed = await chatRoomStore.cleanupOrphanImages()
+    if (migrated || removed) {
+      console.log(`🖼️ 聊天圖片整理完成：搬移 ${migrated} 張、清除 ${removed} 張`)
+    }
+  } catch (error) {
+    console.error('❌ 整理聊天圖片失敗:', error)
+  }
 }
 
 void bootstrap()

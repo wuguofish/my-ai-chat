@@ -215,6 +215,10 @@ export function imageAttachmentToLLMFormat(attachment: ImageAttachment): {
   mimeType: string
   data: string
 } {
+  // 送給 LLM 的一定是剛選取的圖片（還帶著 data），已存進 IndexedDB 的歷史圖片不會送出
+  if (!attachment.data) {
+    throw new Error('圖片資料不存在，無法傳送給 AI')
+  }
   return {
     mimeType: attachment.mimeType,
     data: extractBase64Data(attachment.data)

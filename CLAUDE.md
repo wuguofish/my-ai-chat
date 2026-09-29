@@ -39,6 +39,10 @@ npm run preview # 預覽生產版本
   - 寫入有 300ms 節流；在 `location.reload()` / `location.replace()` 之前要先 `await flushPersistedStores()`
   - 預先讀取的資料每個 key 只給 store 還原用一次，之後就從記憶體移除；要讀目前存檔請用 `readItem()`
 - 儲存 Keys：`ai-chat-user`、`ai-chat-characters`、`ai-chat-rooms`、`ai-chat-memories`、`ai-chat-relationships`、`ai-chat-feed`、`ai-chat-settings`
+- 聊天訊息依聊天室分開存（`persist.splitBy: 'messages'`）：`ai-chat-rooms/messages/<roomId>`，存檔時只寫有變動的聊天室
+- 聊天圖片存在獨立的 IndexedDB 資料庫 `ai-chat-images`（`src/utils/imageStore.ts`），訊息的 `images[].data` 會被移除、只留 id
+  - 顯示圖片用 `getImageSrc(img)`；匯出/備份用 `chatRoomStore.getMessagesWithImageData()` 補回 Base64
+  - 啟動時會把舊存檔或匯入備份中的 Base64 圖片搬進去，並清除已無訊息使用的圖片
 - 小型的追蹤資料（記憶追蹤、節日紀錄、Google token 等）仍直接存在 LocalStorage
 
 #### 2. 狀態管理結構（Pinia Stores）
