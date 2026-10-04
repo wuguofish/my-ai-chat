@@ -1,20 +1,7 @@
 /**
  * 動態牆內容防護工具
  * - 偵測 LLM 產生的異常輸出（例如「*A *A」這種碎片或無限重複）
- * - 跳脫 HTML，讓內容可以安全地透過 v-html 顯示
  */
-
-/**
- * 跳脫 HTML 特殊字元
- */
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
 
 /** 有意義的字元：文字（含中日韓）與數字 */
 const MEANINGFUL_CHAR = /[\p{L}\p{N}]/gu
