@@ -1140,7 +1140,7 @@ const handleGoogleRestore = async () => {
         </div>
         <p class="provider-models">主要對話：{{ getProviderConfig('openai')?.mainModelDisplay }} ／ 其他功能：{{ getProviderConfig('openai')?.liteModelDisplay }}</p>
         <p class="api-key-hint">
-          💡 <a :href="getProviderConfig('openai')?.consoleUrl" target="_blank" rel="noopener noreferrer">前往 OpenAI Platform</a> 查看額度（GPT-4.1 mini 有免費額度 40K TPM）
+          💡 <a :href="getProviderConfig('openai')?.consoleUrl" target="_blank" rel="noopener noreferrer">前往 OpenAI Platform</a> 查看額度
         </p>
       </div>
 

@@ -87,6 +87,16 @@ function buildOpenAIContentWithImages(text: string, images?: ImageAttachment[]):
 }
 
 /**
+ * 推理深度。模型一律會推理，low 讓它在簡單的聊天訊息上想得最少、回得最快。
+ */
+const REASONING_EFFORT = 'low' as const
+
+/**
+ * 推理用掉的 token 也算在 max_completion_tokens 裡，所以在呼叫端要求的回覆長度之外再留這麼多給推理。
+ */
+const REASONING_HEADROOM_TOKENS = 2048
+
+/**
  * 檢查 OpenAI 回應是否被封鎖
  */
 function checkResponseBlocked(response: OpenAI.Chat.Completions.ChatCompletion): { reason: string; message: string } | null {
@@ -108,13 +118,18 @@ function checkResponseBlocked(response: OpenAI.Chat.Completions.ChatCompletion):
     }
   }
 
-  // 檢查是否有 refusal（GPT-4 以上模型支援）
+  // 檢查是否有 refusal
   const message = choice?.message
   if (message && 'refusal' in message && message.refusal) {
     return {
       reason: 'REFUSAL',
       message: message.refusal as string
     }
+  }
+
+  // 輸出上限用完造成的空內容不是封鎖，交給呼叫端依 finish_reason 處理
+  if (choice?.finish_reason === 'length') {
+    return null
   }
 
   // 檢查內容是否為空
@@ -231,9 +246,7 @@ export class OpenAIAdapter implements LLMAdapter {
     const {
       modelType = 'main',
       systemInstruction,
-      temperature = 0.7,
       maxOutputTokens = 2048,
-      topP,
       apiKey: optionsApiKey,
       queueDescription
     } = options || {}
@@ -246,9 +259,9 @@ export class OpenAIAdapter implements LLMAdapter {
     // 建立訊息陣列（支援多模態）
     const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
 
-    // 加入 system 訊息
+    // 加入系統指示
     if (systemInstruction) {
-      openaiMessages.push({ role: 'system', content: systemInstruction })
+      openaiMessages.push({ role: 'developer', content: systemInstruction })
     }
 
     // 轉換訊息格式並加入（支援多模態）
@@ -264,7 +277,7 @@ export class OpenAIAdapter implements LLMAdapter {
         })
       } else if (msg.role === 'system') {
         openaiMessages.push({
-          role: 'system',
+          role: 'developer',
           content: typeof content === 'string' ? content : content.filter(c => c.type === 'text').map(c => (c as { type: 'text'; text: string }).text).join('')
         })
       }
@@ -272,13 +285,9 @@ export class OpenAIAdapter implements LLMAdapter {
 
     const createParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
       model: modelName,
-      max_tokens: maxOutputTokens,
+      max_completion_tokens: maxOutputTokens + REASONING_HEADROOM_TOKENS,
       messages: openaiMessages,
-      temperature
-    }
-
-    if (topP !== undefined) {
-      createParams.top_p = topP
+      reasoning_effort: REASONING_EFFORT
     }
 
     // 透過佇列發送請求，避免超過 rate limit
@@ -377,13 +386,12 @@ export class OpenAIAdapter implements LLMAdapter {
       const sendAndCheck = async (chatMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]): Promise<{ text: string; response: OpenAI.Chat.Completions.ChatCompletion }> => {
         const createParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
           model: getModelName('openai', 'main'),
-          max_tokens: character.maxOutputTokens || 2048,
+          max_completion_tokens: (character.maxOutputTokens || 2048) + REASONING_HEADROOM_TOKENS,
           messages: [
-            { role: 'system', content: systemPrompt },
+            { role: 'developer', content: systemPrompt },
             ...chatMessages
           ],
-          temperature: 0.95,
-          top_p: 0.9
+          reasoning_effort: REASONING_EFFORT
         }
 
         // 透過佇列發送請求，避免超過 rate limit

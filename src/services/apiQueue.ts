@@ -200,16 +200,16 @@ export const claudeHaikuQueue = new ApiQueue({
   jitterMs: 200
 })
 
-/** OpenAI GPT-4.1 佇列（RPM: 500，Tier 1） */
-export const openaiGpt41Queue = new ApiQueue({
-  name: 'openai-gpt4.1',
+/** OpenAI 主要對話模型佇列（RPM: 500） */
+export const openaiMainQueue = new ApiQueue({
+  name: 'openai-main',
   rpm: 500,
   jitterMs: 100
 })
 
-/** OpenAI GPT-4.1-mini 佇列（RPM: 500，Tier 1；免費額度 40K TPM） */
-export const openaiGpt41MiniQueue = new ApiQueue({
-  name: 'openai-gpt4.1-mini',
+/** OpenAI 輕量任務模型佇列（RPM: 500） */
+export const openaiLiteQueue = new ApiQueue({
+  name: 'openai-lite',
   rpm: 500,
   jitterMs: 100
 })
@@ -237,8 +237,8 @@ export function getAllQueueStatus(): QueueStatus[] {
     geminiFlashLiteQueue.getStatus(),
     claudeSonnetQueue.getStatus(),
     claudeHaikuQueue.getStatus(),
-    openaiGpt41Queue.getStatus(),
-    openaiGpt41MiniQueue.getStatus()
+    openaiMainQueue.getStatus(),
+    openaiLiteQueue.getStatus()
   ]
 }
 
@@ -250,8 +250,8 @@ export function clearAllQueues(): void {
   geminiFlashLiteQueue.clear()
   claudeSonnetQueue.clear()
   claudeHaikuQueue.clear()
-  openaiGpt41Queue.clear()
-  openaiGpt41MiniQueue.clear()
+  openaiMainQueue.clear()
+  openaiLiteQueue.clear()
 }
 
 // ==========================================
@@ -333,22 +333,22 @@ export type OpenAIModelType = 'main' | 'lite'
 
 /**
  * 將 OpenAI API 請求加入佇列
- * 根據模型類型選擇對應的佇列（GPT-4o 或 GPT-4o-mini）
+ * 根據模型類型選擇對應的佇列
  *
  * @param execute 要執行的 API 請求函數
- * @param modelType 模型類型：'main'（GPT-4o）或 'lite'（GPT-4o-mini）
+ * @param modelType 模型類型：'main'（主要對話）或 'lite'（輕量任務）
  * @param description 請求描述（用於 debug）
  * @returns Promise，當請求完成時 resolve
  *
  * @example
- * // 角色對話（使用 GPT-4o）
+ * // 角色對話
  * const result = await enqueueOpenAIRequest(
  *   () => client.chat.completions.create(params),
  *   'main',
  *   '角色對話：小明'
  * )
  *
- * // 動態牆發文（使用 GPT-4o-mini）
+ * // 動態牆發文
  * const result = await enqueueOpenAIRequest(
  *   () => client.chat.completions.create(params),
  *   'lite',
@@ -360,6 +360,6 @@ export function enqueueOpenAIRequest<T>(
   modelType: OpenAIModelType,
   description?: string
 ): Promise<T> {
-  const queue = modelType === 'lite' ? openaiGpt41MiniQueue : openaiGpt41Queue
+  const queue = modelType === 'lite' ? openaiLiteQueue : openaiMainQueue
   return queue.enqueue(execute, description)
 }
