@@ -461,6 +461,9 @@ export function formatMessageForDisplay(message: string, characters: Character[]
   // 之後加入的 @ 標籤、粗體、斜體都是自己產生的，所以要在跳脫之後處理
   let formatted = escapeHtml(message)
 
+  // 舊訊息裡的斜體、粗體是直接存成 <i>、<b> 標籤。不帶屬性的這兩種標籤無法夾帶程式碼，還原回來才會照格式顯示
+  formatted = formatted.replace(/&lt;(\/?)([ib])&gt;/g, '<$1$2>')
+
   // 處理 @all（不區分大小寫，統一轉為 @all）
   formatted = formatted.replace(/@all/gi, '<span class="tag-text">@all</span>')
 
@@ -903,7 +906,7 @@ export async function generateStatusMessage(
   }
 
   // 取得 adapter（根據角色設定）
-  const { getDefaultAdapter } = await import('@/services/llm')
+  const { getBackgroundAdapter } = await import('@/services/llm')
   const { isAdultConversation } = await import('@/services/llm/utils')
   const { useUserStore } = await import('@/stores/user')
   const { useRelationshipsStore } = await import('@/stores/relationships')
@@ -1003,7 +1006,7 @@ ${timeDescriptions[currentTimeOfDay]}`
 你的狀態訊息：`
 
   // 取得 adapter（根據角色的 LLM 設定，adapter 會自動取得對應的 API Key）
-  const adapter = await getDefaultAdapter(character)
+  const adapter = await getBackgroundAdapter(character)
 
   // 透過 adapter 生成狀態訊息
   const response = await adapter.generate([
@@ -1415,7 +1418,7 @@ export async function generateCatchUpResponse(
   userAge?: string,
   roomId?: string
 ): Promise<string> {
-  const { getDefaultAdapter } = await import('@/services/llm')
+  const { getBackgroundAdapter } = await import('@/services/llm')
   const { isAdultConversation } = await import('@/services/llm/utils')
   const { useUserStore } = await import('@/stores/user')
   const { useRelationshipsStore } = await import('@/stores/relationships')
@@ -1496,7 +1499,7 @@ ${wasMentioned ? '注意：你被 @ 點名了，請針對被點名的內容回�
 只輸出回應內容，不要加任何前綴或說明：`
 
   // 取得 adapter（根據角色的 LLM 設定，adapter 會自動取得對應的 API Key）
-  const adapter = await getDefaultAdapter(character)
+  const adapter = await getBackgroundAdapter(character)
 
   // 透過 adapter 生成回應
   const response = await adapter.generate([

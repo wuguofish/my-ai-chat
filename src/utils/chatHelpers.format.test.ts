@@ -20,6 +20,17 @@ describe('formatMessageForDisplay', () => {
     )
   })
 
+  it('訊息裡不帶屬性的 <i>、<b> 標籤應照格式顯示', () => {
+    expect(formatMessageForDisplay('<i>他輕聲說道</i>「好」<b>重點</b>', []))
+      .toBe('<i>他輕聲說道</i>「好」<b>重點</b>')
+  })
+
+  it('帶屬性的 <i>、<b> 標籤仍應跳脫', () => {
+    const result = formatMessageForDisplay('<i onmouseover="alert(1)">壞</i><b style="x">壞</b>', [])
+    expect(result).not.toContain('<i ')
+    expect(result).not.toContain('<b ')
+  })
+
   it('好友名稱與使用者暱稱中的 HTML 也應跳脫', () => {
     const result = formatMessageForDisplay(`@${ID} @user`, [char('<b onmouseover=x>壞</b>')], '<script>')
     expect(result).not.toContain('<b onmouseover')
