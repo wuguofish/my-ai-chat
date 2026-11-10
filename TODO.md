@@ -35,7 +35,7 @@
 | Gemini | 3.8 Flash | 3.5 Flash Lite | ✅ 已完成 |
 | Claude | Sonnet 5.5 | Haiku 5.5 | ✅ 已完成 |
 | OpenAI | GPT-6.1 Sol | GPT-6 Luna | ✅ 已完成 |
-| Grok | Grok 4.7 | 待定（官方已無 mini 級） | ⏸️ 暫緩 |
+| Grok | Grok 4.7 | Grok 4.3 | ✅ 已完成 |
 
 ### 架構說明
 

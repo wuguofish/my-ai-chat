@@ -214,6 +214,20 @@ export const openaiLiteQueue = new ApiQueue({
   jitterMs: 100
 })
 
+/** Grok 主要對話模型佇列（RPM: 500） */
+export const grokMainQueue = new ApiQueue({
+  name: 'grok-main',
+  rpm: 500,
+  jitterMs: 100
+})
+
+/** Grok 輕量任務模型佇列（RPM: 500） */
+export const grokLiteQueue = new ApiQueue({
+  name: 'grok-lite',
+  rpm: 500,
+  jitterMs: 100
+})
+
 // ==========================================
 // 便捷函數
 // ==========================================
@@ -238,7 +252,9 @@ export function getAllQueueStatus(): QueueStatus[] {
     claudeSonnetQueue.getStatus(),
     claudeHaikuQueue.getStatus(),
     openaiMainQueue.getStatus(),
-    openaiLiteQueue.getStatus()
+    openaiLiteQueue.getStatus(),
+    grokMainQueue.getStatus(),
+    grokLiteQueue.getStatus()
   ]
 }
 
@@ -252,6 +268,8 @@ export function clearAllQueues(): void {
   claudeHaikuQueue.clear()
   openaiMainQueue.clear()
   openaiLiteQueue.clear()
+  grokMainQueue.clear()
+  grokLiteQueue.clear()
 }
 
 // ==========================================
@@ -361,5 +379,24 @@ export function enqueueOpenAIRequest<T>(
   description?: string
 ): Promise<T> {
   const queue = modelType === 'lite' ? openaiLiteQueue : openaiMainQueue
+  return queue.enqueue(execute, description)
+}
+
+// ==========================================
+// Grok 專用包裝函數
+// ==========================================
+
+export type GrokModelType = 'main' | 'lite'
+
+/**
+ * 將 Grok API 請求加入佇列
+ * 根據模型類型選擇對應的佇列
+ */
+export function enqueueGrokRequest<T>(
+  execute: () => Promise<T>,
+  modelType: GrokModelType,
+  description?: string
+): Promise<T> {
+  const queue = modelType === 'lite' ? grokLiteQueue : grokMainQueue
   return queue.enqueue(execute, description)
 }

@@ -1,6 +1,6 @@
 /**
- * OpenAI LLM Adapter
- * 使用 OpenAI 官方 SDK
+ * OpenAI 相容介面的 LLM Adapter（OpenAI、Grok）
+ * 使用 OpenAI 官方 SDK，以 baseURL 切換服務商
  */
 
 import OpenAI from 'openai'
@@ -15,13 +15,13 @@ import type {
   CharacterResponse
 } from '../types'
 import { ContentBlockedError } from '../types'
-import { getModelName } from '../config'
+import { getModelName, getProviderConfig } from '../config'
 import {
   isAdultConversation,
   getActuallyContent,
   formatErrorMessage
 } from '../utils'
-import { enqueueOpenAIRequest } from '@/services/apiQueue'
+import { enqueueOpenAIRequest, enqueueGrokRequest } from '@/services/apiQueue'
 import { generateSystemPrompt, convertToShortIds, convertToLongIds } from '@/utils/chatHelpers'
 import { imageAttachmentToLLMFormat } from '@/utils/imageHelpers'
 import type { ImageAttachment } from '@/types'
@@ -92,9 +92,33 @@ function buildOpenAIContentWithImages(text: string, images?: ImageAttachment[]):
 const REASONING_EFFORT = 'low' as const
 
 /**
- * 推理用掉的 token 也算在 max_completion_tokens 裡，所以在呼叫端要求的回覆長度之外再留這麼多給推理。
+ * 各服務商在 OpenAI 相容介面上的差異
  */
-const REASONING_HEADROOM_TOKENS = 2048
+interface ProviderProfile {
+  provider: 'openai' | 'grok'
+  /** 未指定時使用 SDK 預設的 OpenAI 端點 */
+  baseURL?: string
+  /** 系統指示要用的訊息角色 */
+  systemRole: 'developer' | 'system'
+  /** 推理的 token 算在輸出上限裡的服務商，要在呼叫端要求的回覆長度之外多留這麼多 */
+  reasoningHeadroomTokens: number
+  enqueue: <T>(execute: () => Promise<T>, modelType: 'main' | 'lite', description?: string) => Promise<T>
+}
+
+const OPENAI_PROFILE: ProviderProfile = {
+  provider: 'openai',
+  systemRole: 'developer',
+  reasoningHeadroomTokens: 2048,
+  enqueue: enqueueOpenAIRequest
+}
+
+const GROK_PROFILE: ProviderProfile = {
+  provider: 'grok',
+  baseURL: 'https://api.x.ai/v1',
+  systemRole: 'system',
+  reasoningHeadroomTokens: 0,
+  enqueue: enqueueGrokRequest
+}
 
 /**
  * 檢查 OpenAI 回應是否被封鎖
@@ -155,14 +179,28 @@ function extractTextFromResponse(response: OpenAI.Chat.Completions.ChatCompletio
 }
 
 /**
- * OpenAI Adapter 實作
+ * OpenAI 相容介面的 Adapter 實作
  *
  * 注意：OpenAI API 不需要特別的訊息正規化
  * - 不要求第一則必須是 user
  * - 允許連續相同角色的訊息
  */
-export class OpenAIAdapter implements LLMAdapter {
-  readonly provider = 'openai' as const
+export class OpenAICompatibleAdapter implements LLMAdapter {
+  readonly provider: 'openai' | 'grok'
+
+  constructor(private readonly profile: ProviderProfile) {
+    this.provider = profile.provider
+  }
+
+  private get providerName(): string {
+    return getProviderConfig(this.provider).name
+  }
+
+  private systemMessage(content: string): OpenAI.Chat.Completions.ChatCompletionMessageParam {
+    return this.profile.systemRole === 'developer'
+      ? { role: 'developer', content }
+      : { role: 'system', content }
+  }
 
   /**
    * 建立 OpenAI 客戶端
@@ -170,6 +208,7 @@ export class OpenAIAdapter implements LLMAdapter {
   private createClient(apiKey: string): OpenAI {
     return new OpenAI({
       apiKey,
+      baseURL: this.profile.baseURL,
       dangerouslyAllowBrowser: true  // 前端環境需要此設定
     })
   }
@@ -212,7 +251,7 @@ export class OpenAIAdapter implements LLMAdapter {
 
       return { valid: false, error: '無法取得回應' }
     } catch (error: any) {
-      console.error('OpenAI API Key 驗證失敗:', error)
+      console.error(`${this.providerName} API Key 驗證失敗:`, error)
 
       if (error instanceof OpenAI.APIError) {
         const status = error.status
@@ -225,7 +264,7 @@ export class OpenAIAdapter implements LLMAdapter {
         } else if (status === 403) {
           return { valid: false, error: 'API Key 權限不足' }
         } else if (status === 500 || status === 503) {
-          return { valid: false, error: 'OpenAI 服務目前不可用，請稍後再試' }
+          return { valid: false, error: `${this.providerName} 服務目前不可用，請稍後再試` }
         } else {
           return { valid: false, error: `驗證失敗：${message || '未知錯誤'}` }
         }
@@ -254,14 +293,14 @@ export class OpenAIAdapter implements LLMAdapter {
     // 優先使用 options 傳入的 apiKey，否則從 userStore 取得
     const apiKey = optionsApiKey || await this.getApiKey()
     const client = this.createClient(apiKey)
-    const modelName = getModelName('openai', modelType)
+    const modelName = getModelName(this.provider, modelType)
 
     // 建立訊息陣列（支援多模態）
     const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = []
 
     // 加入系統指示
     if (systemInstruction) {
-      openaiMessages.push({ role: 'developer', content: systemInstruction })
+      openaiMessages.push(this.systemMessage(systemInstruction))
     }
 
     // 轉換訊息格式並加入（支援多模態）
@@ -276,22 +315,21 @@ export class OpenAIAdapter implements LLMAdapter {
           content: typeof content === 'string' ? content : content.filter(c => c.type === 'text').map(c => (c as { type: 'text'; text: string }).text).join('')
         })
       } else if (msg.role === 'system') {
-        openaiMessages.push({
-          role: 'developer',
-          content: typeof content === 'string' ? content : content.filter(c => c.type === 'text').map(c => (c as { type: 'text'; text: string }).text).join('')
-        })
+        openaiMessages.push(this.systemMessage(
+          typeof content === 'string' ? content : content.filter(c => c.type === 'text').map(c => (c as { type: 'text'; text: string }).text).join('')
+        ))
       }
     }
 
     const createParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
       model: modelName,
-      max_completion_tokens: maxOutputTokens + REASONING_HEADROOM_TOKENS,
+      max_completion_tokens: maxOutputTokens + this.profile.reasoningHeadroomTokens,
       messages: openaiMessages,
       reasoning_effort: REASONING_EFFORT
     }
 
     // 透過佇列發送請求，避免超過 rate limit
-    const response = await enqueueOpenAIRequest<OpenAI.Chat.Completions.ChatCompletion>(
+    const response = await this.profile.enqueue<OpenAI.Chat.Completions.ChatCompletion>(
       () => client.chat.completions.create(createParams),
       modelType === 'lite' ? 'lite' : 'main',
       queueDescription || '內容生成'
@@ -385,17 +423,17 @@ export class OpenAIAdapter implements LLMAdapter {
       // 發送請求（透過佇列）
       const sendAndCheck = async (chatMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[]): Promise<{ text: string; response: OpenAI.Chat.Completions.ChatCompletion }> => {
         const createParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
-          model: getModelName('openai', 'main'),
-          max_completion_tokens: (character.maxOutputTokens || 2048) + REASONING_HEADROOM_TOKENS,
+          model: getModelName(this.provider, 'main'),
+          max_completion_tokens: (character.maxOutputTokens || 2048) + this.profile.reasoningHeadroomTokens,
           messages: [
-            { role: 'developer', content: systemPrompt },
+            this.systemMessage(systemPrompt),
             ...chatMessages
           ],
           reasoning_effort: REASONING_EFFORT
         }
 
         // 透過佇列發送請求，避免超過 rate limit
-        const response = await enqueueOpenAIRequest(
+        const response = await this.profile.enqueue(
           () => client.chat.completions.create(createParams),
           'main',
           `角色對話：${character.name}`
@@ -547,11 +585,12 @@ export class OpenAIAdapter implements LLMAdapter {
         newAffection: undefined
       }
     } catch (error: any) {
-      console.error('OpenAI API 錯誤:', error)
+      console.error(`${this.providerName} API 錯誤:`, error)
       throw new Error(formatErrorMessage(error))
     }
   }
 }
 
 // 匯出單例
-export const openaiAdapter = new OpenAIAdapter()
+export const openaiAdapter = new OpenAICompatibleAdapter(OPENAI_PROFILE)
+export const grokAdapter = new OpenAICompatibleAdapter(GROK_PROFILE)

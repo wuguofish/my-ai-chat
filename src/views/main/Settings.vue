@@ -1146,14 +1146,15 @@ const handleGoogleRestore = async () => {
 
       <div class="provider-divider"></div>
 
-      <!-- Grok (尚未實作) -->
-      <div class="provider-section disabled">
+      <!-- Grok -->
+      <div class="provider-section">
         <div class="provider-header">
           <span class="provider-icon" :style="{ color: getProviderConfig('grok')?.iconColor }">
             {{ getProviderConfig('grok')?.icon }}
           </span>
           <span class="provider-name">Grok</span>
-          <span class="provider-badge coming-soon">即將支援</span>
+          <span v-if="selectedDefaultProvider === 'grok'" class="provider-badge default">預設</span>
+          <span v-else class="provider-badge">選填</span>
         </div>
         <div class="api-key-input">
           <input
@@ -1161,14 +1162,23 @@ const handleGoogleRestore = async () => {
             :type="showApiKey.grok ? 'text' : 'password'"
             class="input-field"
             placeholder="輸入你的 Grok API Key"
-            disabled
           >
-          <button class="btn btn-info" disabled>
-            <Eye :size="18" />
+          <button class="btn btn-info" @click="showApiKey.grok = !showApiKey.grok">
+            <EyeOff v-if="showApiKey.grok" :size="18" />
+            <Eye v-else :size="18" />
+          </button>
+        </div>
+        <div class="button-group">
+          <button class="btn-primary btn" @click="handleUpdateApiKey('grok')">更新</button>
+          <button class="btn-info btn" @click="handleValidateApiKey('grok')" :disabled="isValidatingApiKey.grok">
+            {{ isValidatingApiKey.grok ? '檢測中...' : '檢測連線' }}
           </button>
         </div>
         <p class="provider-models">主要對話：{{ getProviderConfig('grok')?.mainModelDisplay }} ／ 其他功能：{{ getProviderConfig('grok')?.liteModelDisplay }}</p>
-      </div>      
+        <p class="api-key-hint">
+          💡 <a :href="getProviderConfig('grok')?.consoleUrl" target="_blank" rel="noopener noreferrer">前往 xAI Console</a> 查看額度
+        </p>
+      </div>
     </div>
 
     <!-- Google Drive 同步 -->
@@ -1587,10 +1597,6 @@ const handleGoogleRestore = async () => {
   padding: var(--spacing-lg) 0;
 }
 
-.provider-section.disabled {
-  opacity: 0.6;
-}
-
 .provider-header {
   display: flex;
   align-items: center;
@@ -1622,11 +1628,6 @@ const handleGoogleRestore = async () => {
 .provider-badge.default {
   background: var(--color-primary);
   color: var(--color-text-white);
-}
-
-.provider-badge.coming-soon {
-  background: rgba(102, 126, 234, 0.1);
-  color: var(--color-primary);
 }
 
 .provider-models {

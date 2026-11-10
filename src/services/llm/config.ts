@@ -76,9 +76,9 @@ export const LLM_CONFIG: Record<LLMProvider, ProviderConfig> = {
   grok: {
     name: 'Grok',
     mainModel: 'grok-4.7',
-    liteModel: 'grok-3-mini',
+    liteModel: 'grok-4.3',
     mainModelDisplay: 'Grok 4.7',
-    liteModelDisplay: 'Grok 3 mini',
+    liteModelDisplay: 'Grok 4.3',
     consoleUrl: 'https://console.x.ai/',
     icon: '⌀',
     iconColor: '#000000',

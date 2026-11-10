@@ -54,19 +54,21 @@ export {
 
 export {
   openaiAdapter,
-  OpenAIAdapter
+  grokAdapter,
+  OpenAICompatibleAdapter
 } from './adapters/openai'
 
 // Adapter 實例快取
 import type { LLMAdapter, LLMProvider } from './types'
 import { geminiAdapter } from './adapters/gemini'
 import { claudeAdapter } from './adapters/claude'
-import { openaiAdapter } from './adapters/openai'
+import { openaiAdapter, grokAdapter } from './adapters/openai'
 
 const adapterCache: Partial<Record<LLMProvider, LLMAdapter>> = {
   gemini: geminiAdapter,
   claude: claudeAdapter,
-  openai: openaiAdapter
+  openai: openaiAdapter,
+  grok: grokAdapter
 }
 
 /**
