@@ -102,9 +102,26 @@ function buildClaudeContentWithImages(text: string, images?: ImageAttachment[]):
 }
 
 /**
+ * 思考深度。模型一律會思考，low 讓它在簡單的聊天訊息上想得最少、回得最快。
+ */
+const THINKING_EFFORT = 'low' as const
+
+/**
+ * 思考用掉的 token 也算在 max_tokens 裡，所以在呼叫端要求的回覆長度之外再留這麼多給思考。
+ */
+const THINKING_HEADROOM_TOKENS = 2048
+
+/**
  * 檢查 Claude 回應是否被封鎖
  */
 function checkResponseBlocked(response: Anthropic.Message): { reason: string; message: string } | null {
+  if (response.stop_reason === 'refusal') {
+    return {
+      reason: 'REFUSAL',
+      message: '模型拒絕回應這段內容'
+    }
+  }
+
   // 檢查是否有內容
   if (!response.content || response.content.length === 0) {
     return {
@@ -134,6 +151,7 @@ function extractTextFromResponse(response: Anthropic.Message): string {
  * 確保訊息序列符合 Claude API 要求：
  * 1. 第一條訊息必須是 user
  * 2. user 和 assistant 必須交替出現
+ * 3. 最後一條訊息必須是 user（以 assistant 結尾會被 API 拒絕）
  *
  * @param messages 原始訊息陣列
  * @param insertPlaceholder 是否在連續 assistant 之間插入假 user 訊息（群聊模式）
@@ -183,6 +201,11 @@ function normalizeMessages(messages: ClaudeMessage[], insertPlaceholder = false)
     } else {
       result.push({ ...msg })
     }
+  }
+
+  // 群聊後續輪次的歷史會以其他角色的發言（assistant）結尾
+  if (result[result.length - 1]?.role === 'assistant') {
+    result.push({ role: 'user', content: '（對話繼續）' })
   }
 
   return result
@@ -278,10 +301,7 @@ export class ClaudeAdapter implements LLMAdapter {
     const {
       modelType = 'main',
       systemInstruction,
-      temperature = 0.7,
       maxOutputTokens = 2048,
-      topP,
-      topK,
       apiKey: optionsApiKey,
       queueDescription
     } = options || {}
@@ -303,21 +323,13 @@ export class ClaudeAdapter implements LLMAdapter {
 
     const createParams: Anthropic.MessageCreateParams = {
       model: modelName,
-      max_tokens: maxOutputTokens,
+      max_tokens: maxOutputTokens + THINKING_HEADROOM_TOKENS,
       messages: claudeMessages,
-      temperature
+      output_config: { effort: THINKING_EFFORT }
     }
 
     if (systemInstruction) {
       createParams.system = systemInstruction
-    }
-
-    if (topP !== undefined) {
-      createParams.top_p = topP
-    }
-
-    if (topK !== undefined) {
-      createParams.top_k = topK
     }
 
     // 透過佇列發送請求，避免超過 rate limit
@@ -419,11 +431,10 @@ export class ClaudeAdapter implements LLMAdapter {
       const sendAndCheck = async (chatMessages: ClaudeMessage[]): Promise<{ text: string; response: Anthropic.Message }> => {
         const createParams: Anthropic.MessageCreateParams = {
           model: getModelName('claude', 'main'),
-          max_tokens: character.maxOutputTokens || 2048,
+          max_tokens: (character.maxOutputTokens || 2048) + THINKING_HEADROOM_TOKENS,
           system: systemPrompt,
           messages: chatMessages,
-          temperature: 0.95,
-          top_k: 40
+          output_config: { effort: THINKING_EFFORT }
         }
 
         // 透過佇列發送請求，避免超過 rate limit

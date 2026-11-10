@@ -13,7 +13,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.2",
+    "@anthropic-ai/sdk": "^0.137.0",
     "@google/genai": "^1.50.1",
     "lucide-vue-next": "^0.555.0",
     "openai": "^6.15.0",

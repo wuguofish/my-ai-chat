@@ -33,7 +33,7 @@
 | 服務商 | 主要對話 | 輕量任務 | 狀態 |
 |--------|----------|----------|------|
 | Gemini | 2.5 Flash | 2.5 Flash Lite | ✅ 已完成 |
-| Claude | Sonnet 4.5 | Haiku 4.5 | ✅ 已完成 |
+| Claude | Sonnet 5.5 | Haiku 5.5 | ✅ 已完成 |
 | OpenAI | GPT-4.1 | GPT-4.1 mini | ✅ 已完成 |
 | Grok | Grok 3 | Grok 3 mini | ⏸️ 暫緩 |
 
