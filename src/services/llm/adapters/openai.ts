@@ -188,9 +188,11 @@ function extractTextFromResponse(response: OpenAI.Chat.Completions.ChatCompletio
  */
 export class OpenAICompatibleAdapter implements LLMAdapter {
   readonly provider: 'openai' | 'grok'
+  private readonly profile: ProviderProfile
 
-  constructor(private readonly profile: ProviderProfile) {
+  constructor(profile: ProviderProfile) {
     this.provider = profile.provider
+    this.profile = profile
   }
 
   private get providerName(): string {
