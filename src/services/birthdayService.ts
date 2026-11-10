@@ -106,7 +106,6 @@ ${relationship.note ? `- 關係備註：${relationship.note}` : ''}
       [{ role: 'user', content: prompt }],
       {
         modelType: 'lite',
-        temperature: 0.9,
         maxOutputTokens: 256,
         queueDescription: `生日祝福：${character.name}`
       }

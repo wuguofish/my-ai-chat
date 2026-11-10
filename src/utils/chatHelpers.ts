@@ -1014,7 +1014,6 @@ ${timeDescriptions[currentTimeOfDay]}`
   ], {
     modelType: 'lite',
     systemInstruction: systemPrompt,
-    temperature: 0.9,  // 提高創意
     maxOutputTokens: 256,
     safeMode: !isAdult
   })
@@ -1507,7 +1506,6 @@ ${wasMentioned ? '注意：你被 @ 點名了，請針對被點名的內容回�
   ], {
     modelType: 'main',
     systemInstruction,
-    temperature: 0.8,
     maxOutputTokens: 2048,
     safeMode: !isAdult
   })

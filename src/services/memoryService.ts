@@ -88,7 +88,6 @@ ${conversation}`
       {
         modelType: 'lite',
         systemInstruction,
-        temperature: 0.3,  // 較低溫度，確保摘要穩定
         maxOutputTokens: 2048,
         safeMode: !isAdult,
         queueDescription: '短期記憶摘要'
@@ -162,7 +161,6 @@ ${conversation}
       {
         modelType: 'lite',
         systemInstruction,
-        temperature: 0.3,
         maxOutputTokens: 2048,
         safeMode: !isAdult,
         responseMimeType: 'application/json',
@@ -291,7 +289,6 @@ ${memoriesText}
       {
         modelType: 'lite',
         systemInstruction,
-        temperature: 0.3,
         maxOutputTokens: 2048,
         safeMode: !isAdult,
         queueDescription: '長期記憶提取'
@@ -396,7 +393,6 @@ ${postContent}
       {
         modelType: 'lite',
         systemInstruction,
-        temperature: 0.3,
         maxOutputTokens: 512,
         safeMode: !isAdult,
         queueDescription: '貼文摘要生成'
@@ -521,7 +517,6 @@ ${conversation}
       {
         modelType: 'lite',
         systemInstruction,
-        temperature: 0.3,
         maxOutputTokens: 4096,
         safeMode: !isAdult,
         responseMimeType: 'application/json',

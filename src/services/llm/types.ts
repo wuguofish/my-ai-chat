@@ -58,14 +58,8 @@ export interface CreateModelOptions {
   modelType?: ModelType
   /** System Instruction */
   systemInstruction?: string
-  /** 溫度 (0-2) */
-  temperature?: number
   /** 最大輸出 token 數 */
   maxOutputTokens?: number
-  /** Top P */
-  topP?: number
-  /** Top K (部分服務商支援) */
-  topK?: number
   /** 是否使用安全模式 */
   safeMode?: boolean
 }

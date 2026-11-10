@@ -94,13 +94,6 @@ export const RELATIONSHIP_LEVELS: Record<RelationshipLevel, RelationshipLevelInf
 // 預設設定
 // ==========================================
 
-export const DEFAULT_CHARACTER_SETTINGS = {
-  temperature: 0.7,
-  maxTokens: 2048,
-  enableRelationship: true,
-  allowRomance: false
-} as const
-
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   theme: 'auto',
   language: 'zh-TW',

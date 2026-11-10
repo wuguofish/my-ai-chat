@@ -500,7 +500,6 @@ ${additionalContext ? `\n補充資訊：${additionalContext}` : ''}`
     [{ role: 'user', content: userPrompt }], {
       modelType: 'lite',
       systemInstruction: systemPrompt,
-      temperature: 0.9,
       maxOutputTokens: 1024,
       safeMode: !isAdult,
       queueDescription: `動態牆發文：${character.name}`
@@ -699,7 +698,6 @@ ${replyToComment ? `- 這是回覆 #${replyToComment.floor || ''} ${replyToComme
     [{ role: 'user', content: userPrompt }], {
       modelType: 'lite',
       systemInstruction: systemPrompt,
-      temperature: 0.9,
       maxOutputTokens: 256,
       safeMode: !isAdult,
       queueDescription: `動態牆留言：${character.name}`

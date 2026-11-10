@@ -247,7 +247,6 @@ ${holiday.type === 'christmas' ? '- 可以加入聖誕節的溫馨氛圍' : ''}
       [{ role: 'user', content: prompt }],
       {
         modelType: 'lite',
-        temperature: 0.9,
         maxOutputTokens: 256,
         queueDescription: `${holiday.name}祝福：${character.name}`
       }
