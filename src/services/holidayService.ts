@@ -7,7 +7,7 @@
  */
 
 // API Base URL（GitHub Pages 靜態 JSON）
-const API_BASE_URL = 'https://doggy8088.github.io/holidaybook'
+const API_BASE_URL = 'https://holiday.gh.miniasp.com'
 
 // 快取 key
 const CACHE_KEY = 'holiday-cache'

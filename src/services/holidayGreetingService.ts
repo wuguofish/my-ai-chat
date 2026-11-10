@@ -23,7 +23,7 @@ import { getRelationshipLevelName } from '@/utils/relationshipHelpers'
 const HOLIDAY_GREETINGS_KEY = 'ai-chat-holiday-greetings'
 
 // API Base URL（用於查詢農曆節日）
-const HOLIDAY_API_BASE = 'https://doggy8088.github.io/holidaybook'
+const HOLIDAY_API_BASE = 'https://holiday.gh.miniasp.com'
 
 // ========== 節日定義 ==========
 
