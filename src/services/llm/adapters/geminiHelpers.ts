@@ -3,21 +3,39 @@
  * 抽出來方便 TDD 與單元測試
  */
 
-export interface GenerationConfig {
-  temperature: number
+import { ThinkingLevel } from '@google/genai'
+
+/**
+ * 模型一律會思考，而且思考用掉的 token 算在 maxOutputTokens 裡，
+ * 所以在呼叫端要求的回覆長度之外再留這麼多給思考。
+ */
+export const THINKING_HEADROOM_TOKENS = 2048
+
+/**
+ * 各模型可用的最低思考等級：聊天訊息不需要深思，想得少回得快。
+ */
+const THINKING_LEVEL: Record<'main' | 'lite', ThinkingLevel> = {
+  main: ThinkingLevel.LOW,
+  lite: ThinkingLevel.MINIMAL
+}
+
+export interface GenerationConfigInput {
+  modelType: 'main' | 'lite'
   maxOutputTokens: number
-  topP?: number
-  topK?: number
   responseMimeType?: string
 }
 
-export function buildGenerationConfig(input: GenerationConfig): GenerationConfig {
+export interface GenerationConfig {
+  maxOutputTokens: number
+  thinkingConfig: { thinkingLevel: ThinkingLevel }
+  responseMimeType?: string
+}
+
+export function buildGenerationConfig(input: GenerationConfigInput): GenerationConfig {
   const config: GenerationConfig = {
-    temperature: input.temperature,
-    maxOutputTokens: input.maxOutputTokens
+    maxOutputTokens: input.maxOutputTokens + THINKING_HEADROOM_TOKENS,
+    thinkingConfig: { thinkingLevel: THINKING_LEVEL[input.modelType] }
   }
-  if (input.topP !== undefined) config.topP = input.topP
-  if (input.topK !== undefined) config.topK = input.topK
   if (input.responseMimeType !== undefined) config.responseMimeType = input.responseMimeType
   return config
 }

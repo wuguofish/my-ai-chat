@@ -172,14 +172,14 @@ export class ApiQueue {
 // 預設佇列實例
 // ==========================================
 
-/** Gemini 2.5 Flash 佇列（RPM: 5） */
+/** Gemini Flash 佇列（RPM: 5） */
 export const geminiFlashQueue = new ApiQueue({
   name: 'gemini-flash',
   rpm: 5,
   jitterMs: 1500
 })
 
-/** Gemini 2.5 Flash Lite 佇列（RPM: 10） */
+/** Gemini Flash Lite 佇列（RPM: 10） */
 export const geminiFlashLiteQueue = new ApiQueue({
   name: 'gemini-flash-lite',
   rpm: 10,
@@ -258,7 +258,7 @@ export function clearAllQueues(): void {
 // Gemini 專用包裝函數
 // ==========================================
 
-export type GeminiModelType = 'gemini-2.5-flash' | 'gemini-2.5-flash-lite'
+export type GeminiModelType = 'gemini-3.8-flash' | 'gemini-3.5-flash-lite'
 
 /**
  * 將 Gemini API 請求加入佇列
@@ -273,7 +273,7 @@ export type GeminiModelType = 'gemini-2.5-flash' | 'gemini-2.5-flash-lite'
  * // 動態牆發文
  * const result = await enqueueGeminiRequest(
  *   () => model.generateContent(prompt),
- *   'gemini-2.5-flash-lite',
+ *   'gemini-3.5-flash-lite',
  *   '動態牆發文'
  * )
  */

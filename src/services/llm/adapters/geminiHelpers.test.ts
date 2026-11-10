@@ -1,30 +1,30 @@
 import { describe, it, expect } from 'vitest'
-import { buildGenerationConfig, buildSafetySettings } from './geminiHelpers'
+import { ThinkingLevel } from '@google/genai'
+import { buildGenerationConfig, buildSafetySettings, THINKING_HEADROOM_TOKENS } from './geminiHelpers'
 
 describe('buildGenerationConfig', () => {
-  it('應包含 temperature 與 maxOutputTokens', () => {
-    const config = buildGenerationConfig({ temperature: 0.7, maxOutputTokens: 2048 })
-    expect(config.temperature).toBe(0.7)
-    expect(config.maxOutputTokens).toBe(2048)
+  it('maxOutputTokens 應在要求的長度之外多留思考用的空間', () => {
+    const config = buildGenerationConfig({ modelType: 'main', maxOutputTokens: 256 })
+    expect(config.maxOutputTokens).toBe(256 + THINKING_HEADROOM_TOKENS)
   })
 
-  it('topP 與 topK 為 undefined 時不應出現在結果裡', () => {
-    const config = buildGenerationConfig({ temperature: 0.7, maxOutputTokens: 2048 })
-    expect(config.topP).toBeUndefined()
-    expect(config.topK).toBeUndefined()
+  it('主模型用 LOW、輕量模型用 MINIMAL 的思考等級', () => {
+    expect(buildGenerationConfig({ modelType: 'main', maxOutputTokens: 2048 }).thinkingConfig.thinkingLevel)
+      .toBe(ThinkingLevel.LOW)
+    expect(buildGenerationConfig({ modelType: 'lite', maxOutputTokens: 2048 }).thinkingConfig.thinkingLevel)
+      .toBe(ThinkingLevel.MINIMAL)
   })
 
-  it('topP 與 topK 有值時應加入', () => {
-    const config = buildGenerationConfig({
-      temperature: 0.95, maxOutputTokens: 2048, topP: 0.95, topK: 40
-    })
-    expect(config.topP).toBe(0.95)
-    expect(config.topK).toBe(40)
+  it('不送取樣參數', () => {
+    const config = buildGenerationConfig({ modelType: 'main', maxOutputTokens: 2048 })
+    expect(config).not.toHaveProperty('temperature')
+    expect(config).not.toHaveProperty('topP')
+    expect(config).not.toHaveProperty('topK')
   })
 
   it('responseMimeType 有值時應加入', () => {
     const config = buildGenerationConfig({
-      temperature: 0.7, maxOutputTokens: 2048, responseMimeType: 'application/json'
+      modelType: 'lite', maxOutputTokens: 2048, responseMimeType: 'application/json'
     })
     expect(config.responseMimeType).toBe('application/json')
   })

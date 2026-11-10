@@ -7,7 +7,7 @@ import type { LLMProvider } from './types'
 /**
  * Gemini 模型名稱型別（與 apiQueue.ts 的 GeminiModelType 同步）
  */
-export type GeminiModelName = 'gemini-2.5-flash' | 'gemini-2.5-flash-lite'
+export type GeminiModelName = 'gemini-3.8-flash' | 'gemini-3.5-flash-lite'
 
 /**
  * 服務商配置介面
@@ -41,10 +41,10 @@ export interface ProviderConfig {
 export const LLM_CONFIG: Record<LLMProvider, ProviderConfig> = {
   gemini: {
     name: 'Gemini',
-    mainModel: 'gemini-2.5-flash',
-    liteModel: 'gemini-2.5-flash-lite',
-    mainModelDisplay: '2.5 Flash',
-    liteModelDisplay: '2.5 Flash Lite',
+    mainModel: 'gemini-3.8-flash',
+    liteModel: 'gemini-3.5-flash-lite',
+    mainModelDisplay: '3.8 Flash',
+    liteModelDisplay: '3.5 Flash Lite',
     consoleUrl: 'https://aistudio.google.com/app/api-keys',
     icon: 'G',
     iconColor: '#4285F4',
@@ -121,5 +121,5 @@ export function isValidProvider(provider: string): provider is LLMProvider {
  * 回傳值可直接傳給 enqueueGeminiRequest
  */
 export function getGeminiModelName(type: 'main' | 'lite'): GeminiModelName {
-  return type === 'main' ? 'gemini-2.5-flash' : 'gemini-2.5-flash-lite'
+  return type === 'main' ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite'
 }
