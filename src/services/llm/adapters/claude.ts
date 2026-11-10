@@ -19,6 +19,7 @@ import { getModelName } from '../config'
 import {
   isAdultConversation,
   getActuallyContent,
+  stripThinkTags,
   formatErrorMessage
 } from '../utils'
 import { enqueueClaudeRequest } from '@/services/apiQueue'
@@ -102,14 +103,15 @@ function buildClaudeContentWithImages(text: string, images?: ImageAttachment[]):
 }
 
 /**
- * 思考深度。模型一律會思考，low 讓它在簡單的聊天訊息上想得最少、回得最快。
+ * 思考深度。medium 讓模型把思考放進正式的思考區塊；
+ * 設成 low 時它會跳過思考區塊，改把思考過程寫進回覆本文。
  */
-const THINKING_EFFORT = 'low' as const
+const THINKING_EFFORT = 'medium' as const
 
 /**
  * 思考用掉的 token 也算在 max_tokens 裡，所以在呼叫端要求的回覆長度之外再留這麼多給思考。
  */
-const THINKING_HEADROOM_TOKENS = 2048
+const THINKING_HEADROOM_TOKENS = 4096
 
 /**
  * 檢查 Claude 回應是否被封鎖
@@ -449,7 +451,7 @@ export class ClaudeAdapter implements LLMAdapter {
           throw new ContentBlockedError(blocked.reason, blocked.message)
         }
 
-        const responseText = extractTextFromResponse(response)
+        const responseText = stripThinkTags(extractTextFromResponse(response))
         return { text: responseText, response }
       }
 

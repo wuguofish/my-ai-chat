@@ -19,6 +19,7 @@ import { getModelName, getProviderConfig } from '../config'
 import {
   isAdultConversation,
   getActuallyContent,
+  stripThinkTags,
   formatErrorMessage
 } from '../utils'
 import { enqueueOpenAIRequest, enqueueGrokRequest } from '@/services/apiQueue'
@@ -444,7 +445,7 @@ export class OpenAICompatibleAdapter implements LLMAdapter {
           throw new ContentBlockedError(blocked.reason, blocked.message)
         }
 
-        const responseText = extractTextFromResponse(response)
+        const responseText = stripThinkTags(extractTextFromResponse(response))
         return { text: responseText, response }
       }
 

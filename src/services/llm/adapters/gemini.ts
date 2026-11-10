@@ -23,7 +23,8 @@ import {
   cleanExcessiveQuotes,
   isBlockedError,
   formatErrorMessage,
-  BLOCKED_FINISH_REASONS
+  BLOCKED_FINISH_REASONS,
+  stripThinkTags
 } from '../utils'
 import { generateSystemPrompt, convertToShortIds, convertToLongIds } from '@/utils/chatHelpers'
 import { enqueueGeminiRequest } from '@/services/apiQueue'
@@ -314,7 +315,7 @@ export class GeminiAdapter implements LLMAdapter {
 
         // ⚠️ 新 SDK：text 是 property（不是 method）
         const rawText = response.text
-        const responseText = typeof rawText === 'string' ? rawText : String(rawText ?? '')
+        const responseText = stripThinkTags(typeof rawText === 'string' ? rawText : String(rawText ?? ''))
         return { text: responseText, response }
       }
 

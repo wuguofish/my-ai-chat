@@ -60,6 +60,14 @@ export function isAdultConversation(userAge?: string | number, characterAge?: st
 }
 
 /**
+ * 移除模型寫進回覆本文的思考過程（<think>…</think> 或 <thinking>…</thinking>）。
+ * 只有開頭標籤、沒有結尾時不處理，免得把整則回覆刪掉。
+ */
+export function stripThinkTags(text: string): string {
+  return text.replace(/<(think|thinking)>[\s\S]*?<\/\1>/gi, '')
+}
+
+/**
  * 清理 AI 回應中可能的前綴文字
  * 只有當「整個訊息被單一引號包住」時才取引號內的文字
  * 避免誤判回覆中本身就包含多個引號的情況
@@ -69,7 +77,7 @@ export function getActuallyContent(msg: string): string {
   if (typeof msg !== 'string') {
     return ''
   }
-  let _msg = msg.trim()
+  let _msg = stripThinkTags(msg).trim()
 
   // 檢查是否整個訊息被引號包住（開頭是引號，結尾是引號）
   // 或者是「前綴文字「內容」」的格式（結尾是引號，且只有一對引號）
