@@ -5,7 +5,7 @@
  * 會自動發送生日祝福訊息到聊天室
  */
 
-import { getDefaultAdapter } from '@/services/llm'
+import { getBackgroundAdapter } from '@/services/llm'
 import type { Character, UserProfile, ChatRoom, UserCharacterRelationship } from '@/types'
 import { getRelationshipLevelName } from '@/utils/relationshipHelpers'
 
@@ -101,7 +101,7 @@ ${relationship.note ? `- 關係備註：${relationship.note}` : ''}
 
   try {
     // 透過 LLM adapter 發送請求
-    const adapter = await getDefaultAdapter(character)
+    const adapter = await getBackgroundAdapter(character)
     const response = await adapter.generate(
       [{ role: 'user', content: prompt }],
       {

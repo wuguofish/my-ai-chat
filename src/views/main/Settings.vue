@@ -12,6 +12,7 @@ import { googleAuthService } from '@/services/googleAuth'
 import { googleDriveService } from '@/services/googleDrive'
 import { fetchServerVersion, clearCacheAndReload, getVersionInfo, type VersionInfo } from '@/utils/version'
 import { getAdapter, getImplementedProviders, LLM_CONFIG, type LLMProvider } from '@/services/llm'
+import { orderFallbackProviders } from '@/services/llm/fallback'
 import { encodeBackupData, decodeBackupData } from '@/utils/dataObfuscation'
 import { getStorageUsage, type StorageUsage } from '@/utils/persistentStorage'
 import { getImagesTotalBytes } from '@/utils/imageStore'
@@ -97,6 +98,18 @@ const selectedDefaultProvider = ref(userStore.defaultProvider)
 const providersWithApiKey = computed(() => {
   return implementedProviders.filter(provider => userStore.hasApiKey(provider))
 })
+
+// 背景任務的內容被擋下時，換下一家服務商的順序
+const fallbackProviders = computed(() => {
+  return orderFallbackProviders(userStore.fallbackOrder, providersWithApiKey.value)
+})
+
+const moveFallbackProvider = (index: number, offset: -1 | 1) => {
+  const order = [...fallbackProviders.value]
+  const moved = order.splice(index, 1)[0]!
+  order.splice(index + offset, 0, moved)
+  userStore.updateFallbackOrder(order)
+}
 
 // 各服務商的 API Key 輸入狀態
 const apiKeyInputs = ref<Record<string, string>>({
@@ -1032,6 +1045,37 @@ const handleGoogleRestore = async () => {
         <p v-if="providersWithApiKey.length > 0" class="form-hint">未設定服務商的好友及記憶生成功能會使用預設的AI服務商</p>
       </div>
 
+      <!-- 被擋時換下一家的順序 -->
+      <div v-if="fallbackProviders.length > 1" class="form-group">
+        <h4>內容被擋時的換家順序</h4>
+        <ol class="fallback-order-list">
+          <li v-for="(provider, index) in fallbackProviders" :key="provider" class="fallback-order-item">
+            <span class="fallback-order-rank">{{ index + 1 }}</span>
+            <b class="provider-icon" :style="{ color: getProviderConfig(provider)?.iconColor }">
+              {{ getProviderConfig(provider)?.icon }}
+            </b>
+            <span class="fallback-order-name">{{ getProviderConfig(provider)?.name }}</span>
+            <button
+              class="btn btn-info"
+              :disabled="index === 0"
+              :aria-label="`把 ${getProviderConfig(provider)?.name} 往前移`"
+              @click="moveFallbackProvider(index, -1)"
+            >
+              <ChevronUp :size="18" />
+            </button>
+            <button
+              class="btn btn-info"
+              :disabled="index === fallbackProviders.length - 1"
+              :aria-label="`把 ${getProviderConfig(provider)?.name} 往後移`"
+              @click="moveFallbackProvider(index, 1)"
+            >
+              <ChevronDown :size="18" />
+            </button>
+          </li>
+        </ol>
+        <p class="form-hint">記憶整理、動態牆、節日問候這類背景工作的內容被服務商擋下時，會依這個順序改送下一家再試（已經試過的那一家會跳過），所以內容會送到另一間服務商。好友的對話回覆不會換家。</p>
+      </div>
+
       <div class="provider-divider"></div>
       <h4>AI 服務商 API KEY</h4>
       <!-- 檢測說明 -->
@@ -1644,6 +1688,36 @@ const handleGoogleRestore = async () => {
 }
 
 /* 預設服務商 radio group */
+.fallback-order-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.fallback-order-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.fallback-order-rank {
+  width: 1.5em;
+  text-align: center;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.fallback-order-name {
+  flex: 1;
+  color: var(--color-text-primary);
+}
+
 .default-provider-radio-group {
   display: flex;
   flex-wrap: wrap;

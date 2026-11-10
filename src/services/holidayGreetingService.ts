@@ -15,7 +15,7 @@
  * - 聖誕節 (12/25)
  */
 
-import { getDefaultAdapter } from '@/services/llm'
+import { getBackgroundAdapter } from '@/services/llm'
 import type { Character, UserProfile, ChatRoom, UserCharacterRelationship } from '@/types'
 import { getRelationshipLevelName } from '@/utils/relationshipHelpers'
 
@@ -242,7 +242,7 @@ ${holiday.type === 'christmas' ? '- 可以加入聖誕節的溫馨氛圍' : ''}
 請直接輸出祝福訊息：`
 
   try {
-    const adapter = await getDefaultAdapter(character)
+    const adapter = await getBackgroundAdapter(character)
     const response = await adapter.generate(
       [{ role: 'user', content: prompt }],
       {

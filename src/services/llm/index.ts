@@ -106,6 +106,7 @@ export function getImplementedProviders(): LLMProvider[] {
 import type { Character } from '@/types'
 import { getProviderConfig, type ProviderConfig } from './config'
 import { useUserStore } from '@/stores/user'
+import { orderFallbackProviders } from './fallback'
 
 /**
  * 取得角色使用的 LLM 服務商資訊（用於顯示 icon）
@@ -154,6 +155,40 @@ export async function getDefaultAdapter(character?: Character | null): Promise<L
   }
 
   return getAdapter(provider)
+}
+
+/**
+ * 取得背景任務（記憶整理、動態牆、問候等）用的 adapter。
+ * 內容被服務商擋下時，依使用者設定的順序換下一家有 API Key 的服務商再試。
+ * 角色的對話回覆請用 getDefaultAdapter：換服務商會讓角色的口氣跟著變。
+ *
+ * @param character 可選的角色（用於取得角色專屬的服務商設定）
+ */
+export async function getBackgroundAdapter(character?: Character | null): Promise<Pick<LLMAdapter, 'generate'>> {
+  const primary = await resolveProvider(character)
+  const userStore = useUserStore()
+  const available = getImplementedProviders().filter(provider => userStore.hasApiKey(provider))
+  const fallbacks = orderFallbackProviders(userStore.fallbackOrder, available)
+    .filter(provider => provider !== primary)
+
+  return {
+    async generate(messages, options) {
+      let response = await getAdapter(primary).generate(messages, options)
+
+      for (const provider of fallbacks) {
+        if (!response.blocked) break
+
+        console.warn(`⚠️ ${options?.queueDescription || '背景任務'}被 ${response.blockReason} 擋下，改用 ${provider} 再試`)
+        try {
+          response = await getAdapter(provider).generate(messages, options)
+        } catch (error) {
+          console.warn(`⚠️ 改用 ${provider} 失敗，繼續試下一家:`, error)
+        }
+      }
+
+      return response
+    }
+  }
 }
 
 // getDefaultApiKey 已不再需要對外公開

@@ -24,6 +24,8 @@ export interface LLMSettings {
     claude?: string
     grok?: string
   }
+  /** 背景任務的內容被擋下時，換下一家服務商的順序 */
+  fallbackOrder?: LLMProviderType[]
 }
 
 export interface UserProfile {

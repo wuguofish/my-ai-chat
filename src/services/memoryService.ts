@@ -2,7 +2,7 @@
  * 記憶管理服務
  */
 
-import { getDefaultAdapter, isAdultConversation, getActuallyContent } from '@/services/llm'
+import { getBackgroundAdapter, isAdultConversation, getActuallyContent } from '@/services/llm'
 import type { Message, Memory, Character, CharacterRelationType, Post } from '@/types'
 
 /**
@@ -82,7 +82,7 @@ export async function generateMemorySummary(
 ${conversation}`
 
     // 透過 LLM adapter 發送請求
-    const adapter = await getDefaultAdapter()
+    const adapter = await getBackgroundAdapter()
     const response = await adapter.generate(
       [{ role: 'user', content: prompt }],
       {
@@ -156,7 +156,7 @@ ${conversation}
 請分析並回傳 JSON：`
 
     // 透過 LLM adapter 發送請求（使用 responseMimeType 強制 JSON 輸出）
-    const adapter = await getDefaultAdapter()
+    const adapter = await getBackgroundAdapter()
     const response = await adapter.generate(
       [{ role: 'user', content: prompt }],
       {
@@ -285,7 +285,7 @@ ${memoriesText}
 請開始分析：`
 
     // 透過 LLM adapter 發送請求
-    const adapter = await getDefaultAdapter()
+    const adapter = await getBackgroundAdapter()
     const response = await adapter.generate(
       [{ role: 'user', content: prompt }],
       {
@@ -390,7 +390,7 @@ ${postContent}
 請總結這則動態：`
 
     // 透過 LLM adapter 發送請求
-    const adapter = await getDefaultAdapter()
+    const adapter = await getBackgroundAdapter()
     const response = await adapter.generate(
       [{ role: 'user', content: prompt }],
       {
@@ -515,7 +515,7 @@ ${conversation}
 請開始分析：`
 
     // 透過 LLM adapter 發送請求（使用 responseMimeType 強制 JSON 輸出）
-    const adapter = await getDefaultAdapter()
+    const adapter = await getBackgroundAdapter()
     const response = await adapter.generate(
       [{ role: 'user', content: prompt }],
       {

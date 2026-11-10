@@ -45,6 +45,11 @@ export const useUserStore = defineStore('user', () => {
   const defaultProvider = computed(() => llmSettings.value.defaultProvider)
 
   /**
+   * 背景任務的內容被擋下時，換下一家服務商的順序
+   */
+  const fallbackOrder = computed(() => llmSettings.value.fallbackOrder ?? [])
+
+  /**
    * 取得指定服務商的 API Key
    */
   function getApiKey(provider: LLMProviderType): string {
@@ -141,6 +146,16 @@ export const useUserStore = defineStore('user', () => {
   }
 
   /**
+   * 更新被擋時換下一家服務商的順序
+   */
+  function updateFallbackOrder(order: LLMProviderType[]) {
+    if (!profile.value?.llmSettings) return
+
+    profile.value.llmSettings.fallbackOrder = order
+    profile.value.updatedAt = new Date().toISOString()
+  }
+
+  /**
    * @deprecated 請使用 updateProviderApiKey('gemini', apiKey) 替代
    */
   function updateApiKey(newApiKey: string) {
@@ -180,6 +195,7 @@ export const useUserStore = defineStore('user', () => {
     // LLM Getters
     llmSettings,
     defaultProvider,
+    fallbackOrder,
     getApiKey,
     hasApiKey,
     // General Getters
@@ -193,6 +209,7 @@ export const useUserStore = defineStore('user', () => {
     updateProfile,
     updateProviderApiKey,
     updateDefaultProvider,
+    updateFallbackOrder,
     updateApiKey,  // deprecated
     clearProfile,
     migrateApiConfig

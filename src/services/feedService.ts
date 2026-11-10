@@ -12,7 +12,7 @@ import {
   FEED_COMMENT_REPLY,
   FEED_CONTENT_GUARD
 } from '@/utils/constants'
-import { getDefaultAdapter, isAdultConversation } from '@/services/llm'
+import { getBackgroundAdapter, isAdultConversation } from '@/services/llm'
 import type { GenerateOptions, LLMMessage } from '@/services/llm/types'
 import { detectDegenerateContent } from '@/utils/feedContentGuard'
 import { escapeHtml } from '@/utils/html'
@@ -348,7 +348,7 @@ async function generateFeedText(
   minMeaningfulChars: number,
   label: string
 ): Promise<string> {
-  const adapter = await getDefaultAdapter(character)
+  const adapter = await getBackgroundAdapter(character)
   let lastReason = ''
 
   for (let attempt = 1; attempt <= FEED_CONTENT_GUARD.maxAttempts; attempt++) {
